@@ -1,0 +1,175 @@
+/*
+ * Brand surfaces and motion from the original viatik.xyz landing, verbatim:
+ * film grain, glass and preview panels, photo shades, scroll reveal and the
+ * hero entrance animations.
+ */
+
+@layer components {
+  .grain {
+    position: relative;
+    isolation: isolate;
+  }
+  .grain::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+    background-image: url('/images/film-grain.png');
+    background-repeat: repeat;
+    background-size: 192px 192px;
+    mix-blend-mode: soft-light;
+    opacity: 0.22;
+    pointer-events: none;
+  }
+  .glass-panel {
+    border: 1px solid color-mix(in srgb, var(--brand-mist) 21%, transparent);
+    background: color-mix(in srgb, var(--brand-plum) 70%, transparent);
+    color: var(--brand-mist);
+    box-shadow:
+      0 24px 64px -28px color-mix(in srgb, var(--brand-plum) 66%, transparent),
+      inset 0 1px 0 color-mix(in srgb, var(--brand-mist) 14%, transparent);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+  .glass-panel.theme-light,
+  .theme-light .glass-panel {
+    border-color: color-mix(in srgb, var(--brand-paper) 75%, transparent);
+    background: color-mix(in srgb, var(--brand-paper) 83%, transparent);
+    color: var(--brand-plum);
+    box-shadow:
+      0 24px 64px -32px color-mix(in srgb, var(--brand-plum) 24%, transparent),
+      inset 0 1px 0 var(--brand-paper);
+  }
+  .preview-panel {
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--v-text) 5%, var(--v-surface)),
+      var(--v-surface)
+    );
+    box-shadow:
+      0 16px 48px -30px color-mix(in srgb, var(--brand-plum) 42%, transparent),
+      inset 0 1px 0 color-mix(in srgb, var(--v-text) 5%, transparent);
+    backdrop-filter: blur(12px);
+  }
+  .product-stage {
+    position: relative;
+    isolation: isolate;
+    border: 1px solid var(--v-border);
+    border-radius: 1.5rem;
+    background: color-mix(in srgb, var(--brand-stone) 14%, var(--v-canvas));
+  }
+  .hero-scene-shade {
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--brand-plum) 6%, transparent),
+      color-mix(in srgb, var(--brand-plum) 18%, transparent) 45%,
+      color-mix(in srgb, var(--brand-plum) 72%, transparent)
+    );
+  }
+  .image-shade {
+    background: linear-gradient(
+      180deg,
+      transparent 30%,
+      color-mix(in srgb, var(--brand-plum) 85%, transparent)
+    );
+  }
+  .photo-card img {
+    transition: transform 850ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .photo-card:hover img {
+    transform: scale(1.035);
+  }
+  .hover-lift {
+    transition:
+      transform 400ms cubic-bezier(0.2, 0.7, 0.2, 1),
+      box-shadow 400ms;
+  }
+  .hover-lift:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 22px 45px -25px color-mix(in srgb, var(--brand-plum) 28%, transparent);
+  }
+  [data-reveal] {
+    transition:
+      opacity 750ms ease,
+      translate 750ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .reveal-pending > * {
+    opacity: 0;
+    translate: 0 22px;
+  }
+  [data-reveal] > * {
+    transition:
+      opacity 750ms ease,
+      translate 750ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .hero-copy > * {
+    animation: editorial-arrive 850ms both;
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .hero-copy > :nth-child(2) {
+    animation-delay: 70ms;
+  }
+  .hero-copy > :nth-child(3) {
+    animation-delay: 140ms;
+  }
+  .hero-copy > :nth-child(4) {
+    animation-delay: 210ms;
+  }
+  .hero-copy > :nth-child(5) {
+    animation-delay: 280ms;
+  }
+  .hero-account-card {
+    animation: editorial-arrive 1s 180ms both;
+  }
+  .hero-release-card {
+    animation: editorial-arrive 1s 420ms both;
+  }
+  .gentle-float {
+    animation: gentle-float 9s 1.5s ease-in-out infinite;
+  }
+  .quiet-orbit {
+    animation: gentle-float 11s 2.5s ease-in-out infinite reverse;
+  }
+  @keyframes editorial-arrive {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes gentle-float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-7px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal-pending > * {
+      opacity: 1;
+      translate: none;
+    }
+    .hover-lift:hover,
+    .photo-card:hover img {
+      transform: none;
+    }
+    .hero-copy > *,
+    .hero-account-card,
+    .hero-release-card,
+    .gentle-float,
+    .quiet-orbit {
+      animation: none;
+    }
+  }
+  @media (hover: none) {
+    .hover-lift:hover {
+      transform: none;
+    }
+  }
+}

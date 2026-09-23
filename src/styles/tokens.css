@@ -1,0 +1,185 @@
+/*
+ * Viatik brand tokens, copied verbatim from the original viatik.xyz landing.
+ * Do not change values here: the landing must keep visual parity. Product
+ * additions live in dashboard.css.
+ */
+
+@theme inline {
+  /* shadcn roles re-pointed at the Viatik tokens */
+  --color-background: var(--v-canvas);
+  --color-foreground: var(--v-text);
+  --color-card: var(--v-surface);
+  --color-card-foreground: var(--v-text);
+  --color-popover: var(--v-surface);
+  --color-popover-foreground: var(--v-text);
+  --color-primary: var(--v-accent-fill);
+  --color-primary-foreground: var(--v-on-accent);
+  --color-secondary: var(--v-surface-2);
+  --color-secondary-foreground: var(--v-text);
+  --color-muted: var(--v-surface-2);
+  --color-muted-foreground: var(--v-text-muted);
+  --color-accent: var(--v-surface-2);
+  --color-accent-foreground: var(--v-text);
+  --color-destructive: var(--v-danger);
+  --color-border: var(--v-border);
+  --color-input: var(--v-border);
+  --color-ring: var(--v-accent);
+
+  /* Viatik-specific roles */
+  --color-subtle: var(--v-text-subtle);
+  --color-violet: var(--v-accent);
+  --color-success: var(--v-success);
+  --color-warning: var(--v-warning);
+  --color-danger: var(--v-danger);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: var(--font-archivo), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  /* Intermediate weights are the signature; 700 is never used. "medium" is
+     re-pointed at 480 so shadcn components inherit the calibrated weight. */
+  --font-weight-medium: 480;
+  --font-weight-semibold: 530;
+  --font-weight-bold: 530;
+
+  /* Mercury type scale mapped onto Tailwind's built-in size names:
+     xs caption · sm body-sm · base body · lg body-lg · xl subheading ·
+     2xl heading-sm · 3xl heading · 4xl heading-lg · 5xl display-sm · 6xl display */
+  --text-xs: 0.875rem;
+  --text-xs--line-height: 1.4;
+  --text-xs--letter-spacing: 0.01em;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.45;
+  --text-sm--letter-spacing: 0.005em;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.5;
+  --text-xl: 1.3125rem;
+  --text-xl--line-height: 1.35;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 1.2;
+  --text-2xl--letter-spacing: 0.015em;
+  --text-3xl: 2rem;
+  --text-3xl--line-height: 1.15;
+  --text-3xl--letter-spacing: 0.015em;
+  --text-4xl: 2.625rem;
+  --text-4xl--line-height: 1.15;
+  --text-4xl--letter-spacing: 0.01em;
+  --text-5xl: 3.25rem;
+  --text-5xl--line-height: 1.08;
+  --text-5xl--letter-spacing: 0.005em;
+  --text-6xl: 4.0625rem;
+  --text-6xl--line-height: 1.1;
+  --text-6xl--letter-spacing: 0.005em;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+
+  --container-page: 1280px;
+  --color-brand: var(--brand-plum);
+  --color-mist: var(--brand-mist);
+  --color-paper: var(--brand-paper);
+  --color-stone: var(--brand-stone);
+  --color-sage: var(--brand-sage);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --font-mono: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --brand-plum: #22092c;
+  --brand-mist: #ededf3;
+  --brand-paper: #f9f8fb;
+  --brand-stone: #aca1b3;
+  --brand-sage: #b7ccb8;
+  --radius: 1rem;
+}
+
+:root,
+.theme-dark {
+  color-scheme: dark;
+  --v-canvas: var(--brand-plum);
+  --v-surface: color-mix(in srgb, var(--brand-mist) 6%, var(--brand-plum));
+  --v-surface-2: color-mix(in srgb, var(--brand-mist) 10%, var(--brand-plum));
+  --v-border: color-mix(in srgb, var(--brand-mist) 14%, transparent);
+  --v-text: var(--brand-mist);
+  --v-text-muted: color-mix(in srgb, var(--brand-mist) 76%, var(--brand-plum));
+  --v-text-subtle: var(--brand-stone);
+  --v-accent: var(--brand-stone);
+  --v-accent-fill: var(--brand-mist);
+  --v-on-accent: var(--brand-plum);
+  /* Status colours describe data, never decorate. Kept desaturated on purpose. */
+  --v-success: var(--brand-sage);
+  --v-warning: var(--brand-mist);
+  --v-danger: var(--brand-mist);
+  --chart-1: var(--brand-mist);
+  --chart-2: var(--brand-sage);
+  --chart-3: var(--brand-stone);
+}
+
+.theme-light {
+  color-scheme: light;
+  --v-canvas: var(--brand-paper);
+  --v-surface: var(--brand-paper);
+  --v-surface-2: var(--brand-mist);
+  --v-border: color-mix(in srgb, var(--brand-plum) 12%, transparent);
+  --v-text: var(--brand-plum);
+  --v-text-muted: color-mix(in srgb, var(--brand-plum) 70%, var(--brand-paper));
+  --v-text-subtle: color-mix(in srgb, var(--brand-plum) 62%, var(--brand-paper));
+  --v-accent: var(--brand-plum);
+  --v-accent-fill: var(--brand-plum);
+  --v-on-accent: var(--brand-mist);
+  --v-success: color-mix(in srgb, var(--brand-sage) 42%, var(--brand-plum));
+  --v-warning: var(--brand-plum);
+  --v-danger: var(--brand-plum);
+  --chart-1: var(--brand-plum);
+  --chart-2: color-mix(in srgb, var(--brand-sage) 64%, var(--brand-plum));
+  --chart-3: var(--brand-stone);
+}
+
+@layer base {
+  .theme-light {
+    background-color: var(--v-canvas);
+    color: var(--v-text);
+  }
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 5.5rem;
+  }
+  body {
+    @apply bg-background font-sans text-base text-foreground antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--v-accent) 40%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-delay: 0ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@utility num {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* Archivo's width axis: large display text sits slightly wide-set. */
+@utility wide-set {
+  font-stretch: 106%;
+}

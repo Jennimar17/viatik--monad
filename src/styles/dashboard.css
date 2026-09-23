@@ -1,0 +1,220 @@
+/*
+ * Product (dashboard) extensions to the Viatik brand system.
+ *
+ * Landing and product share one stylesheet, so everything here is additive:
+ * new token names, new utilities and component classes. Nothing redefines a
+ * landing token globally. The one exception, distinct warning and danger
+ * hues, only switches on while a product screen is mounted (`.app-theme` on
+ * its root), which also reaches portalled dialogs and sheets.
+ */
+
+/*
+ * Product screens are always dark, so shadcn's `dark:` utilities apply there
+ * regardless of the OS setting. On the landing they keep following
+ * prefers-color-scheme, exactly as in the original site.
+ */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    @slot;
+  }
+  &:where(:root:has(.app-theme) *) {
+    @slot;
+  }
+}
+
+@theme inline {
+  --color-sidebar: var(--d-sidebar);
+  --color-sidebar-foreground: var(--v-text);
+  --color-sidebar-primary: var(--v-accent-fill);
+  --color-sidebar-primary-foreground: var(--v-on-accent);
+  --color-sidebar-accent: var(--v-surface-2);
+  --color-sidebar-accent-foreground: var(--v-text);
+  --color-sidebar-border: var(--v-border);
+  --color-sidebar-ring: var(--v-accent);
+
+  --color-canvas: var(--v-canvas);
+  --color-surface: var(--v-surface);
+  --color-surface-2: var(--v-surface-2);
+  --color-surface-3: var(--d-surface-3);
+  --color-hairline: var(--d-hairline);
+
+  /* Status: success comes from the landing; info is new. Each has a soft fill. */
+  --color-info: var(--v-info);
+  --color-success-soft: color-mix(in srgb, var(--v-success) 14%, transparent);
+  --color-warning-soft: color-mix(in srgb, var(--v-warning) 14%, transparent);
+  --color-danger-soft: color-mix(in srgb, var(--v-danger) 14%, transparent);
+  --color-info-soft: color-mix(in srgb, var(--v-info) 14%, transparent);
+
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* Real monospace for hashes, addresses and tags. `font-mono` stays Inter for the landing. */
+  --font-code: var(--font-jetbrains), ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  /* Dense caption for data-heavy screens. `text-xs` stays 0.875rem for the landing. */
+  --text-2xs: 0.75rem;
+  --text-2xs--line-height: 1.35;
+  --text-2xs--letter-spacing: 0.01em;
+}
+
+:root,
+.theme-dark {
+  --v-info: var(--brand-stone);
+  --d-surface-3: color-mix(in srgb, var(--brand-mist) 14%, var(--brand-plum));
+  --d-sidebar: color-mix(in srgb, var(--brand-mist) 3%, var(--brand-plum));
+  --d-hairline: color-mix(in srgb, var(--brand-mist) 9%, transparent);
+  --chart-4: color-mix(in srgb, var(--brand-stone) 55%, var(--brand-plum));
+  --chart-5: #d8c7a3;
+}
+
+.theme-light {
+  --v-info: color-mix(in srgb, var(--brand-stone) 40%, var(--brand-plum));
+  --d-surface-3: color-mix(in srgb, var(--brand-plum) 8%, var(--brand-paper));
+  --d-hairline: color-mix(in srgb, var(--brand-plum) 8%, transparent);
+  --chart-4: color-mix(in srgb, var(--brand-stone) 70%, var(--brand-plum));
+  --chart-5: #a3854b;
+}
+
+/* Restrained status hues for product screens, validated for AA contrast. */
+:root:has(.app-theme),
+:root:has(.app-theme) .theme-dark {
+  --v-warning: #e5c48f;
+  --v-danger: #eda3a8;
+}
+
+:root:has(.app-theme) .theme-light {
+  --v-warning: #8a5a0f;
+  --v-danger: #9c2b3a;
+}
+
+@layer components {
+  /*
+   * App canvas: brand plum with two very soft light pools and the landing's
+   * film grain, fixed behind everything so glass chrome has depth to blur
+   * against while data surfaces stay opaque.
+   */
+  .app-canvas {
+    position: relative;
+    isolation: isolate;
+    background-color: var(--v-canvas);
+  }
+  .app-canvas::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        60rem 40rem at 8% -10%,
+        color-mix(in srgb, var(--brand-stone) 16%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        50rem 36rem at 110% 105%,
+        color-mix(in srgb, var(--brand-sage) 9%, transparent),
+        transparent 70%
+      );
+  }
+  .app-canvas::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image: url('/images/film-grain.png');
+    background-repeat: repeat;
+    background-size: 192px 192px;
+    mix-blend-mode: soft-light;
+    opacity: 0.2;
+  }
+
+  /* Floating chrome: topbar and bottom bar. Hairline edge, no drop shadow. */
+  .glass-chrome {
+    background: color-mix(in srgb, var(--brand-plum) 68%, transparent);
+    border-color: color-mix(in srgb, var(--brand-mist) 11%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--brand-mist) 8%, transparent);
+    backdrop-filter: blur(18px) saturate(1.2);
+    -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  }
+
+  /* Overlays: sheets, drawers, dialogs, menus and the command palette. */
+  .glass-overlay {
+    border: 1px solid color-mix(in srgb, var(--brand-mist) 16%, transparent);
+    background: color-mix(in srgb, var(--brand-plum) 82%, transparent);
+    box-shadow:
+      0 30px 80px -30px color-mix(in srgb, #000 70%, transparent),
+      inset 0 1px 0 color-mix(in srgb, var(--brand-mist) 12%, transparent);
+    backdrop-filter: blur(24px) saturate(1.25);
+    -webkit-backdrop-filter: blur(24px) saturate(1.25);
+  }
+
+  /* The app sidebar is floating chrome too: glass over the canvas. */
+  [data-slot='sidebar-container'] {
+    background: color-mix(in srgb, var(--brand-plum) 58%, transparent);
+    border-color: color-mix(in srgb, var(--brand-mist) 9%, transparent) !important;
+    backdrop-filter: blur(22px) saturate(1.2);
+    -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  }
+  [data-slot='sidebar-inner'] {
+    background: transparent;
+  }
+
+  /* Opaque data surface for cards, tables and forms. */
+  .surface {
+    background: var(--v-surface);
+    border: 1px solid var(--v-border);
+  }
+
+  /* Boxed uppercase monospace tag, e.g. the role on the workspace switcher. */
+  .box-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 1.25rem;
+    padding: 0 0.375rem;
+    border: 1px solid color-mix(in srgb, var(--v-text) 28%, transparent);
+    border-radius: 2px;
+    font-family: var(--font-jetbrains), ui-monospace, monospace;
+    font-size: 0.625rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    line-height: 1;
+    color: var(--v-text);
+    white-space: nowrap;
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  @keyframes pending-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
+  .pending-pulse {
+    animation: pending-pulse 1.4s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pending-pulse {
+      animation: none;
+    }
+  }
+
+  @media print {
+    .app-canvas::before,
+    .app-canvas::after,
+    .no-print {
+      display: none !important;
+    }
+  }
+}
