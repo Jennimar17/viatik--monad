@@ -1,0 +1,8 @@
+# Single-app repo: this file only holds pnpm settings.
+
+# Install scripts. Native binaries already ship as prebuilt optional dependencies.
+allowBuilds:
+  unrs-resolver: false
+
+minimumReleaseAgeExclude:
+  - prettier@3.9.9
