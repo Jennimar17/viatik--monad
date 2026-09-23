@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next'
-import { Archivo, Inter } from 'next/font/google'
+import { Archivo, Inter, JetBrains_Mono } from 'next/font/google'
 
 import { publicEnv } from '@/lib/env'
 import './globals.css'
@@ -15,6 +15,15 @@ const archivo = Archivo({
   variable: '--font-archivo',
   display: 'swap',
   axes: ['wdth'],
+})
+
+// Product-only monospace (hashes, addresses, tags). Not preloaded: the browser
+// fetches it only when a product screen renders with it, never on the landing.
+const jetbrains = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-jetbrains',
+  display: 'swap',
+  preload: false,
 })
 
 export const metadata: Metadata = {
@@ -35,7 +44,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${archivo.variable}`}>
+    <html lang="en" className={`${inter.variable} ${archivo.variable} ${jetbrains.variable}`}>
       <body className="min-h-svh antialiased">{children}</body>
     </html>
   )

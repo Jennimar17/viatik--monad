@@ -1,0 +1,116 @@
+import { Check, CircleAlert, ShieldCheck, ShieldX, TriangleAlert } from 'lucide-react'
+
+import { cn } from '@/lib/utils'
+
+/** One rule the policy checked, in plain English. */
+export type PolicyCheck = { rule: string; passed: boolean; blocking: boolean; message: string }
+
+/** The outcome of evaluating a request against a budget's rules. */
+export type PolicyDecision = {
+  outcome: 'approved' | 'needs_approval' | 'rejected'
+  reason?: { message: string }
+  checks: PolicyCheck[]
+}
+
+/** Budget rules in plain English, as reviewed before creating a budget. */
+export function PolicySummary({
+  lines,
+  className,
+  title = 'Budget rules',
+}: {
+  lines: string[]
+  className?: string
+  title?: string
+}) {
+  return (
+    <div className={cn('flex flex-col gap-3', className)}>
+      <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <ShieldCheck className="size-4 text-sage" aria-hidden="true" />
+        {title}
+      </p>
+      <ul className="flex flex-col gap-2">
+        {lines.map((line) => (
+          <li key={line} className="flex gap-2.5 text-sm text-muted-foreground">
+            <Check className="mt-0.5 size-3.5 shrink-0 text-sage" aria-hidden="true" />
+            <span className="text-pretty">{line}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+const outcomeCopy = {
+  approved: {
+    title: 'Within your limit — approves automatically',
+    icon: ShieldCheck,
+    tone: 'border-success/30 bg-success-soft text-success',
+  },
+  needs_approval: {
+    title: 'Needs approval from your Agency Admin',
+    icon: TriangleAlert,
+    tone: 'border-warning/30 bg-warning-soft text-warning',
+  },
+  rejected: {
+    title: 'This request is outside the budget rules',
+    icon: ShieldX,
+    tone: 'border-danger/35 bg-danger-soft text-danger',
+  },
+} as const
+
+/**
+ * Live policy evaluation. Shows the outcome in words, then each rule that
+ * was checked, so the requester knows why before anything is submitted.
+ */
+export function PolicyVerdict({
+  decision,
+  showChecks = true,
+  className,
+}: {
+  decision: PolicyDecision
+  showChecks?: boolean
+  className?: string
+}) {
+  const copy = outcomeCopy[decision.outcome]
+  const Icon = copy.icon
+  return (
+    <div
+      className={cn('flex flex-col gap-3 rounded-xl border p-4', copy.tone, className)}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex items-start gap-3">
+        <Icon className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="text-sm font-medium text-foreground">{copy.title}</p>
+          {decision.reason && decision.outcome !== 'approved' ? (
+            <p className="text-sm text-pretty text-muted-foreground">{decision.reason.message}</p>
+          ) : null}
+        </div>
+      </div>
+      {showChecks && decision.checks.length > 0 ? (
+        <ul className="flex flex-col gap-1.5 border-t border-current/15 pt-3">
+          {decision.checks.map((check) => (
+            <CheckRow key={check.rule} check={check} />
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
+function CheckRow({ check }: { check: PolicyCheck }) {
+  const Icon = check.passed ? Check : check.blocking ? CircleAlert : TriangleAlert
+  return (
+    <li className="flex gap-2 text-xs text-muted-foreground">
+      <Icon
+        className={cn(
+          'mt-px size-3.5 shrink-0',
+          check.passed ? 'text-success' : check.blocking ? 'text-danger' : 'text-warning',
+        )}
+        aria-label={check.passed ? 'Passed' : 'Not met'}
+      />
+      <span className="text-pretty">{check.message}</span>
+    </li>
+  )
+}

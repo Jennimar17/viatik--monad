@@ -2,10 +2,11 @@
  * Product (dashboard) extensions to the Viatik brand system.
  *
  * Landing and product share one stylesheet, so everything here is additive:
- * new token names, new utilities and component classes. Nothing redefines a
- * landing token globally. The one exception, distinct warning and danger
- * hues, only switches on while a product screen is mounted (`.app-theme` on
- * its root), which also reaches portalled dialogs and sheets.
+ * new token names, new utilities and component classes. Where the product
+ * needs a different value for a landing token (status hues, the caption size
+ * and the monospace face), the token reads a variable that keeps the landing's
+ * exact value and only switches while a product screen is mounted
+ * (`.app-theme` on its root). `:root:has()` also reaches portalled dialogs.
  */
 
 /*
@@ -48,13 +49,26 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
 
-  /* Real monospace for hashes, addresses and tags. `font-mono` stays Inter for the landing. */
-  --font-code: var(--font-jetbrains), ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  /* Scoped landing tokens: same values on the landing, product values under `.app-theme`. */
+  --text-xs: var(--v-text-xs);
+  --font-mono: var(--v-font-mono);
 
-  /* Dense caption for data-heavy screens. `text-xs` stays 0.875rem for the landing. */
-  --text-2xs: 0.75rem;
-  --text-2xs--line-height: 1.35;
-  --text-2xs--letter-spacing: 0.01em;
+  /* Smallest caption, product only (e.g. the USD code next to small amounts). */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1.3;
+  --text-2xs--letter-spacing: 0.04em;
+}
+
+:root {
+  /* The landing's values, unchanged (see tokens.css). */
+  --v-text-xs: 0.875rem;
+  --v-font-mono: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+:root:has(.app-theme) {
+  /* Denser captions and a real monospace for hashes and addresses. */
+  --v-text-xs: 0.75rem;
+  --v-font-mono: var(--font-jetbrains), ui-monospace, 'SFMono-Regular', Menlo, monospace;
 }
 
 :root,
@@ -87,6 +101,11 @@
   --v-danger: #9c2b3a;
 }
 
+/*
+ * Blur is declared unprefixed only. With both `backdrop-filter` and
+ * `-webkit-backdrop-filter` in the source, the CSS pipeline keeps just the
+ * prefixed one, which current Chrome ignores; the prefix is added for Safari.
+ */
 @layer components {
   /*
    * App canvas: brand plum with two very soft light pools and the landing's
@@ -135,7 +154,6 @@
     border-color: color-mix(in srgb, var(--brand-mist) 11%, transparent);
     box-shadow: inset 0 1px 0 color-mix(in srgb, var(--brand-mist) 8%, transparent);
     backdrop-filter: blur(18px) saturate(1.2);
-    -webkit-backdrop-filter: blur(18px) saturate(1.2);
   }
 
   /* Overlays: sheets, drawers, dialogs, menus and the command palette. */
@@ -146,7 +164,6 @@
       0 30px 80px -30px color-mix(in srgb, #000 70%, transparent),
       inset 0 1px 0 color-mix(in srgb, var(--brand-mist) 12%, transparent);
     backdrop-filter: blur(24px) saturate(1.25);
-    -webkit-backdrop-filter: blur(24px) saturate(1.25);
   }
 
   /* The app sidebar is floating chrome too: glass over the canvas. */
@@ -154,7 +171,6 @@
     background: color-mix(in srgb, var(--brand-plum) 58%, transparent);
     border-color: color-mix(in srgb, var(--brand-mist) 9%, transparent) !important;
     backdrop-filter: blur(22px) saturate(1.2);
-    -webkit-backdrop-filter: blur(22px) saturate(1.2);
   }
   [data-slot='sidebar-inner'] {
     background: transparent;
@@ -164,6 +180,17 @@
   .surface {
     background: var(--v-surface);
     border: 1px solid var(--v-border);
+  }
+
+  /* Cells joined edge to edge by hairlines, e.g. a row of KPIs. */
+  .hairline-grid {
+    display: grid;
+    gap: 1px;
+    background: var(--d-hairline);
+    border: 1px solid var(--d-hairline);
+  }
+  .hairline-grid > * {
+    background: var(--v-canvas);
   }
 
   /* Boxed uppercase monospace tag, e.g. the role on the workspace switcher. */
