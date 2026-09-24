@@ -1,0 +1,627 @@
+import type { Cents } from './money'
+
+/**
+ * Core domain model. Money lives in Monad (authoritative ledger); everything
+ * in this file is the product's view of it plus private offchain metadata.
+ * Dates are ISO-8601 strings so state can be serialized as-is.
+ */
+
+export type ISODate = string
+export type Id = string
+
+// ─── People and scope ────────────────────────────────────────────────────────
+
+/** The three human product roles. Agency is an entity, not a role. */
+export type Role = 'investor' | 'agency_admin' | 'member'
+
+export type User = {
+  id: Id
+  name: string
+  email: string
+  title: string
+  timeZone: string
+  locale: string
+  createdAt: ISODate
+}
+
+export type MembershipScope = { kind: 'portfolio'; portfolioId: Id } | { kind: 'agency'; agencyId: Id }
+
+export type MembershipStatus = 'active' | 'invited' | 'revoked'
+
+export type Membership = {
+  id: Id
+  userId: Id
+  role: Role
+  scope: MembershipScope
+  status: MembershipStatus
+  invitedBy?: Id
+  createdAt: ISODate
+  revokedAt?: ISODate
+}
+
+/**
+ * Who performed an action. AI Agents are programmatic resources managed by an
+ * Agency Admin — never a human role — so they are a distinct actor kind.
+ */
+export type Actor = { kind: 'user'; userId: Id } | { kind: 'ai_agent'; agentId: Id } | { kind: 'system' }
+
+export type Portfolio = {
+  id: Id
+  name: string
+  organization: string
+  baseCurrency: 'USD'
+  timeZone: string
+  createdAt: ISODate
+}
+
+export type AgencyType =
+  | 'startup'
+  | 'agency'
+  | 'creative_studio'
+  | 'software_team'
+  | 'project_company'
+  | 'contractor_collective'
+  | 'grant_recipient'
+  | 'venture_studio_project'
+
+export type AgencyStatus = 'onboarding' | 'active' | 'frozen' | 'closed'
+
+export type Agency = {
+  id: Id
+  portfolioId: Id
+  name: string
+  type: AgencyType
+  description: string
+  website?: string
+  timeZone: string
+  status: AgencyStatus
+  createdAt: ISODate
+}
+
+// ─── Funding ─────────────────────────────────────────────────────────────────
+
+export type AgreementStatus =
+  'draft' | 'pending_acceptance' | 'active' | 'paused' | 'completed' | 'cancelled' | 'expired'
+
+export type ReleaseModel = 'milestone' | 'scheduled' | 'manual' | 'recurring'
+
+export type SpendingCategory =
+  | 'team'
+  | 'contractors'
+  | 'software'
+  | 'cloud'
+  | 'ai_services'
+  | 'research'
+  | 'marketing'
+  | 'travel'
+  | 'legal'
+  | 'equipment'
+
+export type SpendingPolicy = {
+  allowedCategories: SpendingCategory[]
+  /** Operations above this amount need Investor review as an exception. */
+  exceptionThreshold: Cents
+  reportingCadence: 'monthly' | 'quarterly' | 'per_milestone'
+  returnConditions: string
+}
+
+export type FundingAgreement = {
+  id: Id
+  portfolioId: Id
+  agencyId: Id
+  title: string
+  purpose: string
+  committed: Cents
+  releaseModel: ReleaseModel
+  startDate: ISODate
+  endDate: ISODate
+  status: AgreementStatus
+  spendingPolicy: SpendingPolicy
+  evidenceRequirements: string
+  /** Investor-side approver for exceptional operations. */
+  createdBy: Id
+  createdAt: ISODate
+  frozenAt?: ISODate
+}
+
+export type TrancheStatus =
+  'planned' | 'available' | 'requested' | 'under_review' | 'approved' | 'released' | 'rejected' | 'cancelled'
+
+export type Tranche = {
+  id: Id
+  agreementId: Id
+  index: number
+  name: string
+  amount: Cents
+  releaseCondition: 'milestone' | 'scheduled' | 'manual'
+  scheduledFor?: ISODate
+  milestoneId?: Id
+  status: TrancheStatus
+  destinationAccountId?: Id
+  requestedAt?: ISODate
+  requestedBy?: Id
+  releasedAt?: ISODate
+  releasedBy?: Id
+  receiptId?: Id
+}
+
+export type MilestoneStatus =
+  'not_started' | 'in_progress' | 'ready_for_review' | 'changes_requested' | 'approved' | 'rejected'
+
+export type Evidence = {
+  id: Id
+  kind: 'file' | 'link' | 'note'
+  name: string
+  url?: string
+  mimeType?: string
+  sizeBytes?: number
+  /** Only the hash goes onchain; the document stays private. */
+  sha256: string
+  addedAt: ISODate
+  addedBy: Id
+}
+
+export type MilestoneDecision = {
+  outcome: 'approved' | 'changes_requested' | 'rejected'
+  note?: string
+  checkedCriteria: number[]
+  decidedAt: ISODate
+  decidedBy: Id
+}
+
+export type Milestone = {
+  id: Id
+  agreementId: Id
+  trancheId: Id
+  title: string
+  description: string
+  acceptanceCriteria: string[]
+  dueDate: ISODate
+  status: MilestoneStatus
+  evidence: Evidence[]
+  submissionNote?: string
+  submittedAt?: ISODate
+  submittedBy?: Id
+  evidenceHash?: string
+  decision?: MilestoneDecision
+}
+
+export type VaultKind = 'portfolio' | 'funding' | 'agency_reserve' | 'yield'
+
+export type Vault = {
+  id: Id
+  kind: VaultKind
+  portfolioId: Id
+  name: string
+  agreementId?: Id
+  agencyId?: Id
+  asset: 'USDC'
+  available: boolean
+}
+
+// ─── Operating capital ───────────────────────────────────────────────────────
+
+export type AccountTemplate = 'operations' | 'people' | 'vendors' | 'taxes' | 'reserve' | 'project'
+
+export type Account = {
+  id: Id
+  agencyId: Id
+  template: AccountTemplate
+  name: string
+  purpose: string
+  status: 'active' | 'frozen'
+  createdAt: ISODate
+}
+
+export type BudgetTemplate = 'team_spend' | 'tools' | 'vendors' | 'travel' | 'project' | 'ai_automation'
+export type BudgetPeriod = 'monthly' | 'quarterly' | 'one_time'
+export type BudgetStatus = 'active' | 'paused' | 'expired' | 'closed'
+
+export type Budget = {
+  id: Id
+  agencyId: Id
+  sourceAccountId: Id
+  name: string
+  purpose: string
+  template: BudgetTemplate
+  period: BudgetPeriod
+  /** Hard cap per single payment, enforced onchain. */
+  perOperationLimit: Cents
+  /** Total that may be spent in one period across all holders. */
+  periodLimit: Cents
+  /** Requests above this need an Agency Admin approval. */
+  approvalThreshold: Cents
+  allowedCategories: SpendingCategory[]
+  allowedDestinationIds: Id[]
+  expiresAt?: ISODate
+  status: BudgetStatus
+  createdBy: Id
+  createdAt: ISODate
+  pausedAt?: ISODate
+}
+
+export type AllowanceHolder = { kind: 'member'; userId: Id } | { kind: 'ai_agent'; agentId: Id }
+
+/**
+ * Permission to spend from an Agency budget. The money stays in the budget
+ * until a payment is captured — unlike a payout, which transfers ownership.
+ */
+export type SpendingAllowance = {
+  id: Id
+  budgetId: Id
+  holder: AllowanceHolder
+  periodLimit: Cents
+  perOperationLimit?: Cents
+  status: 'active' | 'revoked'
+  createdAt: ISODate
+  revokedAt?: ISODate
+}
+
+export type PaymentDestination = {
+  id: Id
+  agencyId: Id
+  name: string
+  kind: 'vendor' | 'service' | 'contractor'
+  category: SpendingCategory
+  /** Generic, country-neutral settlement label. */
+  settlementLabel: string
+  website?: string
+  status: 'approved' | 'pending_review'
+  addedAt: ISODate
+}
+
+// ─── Payments ────────────────────────────────────────────────────────────────
+
+/** Human-readable operation lifecycle; raw chain states stay in Verified details. */
+export type OperationStatus =
+  | 'scheduled'
+  | 'preparing'
+  | 'waiting_for_confirmation'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'action_required'
+
+export type RequestType = 'funds' | 'vendor_payment' | 'reimbursement' | 'automation'
+
+export type RequestStatus =
+  'needs_approval' | 'approved' | 'processing' | 'completed' | 'rejected' | 'declined' | 'cancelled'
+
+export type PolicyOutcome = 'approved' | 'needs_approval' | 'rejected'
+
+export type PolicyRuleId =
+  | 'budget_active'
+  | 'budget_not_expired'
+  | 'holder_has_access'
+  | 'destination_allowed'
+  | 'category_allowed'
+  | 'per_operation_limit'
+  | 'period_limit'
+  | 'budget_available'
+  | 'agent_daily_cap'
+  | 'agent_per_operation_max'
+  | 'agent_active'
+  | 'approval_threshold'
+
+export type PolicyCheck = {
+  rule: PolicyRuleId
+  passed: boolean
+  /** Plain-English explanation shown to the requester. */
+  message: string
+  /** When false, the rule only routes to approval instead of rejecting. */
+  blocking: boolean
+}
+
+export type PolicyDecision = {
+  outcome: PolicyOutcome
+  checks: PolicyCheck[]
+  /** The first failing blocking rule, or the approval reason. */
+  reason?: PolicyCheck
+  evaluatedAt: ISODate
+}
+
+export type RequestDestination = { kind: 'destination'; destinationId: Id } | { kind: 'member'; userId: Id }
+
+export type PaymentRequest = {
+  id: Id
+  agencyId: Id
+  budgetId: Id
+  requester: Actor
+  type: RequestType
+  destination: RequestDestination
+  amount: Cents
+  category: SpendingCategory
+  purpose: string
+  attachments: Evidence[]
+  status: RequestStatus
+  decision: PolicyDecision
+  approvedBy?: Id
+  declinedReason?: string
+  decidedAt?: ISODate
+  paymentId?: Id
+  idempotencyKey: string
+  createdAt: ISODate
+}
+
+export type PaymentType =
+  'team' | 'contractor' | 'reimbursement' | 'vendor' | 'tool' | 'refund' | 'capital_return' | 'automation'
+
+export type PaymentRecipient = { kind: 'destination'; destinationId: Id } | { kind: 'member'; userId: Id }
+
+export type Payment = {
+  id: Id
+  agencyId: Id
+  type: PaymentType
+  sourceAccountId: Id
+  budgetId?: Id
+  recipient: PaymentRecipient
+  amount: Cents
+  category: SpendingCategory
+  memo: string
+  status: OperationStatus
+  createdBy: Actor
+  approvedBy?: Id
+  scheduledFor: ISODate
+  completedAt?: ISODate
+  requestId?: Id
+  billId?: Id
+  receiptId?: Id
+  batchId?: Id
+}
+
+export type BillStatus = 'to_pay' | 'scheduled' | 'paid' | 'reconciled'
+
+export type Bill = {
+  id: Id
+  agencyId: Id
+  destinationId: Id
+  number: string
+  issueDate: ISODate
+  dueDate: ISODate
+  amount: Cents
+  category: SpendingCategory
+  accountId: Id
+  budgetId?: Id
+  status: BillStatus
+  document: Evidence
+  notes?: string
+  paymentId?: Id
+  scheduledFor?: ISODate
+  createdBy: Id
+  createdAt: ISODate
+}
+
+export type Expense = {
+  id: Id
+  agencyId: Id
+  userId: Id
+  budgetId: Id
+  merchant: string
+  amount: Cents
+  category: SpendingCategory
+  spentAt: ISODate
+  paymentId?: Id
+  receipt?: Evidence
+  createdAt: ISODate
+}
+
+/** Links a bill or expense to one canonical payment and its evidence. */
+export type Reconciliation = {
+  id: Id
+  agencyId: Id
+  paymentId: Id
+  billId?: Id
+  expenseId?: Id
+  evidenceIds: Id[]
+  receiptId: Id
+  reconciledBy: Id
+  reconciledAt: ISODate
+}
+
+// ─── Verification ────────────────────────────────────────────────────────────
+
+/** The only place blockchain terminology is allowed in the product. */
+export type VerifiedDetails = {
+  status: 'confirmed' | 'pending'
+  network: string
+  chainId: number
+  account: string
+  transaction: string
+  block: number
+  timestamp: ISODate
+  receiptHash: string
+  contractPolicy: string
+  explorerUrl: string
+  /** True while the ledger runs on the mock adapter. */
+  simulated: boolean
+}
+
+export type ReceiptKind = 'payment' | 'tranche_release' | 'deposit' | 'funding' | 'transfer' | 'allocation'
+
+export type Receipt = {
+  id: Id
+  number: string
+  kind: ReceiptKind
+  amount: Cents
+  fromLabel: string
+  toLabel: string
+  description: string
+  policyLabel: string
+  agencyId?: Id
+  portfolioId: Id
+  operationId: Id
+  evidenceIds: Id[]
+  issuedAt: ISODate
+  verified: VerifiedDetails
+}
+
+// ─── Ledger movements (capital trail) ────────────────────────────────────────
+
+export type Location =
+  | { kind: 'external'; label: string }
+  | { kind: 'vault'; vaultId: Id }
+  | { kind: 'account'; accountId: Id }
+  | { kind: 'budget'; budgetId: Id }
+  | { kind: 'recipient'; recipient: PaymentRecipient }
+
+export type MovementKind =
+  | 'deposit'
+  | 'fund_agreement'
+  | 'release_tranche'
+  | 'transfer'
+  | 'allocate'
+  | 'deallocate'
+  | 'payment'
+  | 'capital_return'
+
+/**
+ * Every balance in the product is derived from these movements, so every
+ * screen agrees. In production they mirror onchain events.
+ */
+export type Movement = {
+  id: Id
+  kind: MovementKind
+  amount: Cents
+  from: Location
+  to: Location
+  portfolioId: Id
+  agencyId?: Id
+  agreementId?: Id
+  refId?: Id
+  receiptId?: Id
+  createdAt: ISODate
+}
+
+// ─── Automations ─────────────────────────────────────────────────────────────
+
+export type AgentStatus = 'active' | 'paused' | 'expired'
+
+export type AiAgent = {
+  id: Id
+  agencyId: Id
+  name: string
+  purpose: string
+  budgetId: Id
+  dailyCap: Cents
+  perOperationMax: Cents
+  allowedDestinationIds: Id[]
+  workingBalanceLimit: Cents
+  expiresAt: ISODate
+  status: AgentStatus
+  managedBy: Id
+  createdAt: ISODate
+  pausedAt?: ISODate
+}
+
+export type AgentDecision = {
+  id: Id
+  agentId: Id
+  destinationId: Id
+  amount: Cents
+  outcome: PolicyOutcome
+  reason: string
+  requestId?: Id
+  at: ISODate
+}
+
+// ─── Activity and notifications ──────────────────────────────────────────────
+
+export type ActivityType =
+  | 'agreement_created'
+  | 'agreement_paused'
+  | 'agreement_frozen'
+  | 'capital_deposited'
+  | 'agreement_funded'
+  | 'tranche_requested'
+  | 'milestone_submitted'
+  | 'milestone_changes_requested'
+  | 'tranche_released'
+  | 'account_created'
+  | 'funds_transferred'
+  | 'budget_created'
+  | 'budget_paused'
+  | 'budget_resumed'
+  | 'allowance_assigned'
+  | 'allowance_revoked'
+  | 'payment_requested'
+  | 'payment_approved'
+  | 'payment_declined'
+  | 'payment_completed'
+  | 'policy_rejected'
+  | 'bill_added'
+  | 'bill_reconciled'
+  | 'expense_added'
+  | 'member_invited'
+  | 'member_joined'
+  | 'agent_created'
+  | 'agent_paused'
+  | 'agent_resumed'
+  | 'agency_created'
+
+export type Activity = {
+  id: Id
+  type: ActivityType
+  actor: Actor
+  portfolioId: Id
+  agencyId?: Id
+  /** For Member visibility: personal activity only. */
+  subjectUserId?: Id
+  entity: { kind: string; id: Id }
+  summary: string
+  amount?: Cents
+  createdAt: ISODate
+}
+
+export type Notification = {
+  id: Id
+  userId: Id
+  title: string
+  body: string
+  href: string
+  createdAt: ISODate
+  readAt?: ISODate
+}
+
+export type Invitation = {
+  id: Id
+  code: string
+  email: string
+  name: string
+  role: Role
+  scope: MembershipScope
+  invitedBy: Id
+  createdAt: ISODate
+  status: 'pending' | 'accepted' | 'expired'
+}
+
+// ─── Aggregate state ─────────────────────────────────────────────────────────
+
+/** Everything the product knows, as one serializable snapshot. */
+export type ViatikState = {
+  version: number
+  generatedAt: ISODate
+  users: User[]
+  memberships: Membership[]
+  invitations: Invitation[]
+  portfolios: Portfolio[]
+  agencies: Agency[]
+  agreements: FundingAgreement[]
+  tranches: Tranche[]
+  milestones: Milestone[]
+  vaults: Vault[]
+  accounts: Account[]
+  budgets: Budget[]
+  allowances: SpendingAllowance[]
+  destinations: PaymentDestination[]
+  requests: PaymentRequest[]
+  payments: Payment[]
+  bills: Bill[]
+  expenses: Expense[]
+  reconciliations: Reconciliation[]
+  receipts: Receipt[]
+  movements: Movement[]
+  agents: AiAgent[]
+  agentDecisions: AgentDecision[]
+  activity: Activity[]
+  notifications: Notification[]
+}
