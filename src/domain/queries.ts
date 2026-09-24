@@ -1,6 +1,7 @@
 import { budgetUsage } from './selectors'
 import type {
   Actor,
+  AllowanceHolder,
   Bill,
   FundingAgreement,
   Id,
@@ -30,6 +31,12 @@ export function actorName(state: ViatikState, actor: Actor): string {
   if (actor.kind === 'user') return userName(state, actor.userId)
   if (actor.kind === 'ai_agent') return state.agents.find((a) => a.id === actor.agentId)?.name ?? 'Automation'
   return 'Viatik'
+}
+
+export function holderName(state: ViatikState, holder: AllowanceHolder): string {
+  return holder.kind === 'member'
+    ? userName(state, holder.userId)
+    : (state.agents.find((a) => a.id === holder.agentId)?.name ?? 'AI Agent')
 }
 
 export function recipientName(state: ViatikState, recipient: PaymentRecipient | RequestDestination): string {

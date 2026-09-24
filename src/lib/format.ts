@@ -32,6 +32,11 @@ export function formatDateTime(iso: string, locale = 'en-US') {
   )
 }
 
+/** A date input's "yyyy-mm-dd" as midnight UTC, matching how dates are displayed. */
+export function fromDateInput(value: string): string | undefined {
+  return value ? new Date(`${value}T00:00:00Z`).toISOString() : undefined
+}
+
 /** "2 hours ago", "in 3 days", "yesterday". */
 export function formatRelative(iso: string, now: string, locale = 'en-US') {
   const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })

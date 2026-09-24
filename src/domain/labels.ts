@@ -4,6 +4,7 @@ import type {
   BudgetPeriod,
   BudgetTemplate,
   PaymentType,
+  ReceiptKind,
   ReleaseModel,
   RequestType,
   SpendingCategory,
@@ -81,6 +82,13 @@ export const budgetPeriodLabel: Record<BudgetPeriod, string> = {
   one_time: 'One-time',
 }
 
+/** What an allowance is counted per, e.g. "$500 per month". */
+export const budgetPeriodUnit: Record<BudgetPeriod, string> = {
+  monthly: 'month',
+  quarterly: 'quarter',
+  one_time: 'budget',
+}
+
 export const paymentTypeLabel: Record<PaymentType, string> = {
   team: 'Team payment',
   contractor: 'Contractor payment',
@@ -117,4 +125,13 @@ export const vaultKindLabel: Record<VaultKind, { label: string; description: str
   funding: { label: 'Funding Vault', description: 'Capital committed to an Agency and not yet released.' },
   agency_reserve: { label: 'Agency Reserve', description: 'Agency capital held back from normal spending.' },
   yield: { label: 'Yield Vault', description: 'Optional future vault for eligible idle assets.' },
+}
+
+export const receiptKindLabel: Record<ReceiptKind, string> = {
+  payment: 'Payment receipt',
+  tranche_release: 'Funding release receipt',
+  deposit: 'Deposit receipt',
+  funding: 'Funding receipt',
+  transfer: 'Transfer receipt',
+  allocation: 'Allocation receipt',
 }

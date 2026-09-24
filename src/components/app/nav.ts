@@ -120,6 +120,11 @@ export function roleHome(membership: Membership): Route {
   return `/member/${membership.scope.agencyId}/home` as Route
 }
 
+/** A receipt's page. Receipts live outside the role workspaces so they print cleanly. */
+export function receiptHref(receiptId: string): Route {
+  return `/receipts/${receiptId}` as Route
+}
+
 /** Section label for a path inside a role, used by the breadcrumb. */
 export function sectionFor(role: Role, relativePath: string): NavItem | undefined {
   const navigation = NAVIGATION[role]
