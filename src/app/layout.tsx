@@ -1,7 +1,8 @@
+import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Archivo, Inter, JetBrains_Mono } from 'next/font/google'
 
-import { publicEnv } from '@/lib/env'
+import { siteConfig } from '@/components/site/content/site'
 import './globals.css'
 
 const inter = Inter({
@@ -27,9 +28,18 @@ const jetbrains = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
-  metadataBase: new URL(publicEnv.NEXT_PUBLIC_SITE_URL),
-  title: 'Viatik',
-  applicationName: 'Viatik',
+  metadataBase: new URL(siteConfig.url),
+  title: { default: siteConfig.title, template: `%s · ${siteConfig.name}` },
+  description: siteConfig.description,
+  applicationName: siteConfig.name,
+  openGraph: {
+    type: 'website',
+    siteName: siteConfig.name,
+    locale: 'en',
+  },
+  twitter: {
+    card: 'summary',
+  },
   icons: {
     icon: [{ url: '/brand/viatik-mark-dark.svg', type: 'image/svg+xml' }],
   },
@@ -44,8 +54,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${archivo.variable} ${jetbrains.variable}`}>
-      <body className="min-h-svh antialiased">{children}</body>
+    <html lang="en" className={`${inter.variable} ${archivo.variable} ${jetbrains.variable} bg-background`}>
+      <body className="min-h-svh antialiased">
+        {children}
+        {process.env.NODE_ENV === 'production' && <Analytics />}
+      </body>
     </html>
   )
 }

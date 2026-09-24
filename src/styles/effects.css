@@ -2,6 +2,10 @@
  * Brand surfaces and motion from the original viatik.xyz landing, verbatim:
  * film grain, glass and preview panels, photo shades, scroll reveal and the
  * hero entrance animations.
+ *
+ * One intentional change: `.glass-panel` declares only the unprefixed
+ * `backdrop-filter`. With the `-webkit-` copy as well, the CSS pipeline kept
+ * just the prefixed one and current Chrome rendered the glass without blur.
  */
 
 @layer components {
@@ -30,7 +34,6 @@
       0 24px 64px -28px color-mix(in srgb, var(--brand-plum) 66%, transparent),
       inset 0 1px 0 color-mix(in srgb, var(--brand-mist) 14%, transparent);
     backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
   }
   .glass-panel.theme-light,
   .theme-light .glass-panel {

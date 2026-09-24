@@ -6,7 +6,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { publicEnv } from '@/lib/env'
 
 export const metadata: Metadata = {
-  title: 'Design system · Viatik',
+  title: 'Design system',
   robots: { index: false, follow: false },
 }
 
