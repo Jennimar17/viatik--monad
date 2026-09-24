@@ -18,10 +18,10 @@ export const siteConfig = {
   // control instead of linking to a fabricated transaction.
   explorerUrl: null as string | null,
   routes: {
-    demo: '#product',
+    demo: '/sign-in',
     signIn: '/sign-in',
-    demoRole: (role: DemoRole) =>
-      role === 'investor' ? '#for-investors' : role === 'agency-admin' ? '#for-agencies' : '#product',
+    /** Opens the product signed in as the matching person of the demo story. */
+    demoRole: (role: DemoRole) => `/sign-in?as=${role}` as const,
   },
 } as const
 

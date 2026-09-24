@@ -18,6 +18,7 @@ export function ViatikMark({ className, tone = 'light' }: MarkProps) {
       aria-hidden="true"
       width={32}
       height={32}
+      loading="eager"
       className={cn('size-8 shrink-0', className)}
     />
   )

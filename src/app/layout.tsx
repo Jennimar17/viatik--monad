@@ -54,7 +54,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${archivo.variable} ${jetbrains.variable} bg-background`}>
+    <html
+      lang="en"
+      data-scroll-behavior="smooth"
+      className={`${inter.variable} ${archivo.variable} ${jetbrains.variable} bg-background`}
+    >
       <body className="min-h-svh antialiased">
         {children}
         {process.env.NODE_ENV === 'production' && <Analytics />}

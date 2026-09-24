@@ -11,7 +11,13 @@ import type { ViatikState } from '@/domain/types'
 import { scopeStateForUser } from '@/domain/visibility'
 import { MockLedgerAdapter } from '@/ledger/mock'
 
-import { DataSourceError, type DataSource, type DispatchOptions, type OperationPhase } from './data-source'
+import {
+  DataSourceError,
+  type DataSource,
+  type DispatchOptions,
+  type InvitationPreview,
+  type OperationPhase,
+} from './data-source'
 import { planSettlement } from './settlement'
 
 const STORAGE_KEY = 'viatik:demo-state'
@@ -69,6 +75,27 @@ export class MockDataSource implements DataSource {
   async load(userId: string): Promise<ViatikState> {
     await wait(jitter(300, 900))
     return scopeStateForUser(this.read(), userId)
+  }
+
+  async lookupInvitation(code: string): Promise<InvitationPreview | null> {
+    await wait(jitter(200, 500))
+    const state = this.read()
+    const invitation = state.invitations.find((i) => i.code === code)
+    if (!invitation) return null
+    const workspace =
+      invitation.scope.kind === 'agency'
+        ? state.agencies.find((a) => a.id === (invitation.scope as { agencyId: string }).agencyId)?.name
+        : state.portfolios.find((p) => p.id === (invitation.scope as { portfolioId: string }).portfolioId)
+            ?.name
+    return {
+      code: invitation.code,
+      name: invitation.name,
+      email: invitation.email,
+      role: invitation.role,
+      status: invitation.status,
+      workspace: workspace ?? 'Viatik',
+      invitedBy: state.users.find((u) => u.id === invitation.invitedBy)?.name ?? 'Your team',
+    }
   }
 
   async dispatch<N extends CommandName>(

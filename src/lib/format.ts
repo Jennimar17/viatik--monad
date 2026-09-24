@@ -53,6 +53,27 @@ export function dayGroup(iso: string, now: string, locale = 'en-US') {
   return formatter(locale, { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(iso))
 }
 
+export function daysUntil(iso: string, now: string) {
+  return Math.ceil((new Date(iso).getTime() - new Date(now).getTime()) / DAY)
+}
+
+/** "Due in 3 days", "Due today", "2 days overdue". */
+export function dueLabel(iso: string, now: string) {
+  const days = daysUntil(iso, now)
+  if (days < 0) return `${Math.abs(days)} ${Math.abs(days) === 1 ? 'day' : 'days'} overdue`
+  if (days === 0) return 'Due today'
+  if (days === 1) return 'Due tomorrow'
+  return `Due in ${days} days`
+}
+
+/** "morning", "afternoon" or "evening" in the viewer's local time. */
+export function partOfDay(now: string) {
+  const hour = new Date(now).getHours()
+  if (hour < 12) return 'morning'
+  if (hour < 18) return 'afternoon'
+  return 'evening'
+}
+
 /** "0x12ab…9f3c" — keeps the head and tail of a hash or address. */
 export function shortHash(hash: string, head = 6, tail = 4): string {
   if (hash.length <= head + tail + 1) return hash

@@ -1,5 +1,5 @@
 import type { CommandInput, CommandName, CommandResult } from '@/domain/engine'
-import type { ViatikState } from '@/domain/types'
+import type { Invitation, Role, ViatikState } from '@/domain/types'
 import type { LedgerStatus } from '@/ledger/types'
 
 /** Human operation lifecycle shown while a command settles. */
@@ -11,6 +11,17 @@ export type DispatchOptions = {
   idempotencyKey?: string
 }
 
+/** What an invitation link may show before anyone signs in. */
+export type InvitationPreview = {
+  code: string
+  name: string
+  email: string
+  role: Role
+  status: Invitation['status']
+  workspace: string
+  invitedBy: string
+}
+
 /**
  * The only way screens read or change data. Swapping the implementation
  * (demo ↔ API) never touches UI code.
@@ -19,6 +30,8 @@ export interface DataSource {
   readonly kind: 'mock' | 'api'
   /** Everything the signed-in user is allowed to see. */
   load(userId: string): Promise<ViatikState>
+  /** Public details of an invitation link; null when the code is unknown. */
+  lookupInvitation(code: string): Promise<InvitationPreview | null>
   dispatch<N extends CommandName>(
     userId: string,
     name: N,

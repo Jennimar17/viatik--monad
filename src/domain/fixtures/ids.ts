@@ -94,24 +94,32 @@ export type DemoPersonaKey = 'investor' | 'admin' | 'member'
 export const DEMO_PERSONAS: {
   key: DemoPersonaKey
   userId: string
+  name: string
+  role: 'investor' | 'agency_admin' | 'member'
   organization: string
   href: string
 }[] = [
   {
     key: 'investor',
     userId: DEMO.users.elena,
+    name: 'Elena Duarte',
+    role: 'investor',
     organization: 'Northstar Capital',
     href: `/investor/${DEMO.portfolio}/overview`,
   },
   {
     key: 'admin',
     userId: DEMO.users.maya,
+    name: 'Maya Chen',
+    role: 'agency_admin',
     organization: 'Arc Studio',
     href: `/agency/${DEMO.agencies.arc}/overview`,
   },
   {
     key: 'member',
     userId: DEMO.users.alex,
+    name: 'Alex Morgan',
+    role: 'member',
     organization: 'Arc Studio',
     href: `/member/${DEMO.agencies.arc}/home`,
   },
