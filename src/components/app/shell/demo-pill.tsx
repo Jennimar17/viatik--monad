@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, FlaskConical, Palette, RotateCcw } from 'lucide-react'
+import { Check, FlaskConical, LayoutList, Palette, RotateCcw } from 'lucide-react'
 import type { Route } from 'next'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -22,6 +22,7 @@ import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
 import { useRole } from '../role-context'
+import { useShellUi } from './app-shell'
 
 /**
  * Hackathon demo mode: a floating glass pill to view the product as any of
@@ -33,6 +34,7 @@ export function DemoPill() {
   const { signIn } = useSession()
   const router = useRouter()
   const resetDemo = useResetDemo()
+  const { bottomBar } = useShellUi()
   const RoleIcon = roleIcons[role]
 
   return (
@@ -40,6 +42,8 @@ export function DemoPill() {
       className={cn(
         'no-print fixed right-4 z-40 sm:right-6',
         role === 'member' ? 'bottom-24 md:bottom-6' : 'bottom-4 sm:bottom-6',
+        // On phones a screen's action bar takes the bottom edge; the pill comes back when it unmounts.
+        bottomBar && 'max-md:hidden',
       )}
     >
       <DropdownMenu>
@@ -99,6 +103,9 @@ export function DemoPill() {
           <DropdownMenuSeparator />
           <DropdownMenuItem className="gap-2 rounded-lg" onClick={() => router.push('/design')}>
             <Palette className="size-4" /> Design system
+          </DropdownMenuItem>
+          <DropdownMenuItem className="gap-2 rounded-lg" onClick={() => router.push('/design/screens')}>
+            <LayoutList className="size-4" /> All screens
           </DropdownMenuItem>
           <DropdownMenuItem
             className="gap-2 rounded-lg"

@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { EmptyState } from '@/components/viatik/feedback'
+import { SectionLabel } from '@/components/viatik/layout'
 import { useCommand, useViatikState } from '@/data/react'
 import type { Notification } from '@/domain/types'
 import { dayGroup, formatRelative } from '@/lib/format'
@@ -31,7 +32,7 @@ export function NotificationsSheet({
   const section = (title: string, items: Notification[]) =>
     items.length > 0 ? (
       <div className="flex flex-col gap-1">
-        <p className="px-2 pb-1 text-xs font-medium tracking-[0.08em] text-subtle uppercase">{title}</p>
+        <SectionLabel className="px-2 pb-1">{title}</SectionLabel>
         {items.map((notification) => (
           <button
             key={notification.id}
@@ -43,7 +44,7 @@ export function NotificationsSheet({
             }}
             className={cn(
               'flex gap-3 rounded-xl p-3 text-left transition-colors outline-none hover:bg-muted/50 focus-visible:bg-muted/50',
-              !notification.readAt && 'bg-mist/[0.05]',
+              !notification.readAt && 'bg-mist/5',
             )}
           >
             <span
@@ -68,7 +69,7 @@ export function NotificationsSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full gap-0 p-0 sm:max-w-md">
+      <SheetContent className="gap-0 p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-md">
         <SheetHeader className="border-b border-border px-5 py-4">
           <SheetTitle className="font-display text-xl font-medium">Notifications</SheetTitle>
           <SheetDescription>

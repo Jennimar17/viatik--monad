@@ -90,24 +90,23 @@ export function Topbar() {
         <button
           type="button"
           onClick={openCommand}
-          className="flex h-9 items-center gap-2 rounded-full border border-hairline bg-mist/[0.04] pr-2 pl-3 text-sm text-subtle transition-colors outline-none hover:bg-mist/[0.08] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring sm:w-56 lg:w-72"
-          aria-label="Search"
+          className="flex h-9 items-center gap-2 rounded-full border border-hairline bg-mist/5 pr-2 pl-3 text-sm text-subtle transition-colors outline-none hover:bg-mist/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring sm:w-56 lg:w-72"
         >
           <Search className="size-4" aria-hidden="true" />
-          <span className="hidden flex-1 text-left sm:inline">Search or jump to…</span>
+          <span className="flex-1 text-left max-sm:sr-only">Search or jump to…</span>
           <Kbd className="hidden sm:inline-flex">⌘K</Kbd>
         </button>
         <button
           type="button"
           onClick={openNotifications}
-          className="relative inline-flex size-9 items-center justify-center rounded-full border border-hairline bg-mist/[0.04] text-muted-foreground transition-colors outline-none hover:bg-mist/[0.08] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="relative inline-flex size-9 items-center justify-center rounded-full border border-hairline bg-mist/5 text-muted-foreground transition-colors outline-none hover:bg-mist/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={
             counts.notifications > 0 ? `Notifications, ${counts.notifications} unread` : 'Notifications'
           }
         >
           <Bell className="size-4" />
           {counts.notifications > 0 ? (
-            <span className="absolute -top-0.5 -right-0.5 flex min-w-4 items-center justify-center rounded-full bg-mist px-1 text-[10px] leading-4 font-medium text-primary-foreground">
+            <span className="absolute -top-0.5 -right-0.5 flex min-w-4 items-center justify-center rounded-full bg-mist px-1 text-2xs leading-4 font-medium text-primary-foreground">
               {counts.notifications}
             </span>
           ) : null}

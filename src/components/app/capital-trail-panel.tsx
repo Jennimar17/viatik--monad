@@ -9,7 +9,7 @@ import { formatUsd, sum } from '@/domain/money'
 import { accountName, budgetName, receiptFor, recipientName } from '@/domain/queries'
 import { agreementCapital } from '@/domain/selectors'
 import type { Location, Movement, ViatikState } from '@/domain/types'
-import { formatDateTime } from '@/lib/format'
+import { formatDateTime, pluralize } from '@/lib/format'
 
 import { useReceiptDrawer } from './receipt-details'
 
@@ -38,8 +38,6 @@ export function locationLabel(state: ViatikState, location: Location): string {
       return recipientName(state, location.recipient)
   }
 }
-
-const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`
 
 /**
  * Commitment → release → budget → payment → receipt for one agreement, plus
@@ -125,7 +123,7 @@ export function CapitalTrailPanel({ state, agreementId }: { state: ViatikState; 
             label: 'Commitment',
             title: agreement.title,
             amount: capital.committed,
-            detail: plural(trancheCount, 'tranche'),
+            detail: pluralize(trancheCount, 'tranche'),
           },
           {
             id: 'fund',
@@ -137,7 +135,7 @@ export function CapitalTrailPanel({ state, agreementId }: { state: ViatikState; 
           {
             id: 'release',
             label: 'Released',
-            title: `${plural(released.length, 'tranche')} released`,
+            title: `${pluralize(released.length, 'tranche')} released`,
             amount: capital.released,
             detail: 'To Agency accounts',
           },
@@ -149,20 +147,20 @@ export function CapitalTrailPanel({ state, agreementId }: { state: ViatikState; 
               movements.filter((m) => m.kind === 'allocate'),
               (m) => m.amount,
             ),
-            detail: plural(budgetCount, 'budget'),
+            detail: pluralize(budgetCount, 'budget'),
           },
           {
             id: 'payment',
             label: 'Payments',
-            title: plural(payments.length, 'payment'),
+            title: pluralize(payments.length, 'payment'),
             amount: sum(payments, (m) => m.amount),
             detail: 'Team, vendors and tools',
           },
           {
             id: 'receipt',
             label: 'Receipts',
-            title: `${plural(receiptCount, 'verifiable receipt')}`,
-            detail: 'Recorded on Monad',
+            title: `${pluralize(receiptCount, 'verifiable receipt')}`,
+            detail: 'In the verified record',
           },
         ]}
       />

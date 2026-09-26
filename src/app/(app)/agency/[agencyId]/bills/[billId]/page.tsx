@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import { Amount } from '@/components/viatik/amount'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
 import { KeyValueList, PageHeader, Panel } from '@/components/viatik/layout'
+import { Steps } from '@/components/viatik/operation'
 import { StatusBadge } from '@/components/viatik/status'
 import { useCommand, useViatikState } from '@/data/react'
 import { categoryLabel } from '@/domain/labels'
@@ -38,10 +39,18 @@ export default function BillDetailPage() {
   const [sheet, setSheet] = React.useState<'pay' | 'reconcile' | null>(null)
 
   const bill = state.bills.find((b) => b.id === billId && b.agencyId === agencyId)
+  // The pay form starts from the bill's own account and budget; closing the sheet restores them.
   const [accountId, setAccountId] = React.useState<string | null>(bill?.accountId ?? null)
   const [budgetId, setBudgetId] = React.useState<string>(bill?.budgetId ?? NO_BUDGET)
   const [when, setWhen] = React.useState<'now' | 'schedule'>('now')
   const [scheduledFor, setScheduledFor] = React.useState('')
+  const resetPayForm = () => {
+    pay.reset()
+    setAccountId(bill?.accountId ?? null)
+    setBudgetId(bill?.budgetId ?? NO_BUDGET)
+    setWhen('now')
+    setScheduledFor('')
+  }
   if (!bill) {
     return (
       <ScreenUnavailable
@@ -74,7 +83,7 @@ export default function BillDetailPage() {
     !payingNow && scheduledIso && scheduledIso <= now ? 'Choose a date in the future.' : undefined
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <PageHeader
         eyebrow={
           <Link href={href('bills')} className="hover:text-foreground">
@@ -168,32 +177,35 @@ export default function BillDetailPage() {
           </Panel>
 
           <Panel title="Payment and evidence">
-            <ol className="flex flex-col gap-4">
-              <Step done label="Bill added" detail={formatDateTime(bill.createdAt)} />
-              <Step
-                done={payment?.status === 'completed'}
-                current={bill.status === 'scheduled'}
-                label={
-                  bill.status === 'scheduled'
-                    ? `Payment scheduled for ${formatDate(bill.scheduledFor ?? bill.dueDate)}`
-                    : 'Payment completed'
-                }
-                detail={
-                  payment?.completedAt
+            <Steps
+              steps={[
+                { id: 'added', label: 'Bill added', detail: formatDateTime(bill.createdAt), state: 'done' },
+                {
+                  id: 'paid',
+                  label:
+                    bill.status === 'scheduled'
+                      ? `Payment scheduled for ${formatDate(bill.scheduledFor ?? bill.dueDate)}`
+                      : 'Payment completed',
+                  detail: payment?.completedAt
                     ? `${formatDateTime(payment.completedAt)} · ${formatUsd(payment.amount, { withCode: true })}`
-                    : undefined
-                }
-              />
-              <Step
-                done={Boolean(reconciliation)}
-                label="Reconciled"
-                detail={
-                  reconciliation
+                    : undefined,
+                  state:
+                    payment?.status === 'completed'
+                      ? 'done'
+                      : bill.status === 'scheduled'
+                        ? 'current'
+                        : 'upcoming',
+                },
+                {
+                  id: 'reconciled',
+                  label: 'Reconciled',
+                  detail: reconciliation
                     ? `${userName(state, reconciliation.reconciledBy)} · ${formatDateTime(reconciliation.reconciledAt)}`
-                    : 'Bill, payment, and evidence linked'
-                }
-              />
-            </ol>
+                    : 'Bill, payment, and evidence linked',
+                  state: reconciliation ? 'done' : 'upcoming',
+                },
+              ]}
+            />
             <ReceiptDetailsButton receipt={receipt} className="mt-5" />
           </Panel>
         </div>
@@ -212,7 +224,7 @@ export default function BillDetailPage() {
       <ApprovalSheet
         open={sheet === 'pay'}
         onOpenChange={(open) => !open && setSheet(null)}
-        onClosed={pay.reset}
+        onClosed={resetPayForm}
         title="Pay bill"
         description={`${vendorName} · ${bill.number}`}
         summary={{
@@ -362,33 +374,5 @@ export default function BillDetailPage() {
         }}
       />
     </div>
-  )
-}
-
-function Step({
-  done,
-  current,
-  label,
-  detail,
-}: {
-  done: boolean
-  current?: boolean
-  label: string
-  detail?: string
-}) {
-  return (
-    <li className="flex items-start gap-3">
-      <span
-        className={cn(
-          'mt-1 size-2.5 shrink-0 rounded-full',
-          done ? 'bg-sage' : current ? 'pending-pulse bg-warning' : 'border border-border',
-        )}
-        aria-hidden="true"
-      />
-      <span className="flex flex-col">
-        <span className={done || current ? 'text-sm font-medium' : 'text-sm text-subtle'}>{label}</span>
-        {detail ? <span className="text-xs text-subtle">{detail}</span> : null}
-      </span>
-    </li>
   )
 }

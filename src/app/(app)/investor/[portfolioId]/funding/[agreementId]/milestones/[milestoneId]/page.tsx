@@ -8,19 +8,22 @@ import * as React from 'react'
 import { ButtonLink } from '@/components/app/button-link'
 import { EvidenceList } from '@/components/app/funding-parts'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
-import { useHref, usePermissions } from '@/components/app/role-context'
+import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
+import { useBottomBar } from '@/components/app/shell/app-shell'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Amount } from '@/components/viatik/amount'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
+import { EmptyState } from '@/components/viatik/feedback'
+import { FormActions } from '@/components/viatik/forms'
 import { KeyValueList, PageHeader, Panel } from '@/components/viatik/layout'
 import { PersonAvatar } from '@/components/viatik/people'
 import { StatusBadge } from '@/components/viatik/status'
 import { useCommand, useViatikState } from '@/data/react'
-import { cents, formatUsd } from '@/domain/money'
+import { add, formatUsd, subtract } from '@/domain/money'
 import { accountName, receiptFor, userName } from '@/domain/queries'
 import { agreementCapital } from '@/domain/selectors'
 import { milestoneStatus, trancheStatus } from '@/domain/status'
@@ -32,6 +35,7 @@ type ChangesMode = 'changes' | 'reject'
 export default function MilestoneReviewPage() {
   const { agreementId, milestoneId } = useParams<{ agreementId: string; milestoneId: string }>()
   const { state } = useViatikState()
+  const { portfolioId } = useRole()
   const href = useHref()
   const { can } = usePermissions()
   const release = useCommand('releaseTranche')
@@ -44,8 +48,16 @@ export default function MilestoneReviewPage() {
   const [lastChangesMode, setLastChangesMode] = React.useState<ChangesMode>('changes')
 
   const milestone = state.milestones.find((m) => m.id === milestoneId && m.agreementId === agreementId)
-  const agreement = state.agreements.find((a) => a.id === agreementId)
+  const agreement = state.agreements.find((a) => a.id === agreementId && a.portfolioId === portfolioId)
   const tranche = state.tranches.find((t) => t.id === milestone?.trancheId)
+  const reviewable = milestone?.status === 'ready_for_review'
+  const canDecide =
+    reviewable &&
+    can('release_tranche', {
+      createdBy: tranche?.requestedBy ? { kind: 'user', userId: tranche.requestedBy } : undefined,
+    })
+  // The action bar sits at the bottom on phones while a decision is open.
+  useBottomBar(canDecide)
   if (!milestone || !agreement || !tranche) {
     return (
       <ScreenUnavailable
@@ -59,15 +71,9 @@ export default function MilestoneReviewPage() {
   const agencyLabel = agency?.name ?? 'the Agency'
   const capital = agreementCapital(state, agreement.id)
   const covered = capital.released + tranche.amount <= capital.funded
-  const reviewable = milestone.status === 'ready_for_review'
   const destination = tranche.destinationAccountId
     ? accountName(state, tranche.destinationAccountId)
     : 'Operations'
-  const canDecide =
-    reviewable &&
-    can('release_tranche', {
-      createdBy: tranche.requestedBy ? { kind: 'user', userId: tranche.requestedBy } : undefined,
-    })
   // A decided milestone shows the criteria the Investor confirmed at the time.
   const checked = milestone.decision ? milestone.decision.checkedCriteria : draftChecked
   const allChecked = checked.length === milestone.acceptanceCriteria.length
@@ -111,8 +117,8 @@ export default function MilestoneReviewPage() {
             )}
             <span className="text-pretty text-muted-foreground">
               {covered
-                ? `Funded capital covers this release. ${formatUsd(cents(capital.funded - capital.released - tranche.amount), { withCode: true })} stays in the Funding Vault afterwards.`
-                : `Released capital cannot exceed funded capital. Fund the agreement with at least ${formatUsd(cents(capital.released + tranche.amount - capital.funded), { withCode: true })} first.`}
+                ? `Funded capital covers this release. ${formatUsd(subtract(capital.inFundingVault, tranche.amount), { withCode: true })} stays in the Funding Vault afterwards.`
+                : `Released capital cannot exceed funded capital. Fund the agreement with at least ${formatUsd(subtract(add(capital.released, tranche.amount), capital.funded), { withCode: true })} first.`}
             </span>
           </div>
         ) : null}
@@ -195,7 +201,7 @@ export default function MilestoneReviewPage() {
   )
 
   return (
-    <div className="flex flex-col gap-8 pb-20 lg:pb-0">
+    <div className="flex flex-col gap-8">
       <PageHeader
         eyebrow={
           <>
@@ -243,16 +249,18 @@ export default function MilestoneReviewPage() {
               </div>
             </Panel>
           ) : (
-            <Panel>
-              <p className="text-sm text-muted-foreground">
-                {agencyLabel} has not submitted evidence for this milestone yet.
-              </p>
+            <Panel title="Submission">
+              <EmptyState
+                compact
+                title="Nothing submitted yet"
+                description={`${agencyLabel} has not submitted evidence for this milestone.`}
+              />
             </Panel>
           )}
 
           <Panel
             title="Evidence"
-            description="Documents stay private. Only their fingerprints are recorded on Monad."
+            description="Documents stay private. Only their fingerprints are kept in the verified record."
           >
             <EvidenceList milestone={milestone} />
             {milestone.evidenceHash ? (
@@ -279,14 +287,19 @@ export default function MilestoneReviewPage() {
       </div>
 
       {canDecide ? (
-        <div className="glass-chrome fixed inset-x-0 bottom-0 z-30 flex gap-2 border-t p-3 lg:hidden">
-          <Button variant="outline" size="pill-sm" className="flex-1" onClick={() => openChanges('changes')}>
-            Request changes
+        <FormActions className="lg:hidden">
+          <div className="grid grid-cols-2 gap-2 sm:flex">
+            <Button variant="destructive" size="pill-sm" onClick={() => openChanges('reject')}>
+              Reject
+            </Button>
+            <Button variant="outline" size="pill-sm" onClick={() => openChanges('changes')}>
+              Request changes
+            </Button>
+          </div>
+          <Button size="pill-sm" disabled={!covered} onClick={() => setReleaseOpen(true)}>
+            <ShieldCheck data-icon="inline-start" /> Release tranche
           </Button>
-          <Button size="pill-sm" className="flex-1" disabled={!covered} onClick={() => setReleaseOpen(true)}>
-            Release tranche
-          </Button>
-        </div>
+        </FormActions>
       ) : null}
 
       <ApprovalSheet

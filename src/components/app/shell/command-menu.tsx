@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/command'
 import { useViatikState } from '@/data/react'
 import { formatUsd } from '@/domain/money'
-import { destinationName, recipientName, userName } from '@/domain/queries'
+import { destinationName, memberBudgets, recipientName, userName } from '@/domain/queries'
 
 import { NAVIGATION } from '../nav'
 import { useHref, usePermissions, useRole } from '../role-context'
@@ -29,8 +29,8 @@ export function CommandMenu({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const { state } = useViatikState()
-  const { role, agencyId } = useRole()
+  const { state, userId, now } = useViatikState()
+  const { role, agencyId, portfolioId } = useRole()
   const { canView, can } = usePermissions()
   const href = useHref()
   const router = useRouter()
@@ -47,7 +47,7 @@ export function CommandMenu({
 
   const actions: { label: string; path: string; icon: LucideIcon }[] = []
   if (role === 'investor') {
-    actions.push({ label: 'Create funding agreement', path: 'funding/new', icon: Plus })
+    actions.push({ label: 'Create agreement', path: 'funding/new', icon: Plus })
     actions.push({ label: 'Create Agency', path: 'agencies/new', icon: Plus })
     actions.push({ label: 'Add funds', path: 'vaults/add-funds', icon: Plus })
   }
@@ -62,8 +62,12 @@ export function CommandMenu({
     actions.push({ label: 'Add expense', path: 'expenses/new', icon: Plus })
   }
 
-  const agencies = role === 'investor' ? state.agencies : []
-  const budgets = role === 'member' ? state.budgets : inScope(state.budgets)
+  const agencies = role === 'investor' ? state.agencies.filter((a) => a.portfolioId === portfolioId) : []
+  // Members only see the budgets they can spend from.
+  const budgets =
+    role === 'member' && agencyId
+      ? memberBudgets(state, agencyId, userId, now).map((b) => b.budget)
+      : inScope(state.budgets)
   const payments = inScope(state.payments).slice(-40).reverse()
   const bills = role === 'agency_admin' ? inScope(state.bills).slice(-30).reverse() : []
   const members =

@@ -6,8 +6,9 @@ import { useParams } from 'next/navigation'
 import * as React from 'react'
 
 import { FormField, SimpleSelect } from '@/components/app/form-controls'
+import { HolderAvatar, holderFromKey, holderOptions } from '@/components/app/holders'
 import { PaymentsTable } from '@/components/app/payments-table'
-import { useHref, usePermissions } from '@/components/app/role-context'
+import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
 import { Button } from '@/components/ui/button'
 import {
@@ -23,30 +24,24 @@ import { EmptyState } from '@/components/viatik/feedback'
 import { KpiTile, UsageBar } from '@/components/viatik/finance'
 import { MoneyInput } from '@/components/viatik/forms'
 import { HairlineGrid, PageHeader, Panel } from '@/components/viatik/layout'
-import { AgentAvatar, PersonAvatar } from '@/components/viatik/people'
 import { PolicySummary } from '@/components/viatik/policy'
 import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useCommand, useViatikState } from '@/data/react'
 import { budgetPeriodLabel, budgetPeriodUnit, categoryLabel } from '@/domain/labels'
 import { formatUsd, usd, ZERO, type Cents } from '@/domain/money'
 import { describeBudgetPolicy } from '@/domain/policy'
-import { accountName, actorName, destinationName, holderName, userName } from '@/domain/queries'
+import { accountName, actorName, destinationName, holderName } from '@/domain/queries'
 import { budgetUsage, holderSpentInPeriod, isHold, spendByMonth } from '@/domain/selectors'
 import { budgetStatus, requestStatus } from '@/domain/status'
-import type { AllowanceHolder } from '@/domain/types'
 import { seriesColor, seriesKey } from '@/lib/chart-colors'
-import { formatDate, formatRelative } from '@/lib/format'
+import { formatDate, formatRelative, pluralize } from '@/lib/format'
 
 type SheetKind = 'pause' | 'assign' | 'fund' | 'revoke'
-
-function holderFromKey(key: string): AllowanceHolder {
-  const [kind, id = ''] = key.split(':')
-  return kind === 'member' ? { kind: 'member', userId: id } : { kind: 'ai_agent', agentId: id }
-}
 
 export default function BudgetDetailPage() {
   const { budgetId } = useParams<{ budgetId: string }>()
   const { state, now } = useViatikState()
+  const { scopeId: agencyId } = useRole()
   const href = useHref()
   const { can } = usePermissions()
   const [sheet, setSheet] = React.useState<SheetKind | null>(null)
@@ -61,7 +56,7 @@ export default function BudgetDetailPage() {
   const fund = useCommand('allocateToBudget')
   const revoke = useCommand('revokeAllowance')
 
-  const budget = state.budgets.find((b) => b.id === budgetId)
+  const budget = state.budgets.find((b) => b.id === budgetId && b.agencyId === agencyId)
   if (!budget) {
     return (
       <ScreenUnavailable
@@ -95,21 +90,11 @@ export default function BudgetDetailPage() {
     6,
   )
   const hasSpend = spend.some((row) => categorySeries.some((series) => Number(row[series.key] ?? 0) > 0))
-  const people = state.memberships.filter(
-    (m) => m.scope.kind === 'agency' && m.scope.agencyId === budget.agencyId && m.status === 'active',
+  const candidates = holderOptions(
+    state,
+    budget.agencyId,
+    allowances.map((a) => a.holder),
   )
-  const candidates = [
-    ...people
-      .filter((m) => !allowances.some((a) => a.holder.kind === 'member' && a.holder.userId === m.userId))
-      .map((m) => ({ value: `member:${m.userId}`, label: userName(state, m.userId) })),
-    ...state.agents
-      .filter(
-        (ag) =>
-          ag.agencyId === budget.agencyId &&
-          !allowances.some((a) => a.holder.kind === 'ai_agent' && a.holder.agentId === ag.id),
-      )
-      .map((ag) => ({ value: `agent:${ag.id}`, label: `${ag.name} · AI Agent` })),
-  ]
   const policyLines = describeBudgetPolicy(budget, {
     destinationNames: budget.allowedDestinationIds.map((id) => destinationName(state, id)),
     categoryLabels: categoryLabel,
@@ -170,7 +155,7 @@ export default function BudgetDetailPage() {
             ) : null}
             {can('assign_allowance') ? (
               <Button size="pill" onClick={() => setSheet('assign')} disabled={candidates.length === 0}>
-                <UserPlus data-icon="inline-start" /> Assign member
+                <UserPlus data-icon="inline-start" /> Assign allowance
               </Button>
             ) : null}
           </>
@@ -185,11 +170,7 @@ export default function BudgetDetailPage() {
 
       <HairlineGrid className="grid-cols-2 lg:grid-cols-4">
         <KpiTile label="Available" value={usage.available} hint="Balance minus holds" emphasis />
-        <KpiTile
-          label="Reserved"
-          value={usage.reserved}
-          hint={`${holds.length} active hold${holds.length === 1 ? '' : 's'}`}
-        />
+        <KpiTile label="Reserved" value={usage.reserved} hint={pluralize(holds.length, 'active hold')} />
         <KpiTile
           label="Spent this period"
           value={usage.spentThisPeriod}
@@ -248,11 +229,7 @@ export default function BudgetDetailPage() {
                   className="flex flex-col gap-3 border-t border-border py-4 first:border-t-0 sm:flex-row sm:items-center"
                 >
                   <span className="flex min-w-0 flex-1 items-center gap-3">
-                    {a.holder.kind === 'member' ? (
-                      <PersonAvatar name={name} size="md" />
-                    ) : (
-                      <AgentAvatar size="md" />
-                    )}
+                    <HolderAvatar state={state} holder={a.holder} size="md" />
                     <span className="flex min-w-0 flex-col">
                       <span className="truncate text-sm font-medium">{name}</span>
                       <span className="text-xs text-subtle">
@@ -286,7 +263,11 @@ export default function BudgetDetailPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Panel title="Active holds" description="Approved, waiting to settle.">
           {holds.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No money is held right now.</p>
+            <EmptyState
+              compact
+              title="No active holds"
+              description="Approved requests hold their amount here until the payment settles."
+            />
           ) : (
             <ul className="flex flex-col gap-3">
               {holds.map((r) => (
@@ -338,7 +319,7 @@ export default function BudgetDetailPage() {
       </div>
 
       <section className="flex flex-col gap-4">
-        <h2 className="font-display text-xl font-medium">Transactions</h2>
+        <h2 className="font-display text-xl font-medium">Payments</h2>
         <PaymentsTable
           payments={payments}
           showBudget={false}
@@ -362,7 +343,7 @@ export default function BudgetDetailPage() {
             ? `${budget.name} accepts requests and payments again.`
             : `No one can create new requests or payments on ${budget.name} while it is paused.`,
           reversible: 'You can change this at any time.',
-          policy: 'Paused budgets cannot create new holds, and the ledger enforces it.',
+          policy: 'Paused budgets cannot create new holds; settlement enforces it, not only the app.',
         }}
         confirmLabel={resuming ? 'Resume budget' : 'Pause budget'}
         confirmVariant={resuming ? 'default' : 'destructive'}
@@ -383,7 +364,7 @@ export default function BudgetDetailPage() {
           setHolderKey(null)
           setAllowance(usd(500))
         }}
-        title="Assign spending access"
+        title="Assign allowance"
         summary={{
           what: 'The person or automation can spend from this budget within their allowance. No money moves until they make a payment.',
           amount: allowance ?? undefined,
@@ -477,7 +458,7 @@ export default function BudgetDetailPage() {
         summary={{
           what: `${revoking ? holderName(state, revoking.holder) : 'This holder'} loses access to ${budget.name} immediately. Pending requests are cancelled.`,
           reversible: 'You can assign access again later.',
-          policy: 'Removed permissions take effect immediately, onchain and in the app.',
+          policy: 'Removed permissions take effect immediately, at settlement and in the app.',
         }}
         confirmLabel="Revoke access"
         confirmVariant="destructive"

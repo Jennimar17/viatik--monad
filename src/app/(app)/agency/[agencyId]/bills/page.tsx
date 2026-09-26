@@ -11,9 +11,7 @@ import { HairlineGrid, PageHeader } from '@/components/viatik/layout'
 import { useViatikState } from '@/data/react'
 import { sum } from '@/domain/money'
 import { billState } from '@/domain/queries'
-import { daysUntil } from '@/lib/format'
-
-const bills = (count: number) => `${count} bill${count === 1 ? '' : 's'}`
+import { daysUntil, pluralize } from '@/lib/format'
 
 export default function BillsPage() {
   const { state, now } = useViatikState()
@@ -31,7 +29,7 @@ export default function BillsPage() {
   })
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Bills"
         description="What the Agency owes vendors and contractors, paid and matched to its evidence."
@@ -50,14 +48,14 @@ export default function BillsPage() {
         <KpiTile
           label="Due this week"
           value={sum(dueThisWeek, (b) => b.amount)}
-          hint={bills(dueThisWeek.length)}
+          hint={pluralize(dueThisWeek.length, 'bill')}
         />
         <KpiTile
           label="Overdue"
           value={sum(overdue, (b) => b.amount)}
           hint={
             overdue.length
-              ? `${bills(overdue.length)} ${overdue.length === 1 ? 'needs' : 'need'} attention`
+              ? `${pluralize(overdue.length, 'bill')} ${overdue.length === 1 ? 'needs' : 'need'} attention`
               : 'Nothing overdue'
           }
         />

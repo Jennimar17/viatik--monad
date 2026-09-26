@@ -108,6 +108,7 @@ function CheckRow({ check }: { check: PolicyCheck }) {
           'mt-px size-3.5 shrink-0',
           check.passed ? 'text-success' : check.blocking ? 'text-danger' : 'text-warning',
         )}
+        role="img"
         aria-label={check.passed ? 'Passed' : 'Not met'}
       />
       <span className="text-pretty">{check.message}</span>

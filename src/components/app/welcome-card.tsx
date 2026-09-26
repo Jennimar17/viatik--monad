@@ -83,7 +83,7 @@ export function WelcomeCard() {
   return (
     <section
       aria-label={`Welcome, ${roleLabel[role]}`}
-      className="relative flex flex-col gap-4 rounded-2xl border border-mist/15 bg-mist/[0.04] p-5 sm:flex-row sm:gap-5 sm:p-6"
+      className="relative flex flex-col gap-4 rounded-2xl border border-mist/15 bg-mist/5 p-5 sm:flex-row sm:gap-5 sm:p-6"
     >
       <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-border text-subtle">
         <Icon className="size-5" aria-hidden="true" />

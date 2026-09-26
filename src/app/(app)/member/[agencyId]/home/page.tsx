@@ -14,25 +14,23 @@ import { PageHeader, Panel } from '@/components/viatik/layout'
 import { PolicySummary } from '@/components/viatik/policy'
 import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useViatikState } from '@/data/react'
-import { categoryLabel } from '@/domain/labels'
-import { cents, formatUsd } from '@/domain/money'
+import { budgetPeriodUnit, categoryLabel } from '@/domain/labels'
+import { formatUsd, min, sum } from '@/domain/money'
 import { describeBudgetPolicy } from '@/domain/policy'
 import { destinationName, memberBudgets, recipientName } from '@/domain/queries'
 import { requestStatus } from '@/domain/status'
 import { formatDate, formatRelative, formatShortDate } from '@/lib/format'
 
-const periodWord = { monthly: 'month', quarterly: 'quarter', one_time: 'budget' } as const
-
 export default function MemberHomePage() {
   const { state, now, user, userId } = useViatikState()
-  const { agencyId = '' } = useRole()
+  const { scopeId: agencyId } = useRole()
   const href = useHref()
   const agency = state.agencies.find((a) => a.id === agencyId)
 
   const budgets = memberBudgets(state, agencyId, userId, now)
-  const availableTotal = cents(budgets.reduce((sum, b) => sum + Math.min(b.remaining, b.usage.available), 0))
-  const limitTotal = budgets.reduce((sum, b) => sum + b.allowance.periodLimit, 0)
-  const usedTotal = budgets.reduce((sum, b) => sum + b.used, 0)
+  const availableTotal = sum(budgets, (b) => min(b.remaining, b.usage.available))
+  const limitTotal = sum(budgets, (b) => b.allowance.periodLimit)
+  const usedTotal = sum(budgets, (b) => b.used)
   const main = [...budgets].sort((a, b) => b.allowance.periodLimit - a.allowance.periodLimit)[0]
 
   const myRequests = state.requests.filter(
@@ -56,7 +54,7 @@ export default function MemberHomePage() {
   const missing = expenses.filter((e) => !e.receipt)
 
   return (
-    <div className="flex flex-col gap-6 sm:gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         eyebrow={
           <>
@@ -103,8 +101,8 @@ export default function MemberHomePage() {
               <span className="text-sm text-muted-foreground">Available to spend</span>
               <Amount value={availableTotal} size="display" />
               <span className="text-sm text-subtle">
-                {formatUsd(cents(usedTotal), { withCode: true })} used of{' '}
-                {formatUsd(cents(limitTotal), { withCode: true })} this period
+                {formatUsd(usedTotal, { withCode: true })} used of {formatUsd(limitTotal, { withCode: true })}{' '}
+                this period
               </span>
             </div>
             <ul className="flex flex-col gap-3">
@@ -116,10 +114,10 @@ export default function MemberHomePage() {
                   >
                     <span className="flex items-center justify-between text-sm">
                       <span className="font-medium">{b.budget.name}</span>
-                      <span className="text-subtle">{formatUsd(cents(b.remaining))} left</span>
+                      <span className="text-subtle">{formatUsd(b.remaining)} left</span>
                     </span>
                     <UsageBar
-                      used={cents(b.used)}
+                      used={b.used}
                       limit={b.allowance.periodLimit}
                       label={`${b.budget.name} allowance`}
                       showLegend={false}
@@ -138,7 +136,7 @@ export default function MemberHomePage() {
       {missing.length > 0 ? (
         <Link
           href={href('expenses')}
-          className="flex items-center gap-4 rounded-xl border border-warning/30 bg-warning-soft p-4 outline-none hover:bg-warning/[0.18] focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex items-center gap-4 rounded-xl border border-warning/30 bg-warning-soft p-4 transition-colors outline-none hover:bg-warning/20 focus-visible:ring-2 focus-visible:ring-ring"
         >
           <FileWarning className="size-5 shrink-0 text-warning" aria-hidden="true" />
           <span className="flex min-w-0 flex-1 flex-col">
@@ -165,9 +163,11 @@ export default function MemberHomePage() {
           }
         >
           {pending.length === 0 ? (
-            <p className="py-2 text-sm text-muted-foreground">
-              No pending requests. Requests waiting for approval will show here.
-            </p>
+            <EmptyState
+              compact
+              title="No pending requests"
+              description="Requests waiting for approval will show here."
+            />
           ) : (
             <ul className="flex flex-col">
               {pending.map((r) => (
@@ -207,7 +207,11 @@ export default function MemberHomePage() {
               </span>
             </div>
           ) : (
-            <p className="py-2 text-sm text-muted-foreground">No payments scheduled for you right now.</p>
+            <EmptyState
+              compact
+              title="No payments scheduled"
+              description="Payouts your Agency schedules for you will show here."
+            />
           )}
         </Panel>
       </div>
@@ -222,7 +226,7 @@ export default function MemberHomePage() {
           }
         >
           {expenses.length === 0 ? (
-            <p className="py-2 text-sm text-muted-foreground">Your expenses will appear here.</p>
+            <EmptyState compact title="No expenses yet" description="Your expenses will appear here." />
           ) : (
             <ul className="flex flex-col">
               {expenses.slice(0, 5).map((e) => (
@@ -257,7 +261,7 @@ export default function MemberHomePage() {
             <PolicySummary
               title="In plain language"
               lines={[
-                `You can spend up to ${formatUsd(main.allowance.periodLimit, { withCode: true })} per ${periodWord[main.budget.period]}.`,
+                `You can spend up to ${formatUsd(main.allowance.periodLimit, { withCode: true })} per ${budgetPeriodUnit[main.budget.period]}.`,
                 ...describeBudgetPolicy(main.budget, {
                   destinationNames: main.budget.allowedDestinationIds.map((id) => destinationName(state, id)),
                   categoryLabels: categoryLabel,

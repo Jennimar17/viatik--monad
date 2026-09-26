@@ -25,7 +25,7 @@ import {
 } from '@/components/app/funding-parts'
 import { PageTabs } from '@/components/app/page-tabs'
 import { useReceiptDrawer } from '@/components/app/receipt-details'
-import { useHref } from '@/components/app/role-context'
+import { useHref, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
 import { Button } from '@/components/ui/button'
 import {
@@ -35,28 +35,22 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
+import { EmptyState } from '@/components/viatik/feedback'
 import { PageHeader, Panel } from '@/components/viatik/layout'
 import { OrgAvatar } from '@/components/viatik/people'
 import { PolicySummary } from '@/components/viatik/policy'
 import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useCommand, useViatikState } from '@/data/react'
-import { categoryLabel } from '@/domain/labels'
+import { categoryLabel, releaseModelLabel } from '@/domain/labels'
 import { formatUsd } from '@/domain/money'
 import { receiptFor } from '@/domain/queries'
 import { agreementStatus } from '@/domain/status'
-import type { ReleaseModel } from '@/domain/types'
 import { formatDate } from '@/lib/format'
-
-const releaseTag: Record<ReleaseModel, string> = {
-  milestone: 'Milestone releases',
-  scheduled: 'Scheduled releases',
-  manual: 'Manual releases',
-  recurring: 'Recurring releases',
-}
 
 export default function AgreementDetailPage() {
   const { agreementId } = useParams<{ agreementId: string }>()
   const { state, now } = useViatikState()
+  const { portfolioId } = useRole()
   const href = useHref()
   const [fundOpen, setFundOpen] = React.useState(false)
   const [pauseOpen, setPauseOpen] = React.useState(false)
@@ -65,7 +59,7 @@ export default function AgreementDetailPage() {
   const receipts = useReceiptDrawer()
   const pause = useCommand('setAgreementPaused')
 
-  const agreement = state.agreements.find((a) => a.id === agreementId)
+  const agreement = state.agreements.find((a) => a.id === agreementId && a.portfolioId === portfolioId)
   if (!agreement) {
     return (
       <ScreenUnavailable
@@ -101,7 +95,7 @@ export default function AgreementDetailPage() {
         meta={
           <>
             <StatusBadge status={agreementStatus[agreement.status]} size="md" />
-            <Tag>{releaseTag[agreement.releaseModel]}</Tag>
+            <Tag>{releaseModelLabel[agreement.releaseModel].label}</Tag>
             <span className="text-sm text-subtle">
               {formatDate(agreement.startDate)} – {formatDate(agreement.endDate)}
             </span>
@@ -134,7 +128,7 @@ export default function AgreementDetailPage() {
               </DropdownMenuContent>
             </DropdownMenu>
             <Button size="pill" onClick={() => setFundOpen(true)}>
-              <HandCoins data-icon="inline-start" /> Add funds
+              <HandCoins data-icon="inline-start" /> Fund agreement
             </Button>
           </>
         }
@@ -213,7 +207,7 @@ export default function AgreementDetailPage() {
                       `Released capital can only be used for ${policy.allowedCategories.map((c) => categoryLabel[c].toLowerCase()).join(', ')}.`,
                       `Any single operation above ${formatUsd(policy.exceptionThreshold, { withCode: true })} comes to you as an exception.`,
                       'Nobody can approve their own request, including Agency Admins.',
-                      'Budgets and member limits are enforced on Monad, not only in the app.',
+                      'Budgets and Member limits are enforced by the funding contract, not only in the app.',
                     ]}
                   />
                 </Panel>
@@ -228,10 +222,12 @@ export default function AgreementDetailPage() {
               <div className="flex flex-col gap-6">
                 {withEvidence.length === 0 ? (
                   <Panel>
-                    <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <FileText className="size-4" aria-hidden="true" /> Milestone evidence will appear here
-                      once the Agency submits it.
-                    </p>
+                    <EmptyState
+                      compact
+                      icon={<FileText />}
+                      title="No documents yet"
+                      description="Milestone evidence will appear here once the Agency submits it."
+                    />
                   </Panel>
                 ) : (
                   withEvidence.map((m) => (
@@ -271,7 +267,7 @@ export default function AgreementDetailPage() {
         onClosed={pause.reset}
         title={resuming ? 'Resume agreement' : 'Pause agreement'}
         summary={{
-          what: paused
+          what: resuming
             ? 'The agreement becomes active again. Pending tranche requests can be reviewed and released.'
             : 'No tranche can be released while the agreement is paused. Money already released to the Agency is not affected.',
           reversible: resuming

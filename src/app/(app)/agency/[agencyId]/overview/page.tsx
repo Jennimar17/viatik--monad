@@ -19,7 +19,7 @@ import { WelcomeCard } from '@/components/app/welcome-card'
 import { Amount } from '@/components/viatik/amount'
 import { MoneyBarChart } from '@/components/viatik/charts'
 import { EmptyState } from '@/components/viatik/feedback'
-import { KpiTile, UsageBar } from '@/components/viatik/finance'
+import { BudgetHealth, KpiTile } from '@/components/viatik/finance'
 import { HairlineGrid, PageHeader, Panel } from '@/components/viatik/layout'
 import { PersonAvatar } from '@/components/viatik/people'
 import { StatusBadge, Tag } from '@/components/viatik/status'
@@ -34,15 +34,15 @@ import {
   openBills,
 } from '@/domain/queries'
 import { agencyCapital, budgetUsage, spendByMonth } from '@/domain/selectors'
-import { trancheStatus } from '@/domain/status'
+import { budgetStatus, trancheStatus } from '@/domain/status'
 import { seriesColor, seriesKey } from '@/lib/chart-colors'
-import { dueLabel, formatDate, formatRelative, partOfDay } from '@/lib/format'
+import { dueLabel, formatDate, formatRelative, partOfDay, pluralize } from '@/lib/format'
 
 const monthName = new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' })
 
 export default function AgencyOverviewPage() {
   const { state, now, user } = useViatikState()
-  const { agencyId = '' } = useRole()
+  const { scopeId: agencyId } = useRole()
   const href = useHref()
   const { can } = usePermissions()
 
@@ -141,7 +141,7 @@ export default function AgencyOverviewPage() {
         <KpiTile
           label="Allocated to budgets"
           value={capital.allocated}
-          hint={`${budgets.filter((b) => b.status === 'active').length} active budgets`}
+          hint={pluralize(budgets.filter((b) => b.status === 'active').length, 'active budget')}
         />
         <KpiTile label="Reserved for payments" value={capital.reserved} hint="Held for approved requests" />
         <KpiTile
@@ -294,37 +294,28 @@ export default function AgencyOverviewPage() {
             <EmptyState
               compact
               title="No budgets yet"
-              description="Create a budget to assign capital, limits and approved uses."
+              description="Create a budget to assign capital, limits, and approved uses."
             />
           ) : (
-            <ul className="flex flex-col gap-4">
-              {budgets.map((budget) => {
+            <BudgetHealth
+              budgets={budgets.map((budget) => {
                 const usage = budgetUsage(state, budget, now)
-                return (
-                  <li key={budget.id}>
-                    <Link
-                      href={href(`budgets/${budget.id}`)}
-                      className="flex flex-col gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <span className="flex items-center justify-between gap-2 text-sm">
-                        <span className="truncate font-medium">{budget.name}</span>
-                        {budget.status !== 'active' ? (
-                          <StatusBadge status={{ label: 'Paused', tone: 'warning' }} />
-                        ) : (
-                          <span className="text-xs text-subtle">{formatUsd(usage.available)} available</span>
-                        )}
-                      </span>
-                      <UsageBar
-                        used={usage.spentThisPeriod}
-                        reserved={usage.reserved}
-                        limit={budget.periodLimit}
-                        label={`${budget.name} usage`}
-                      />
-                    </Link>
-                  </li>
-                )
+                return {
+                  id: budget.id,
+                  name: budget.name,
+                  used: usage.spentThisPeriod,
+                  reserved: usage.reserved,
+                  limit: budget.periodLimit,
+                  href: href(`budgets/${budget.id}`),
+                  note:
+                    budget.status !== 'active' ? (
+                      <StatusBadge status={budgetStatus[budget.status]} />
+                    ) : (
+                      `${formatUsd(usage.available)} available`
+                    ),
+                }
               })}
-            </ul>
+            />
           )}
         </Panel>
       </div>

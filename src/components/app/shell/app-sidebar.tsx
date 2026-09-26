@@ -32,8 +32,8 @@ import { OrgAvatar, roleIcons } from '@/components/viatik/people'
 import { Tag } from '@/components/viatik/status'
 import { ViatikMark } from '@/components/viatik/viatik-logo'
 import { useViatikState } from '@/data/react'
-import { roleLabel } from '@/domain/permissions'
-import { adminApprovals, investorApprovals, openBills } from '@/domain/queries'
+import { roleDescription, roleLabel } from '@/domain/permissions'
+import { adminApprovals, investorApprovals, openBills, unreadCount } from '@/domain/queries'
 import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
@@ -115,19 +115,15 @@ export function AppSidebar() {
   )
 }
 
-const roleNotes = {
-  investor: 'You set funding boundaries and review exceptions.',
-  agency_admin: 'You turn released capital into budgets and payments.',
-  member: 'You spend within the limits assigned to you.',
-} as const
-
 function RoleNote() {
   const { role } = useRole()
   const RoleIcon = roleIcons[role]
   return (
     <div className="flex items-start gap-2.5 rounded-xl border border-hairline p-3 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
       <RoleIcon className="mt-0.5 size-4 shrink-0 text-subtle" aria-hidden="true" />
-      <p className="text-pretty">{roleNotes[role]}</p>
+      <p className="text-pretty">
+        <span className="font-medium text-foreground">{roleLabel[role]}.</span> {roleDescription[role]}
+      </p>
     </div>
   )
 }
@@ -165,7 +161,7 @@ function WorkspaceSwitcher() {
           <button
             type="button"
             aria-label={`Workspace: ${currentName}, ${roleLabel[current.role]}. Switch workspace`}
-            className="flex w-full items-center gap-2.5 rounded-xl border border-hairline bg-mist/[0.04] p-2 text-left transition-colors outline-none group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-0 hover:bg-mist/[0.08] focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex w-full items-center gap-2.5 rounded-xl border border-hairline bg-mist/5 p-2 text-left transition-colors outline-none group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-0 hover:bg-mist/10 focus-visible:ring-2 focus-visible:ring-ring"
           />
         }
       >
@@ -249,6 +245,6 @@ export function useBadgeCounts() {
               r.requester.kind === 'user' && r.requester.userId === userId && r.status === 'needs_approval',
           ).length
         : 0,
-    notifications: state.notifications.filter((n) => n.userId === userId && !n.readAt).length,
+    notifications: unreadCount(state, userId),
   }
 }

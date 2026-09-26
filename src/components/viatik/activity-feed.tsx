@@ -7,6 +7,7 @@ import { dayGroup, formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { Amount } from './amount'
+import { SectionLabel } from './layout'
 import { AgentAvatar, PersonAvatar } from './people'
 
 export type ActivityItem = {
@@ -46,9 +47,7 @@ export function ActivityFeed({
     <div className={cn('flex flex-col gap-6', className)}>
       {[...groups.entries()].map(([group, list]) => (
         <div key={group} className="flex flex-col gap-1">
-          {grouped ? (
-            <p className="pb-2 text-xs font-medium tracking-[0.08em] text-subtle uppercase">{group}</p>
-          ) : null}
+          {grouped ? <SectionLabel className="pb-2">{group}</SectionLabel> : null}
           <ul className="flex flex-col">
             {list.map((item) => {
               const Icon = item.icon ?? CircleCheck

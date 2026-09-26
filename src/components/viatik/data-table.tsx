@@ -96,6 +96,10 @@ export function DataTable<T>({
 
   const rows = table.getRowModel().rows
   const hasFilters = query !== '' || Object.values(facetValues).some(Boolean)
+  const clearFilters = () => {
+    setQuery('')
+    setFacetValues({})
+  }
   const activate = (row: Row<T>) => onRowClick?.(row.original)
   const interactive = Boolean(onRowClick)
 
@@ -136,7 +140,7 @@ export function DataTable<T>({
                       className={cn(
                         'h-8 shrink-0 rounded-full border px-3 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring',
                         active
-                          ? 'border-mist bg-mist text-primary-foreground'
+                          ? 'border-mist bg-mist/10 text-foreground'
                           : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground',
                       )}
                     >
@@ -149,10 +153,7 @@ export function DataTable<T>({
             {hasFilters ? (
               <button
                 type="button"
-                onClick={() => {
-                  setQuery('')
-                  setFacetValues({})
-                }}
+                onClick={clearFilters}
                 className="inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-xs text-subtle hover:text-foreground"
               >
                 <X className="size-3.5" /> Clear
@@ -164,11 +165,25 @@ export function DataTable<T>({
       )}
 
       {rows.length === 0 ? (
-        (empty ?? (
-          <div className="rounded-xl border border-dashed border-border px-6 py-10 text-center text-sm text-muted-foreground">
-            {hasFilters ? 'Nothing matches these filters.' : 'Nothing here yet.'}
+        hasFilters ? (
+          // Filtered out, not empty: the data exists, so offer a way back to it.
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border px-6 py-10 text-center text-sm text-muted-foreground">
+            <span>No results for these filters.</span>
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="inline-flex h-8 items-center gap-1 rounded-full border border-border px-3 text-xs font-medium text-foreground hover:bg-muted"
+            >
+              <X className="size-3.5" aria-hidden="true" /> Clear filters
+            </button>
           </div>
-        ))
+        ) : (
+          (empty ?? (
+            <div className="rounded-xl border border-dashed border-border px-6 py-10 text-center text-sm text-muted-foreground">
+              Nothing here yet.
+            </div>
+          ))
+        )
       ) : (
         <>
           {renderMobile ? (

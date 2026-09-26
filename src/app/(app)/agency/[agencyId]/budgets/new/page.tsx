@@ -7,20 +7,21 @@ import * as React from 'react'
 
 import { ButtonLink } from '@/components/app/button-link'
 import { ChipSelect, FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
+import { HolderAvatar, holderFromKey, holderOptions } from '@/components/app/holders'
 import { useHref, useRole } from '@/components/app/role-context'
+import { useBottomBar } from '@/components/app/shell/app-shell'
 import { Button } from '@/components/ui/button'
 import { Amount } from '@/components/viatik/amount'
 import { ChoiceCard, FormActions, MoneyInput, Stepper } from '@/components/viatik/forms'
 import { KeyValueList, PageHeader, Panel } from '@/components/viatik/layout'
 import { PendingOperation } from '@/components/viatik/operation'
-import { AgentAvatar, PersonAvatar } from '@/components/viatik/people'
 import { PolicySummary } from '@/components/viatik/policy'
 import { useCommand, useViatikState } from '@/data/react'
 import type { AllowanceDraft } from '@/domain/engine'
 import { budgetPeriodLabel, budgetPeriodUnit, budgetTemplate, categoryLabel } from '@/domain/labels'
 import { formatUsd, usd, ZERO, type Cents } from '@/domain/money'
 import { describeBudgetPolicy } from '@/domain/policy'
-import { destinationName, holderName, userName } from '@/domain/queries'
+import { destinationName, holderName } from '@/domain/queries'
 import { accountBalance } from '@/domain/selectors'
 import type { BudgetPeriod, BudgetTemplate, SpendingCategory } from '@/domain/types'
 import { publicEnv } from '@/lib/env'
@@ -89,13 +90,10 @@ export default function NewBudgetPage() {
   const [step, setStep] = React.useState(0)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [createdId, setCreatedId] = React.useState<string | null>(null)
+  useBottomBar()
 
   const accounts = state.accounts.filter((a) => a.agencyId === agencyId && a.status === 'active')
   const destinations = state.destinations.filter((d) => d.agencyId === agencyId && d.status === 'approved')
-  const people = state.memberships.filter(
-    (m) => m.scope.kind === 'agency' && m.scope.agencyId === agencyId && m.status === 'active',
-  )
-  const agents = state.agents.filter((a) => a.agencyId === agencyId)
 
   const [draft, setDraft] = React.useState<Draft>(() =>
     initialDraft(accounts.find((a) => a.template === 'operations')?.id ?? null),
@@ -202,27 +200,15 @@ export default function NewBudgetPage() {
   }
 
   const busy = create.phase !== 'idle' && create.phase !== 'failed'
-  const unassigned = [
-    ...people
-      .filter(
-        (m) => !draft.allowances.some((a) => a.holder.kind === 'member' && a.holder.userId === m.userId),
-      )
-      .map((m) => ({
-        value: `member:${m.userId}`,
-        label: `${userName(state, m.userId)} · ${m.role === 'agency_admin' ? 'Agency Admin' : 'Member'}`,
-      })),
-    ...agents
-      .filter(
-        (ag) => !draft.allowances.some((a) => a.holder.kind === 'ai_agent' && a.holder.agentId === ag.id),
-      )
-      .map((ag) => ({ value: `agent:${ag.id}`, label: `${ag.name} · AI Agent` })),
-  ]
-  const addHolder = (value: string) => {
-    const [kind, id = ''] = value.split(':')
-    const holder: AllowanceDraft['holder'] =
-      kind === 'member' ? { kind: 'member', userId: id } : { kind: 'ai_agent', agentId: id }
-    update({ allowances: [...draft.allowances, { key: value, holder, periodLimit: usd(500) }] })
-  }
+  const unassigned = holderOptions(
+    state,
+    agencyId,
+    draft.allowances.map((a) => a.holder),
+  )
+  const addHolder = (value: string) =>
+    update({
+      allowances: [...draft.allowances, { key: value, holder: holderFromKey(value), periodLimit: usd(500) }],
+    })
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
@@ -355,7 +341,7 @@ export default function NewBudgetPage() {
       ) : null}
 
       {step === 2 ? (
-        <Panel title="Rules" description="Enforced on Monad, not just in the app.">
+        <Panel title="Rules" description="Enforced by the funding contract, not only in the app.">
           <div className="flex flex-col gap-6">
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
               <FormField label="Per-operation limit" htmlFor="per-op" error={errors.perOperationLimit}>
@@ -438,11 +424,7 @@ export default function NewBudgetPage() {
                     className="flex flex-col gap-3 rounded-xl border border-border p-3 sm:flex-row sm:items-center"
                   >
                     <span className="flex min-w-0 flex-1 items-center gap-3">
-                      {a.holder.kind === 'member' ? (
-                        <PersonAvatar name={name} size="sm" />
-                      ) : (
-                        <AgentAvatar size="sm" />
-                      )}
+                      <HolderAvatar state={state} holder={a.holder} />
                       <span className="truncate text-sm font-medium">{name}</span>
                     </span>
                     <div className="flex items-start gap-2">

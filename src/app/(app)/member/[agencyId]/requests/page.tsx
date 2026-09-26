@@ -65,45 +65,45 @@ export default function MemberRequestsPage() {
     },
   ]
 
-  const table = (rows: PaymentRequest[]) =>
-    rows.length === 0 ? (
-      <EmptyState
-        compact
-        icon={<Send />}
-        title="No requests here"
-        description="Requests you send will appear here with their status."
-      />
-    ) : (
-      <DataTable
-        data={rows}
-        columns={columns}
-        caption="Your requests"
-        searchPlaceholder="Search requests"
-        searchText={(r) => `${r.purpose} ${recipientName(state, r.destination)}`}
-        onRowClick={(r) => router.push(href(`requests/${r.id}`))}
-        renderMobile={(r) => (
-          <div className="flex items-center justify-between gap-3">
-            <span className="flex min-w-0 flex-col gap-0.5">
-              <span className="truncate text-sm font-medium">{r.purpose}</span>
-              <span className="truncate text-xs text-subtle">
-                {formatDate(r.createdAt)} · {recipientName(state, r.destination)}
-              </span>
+  const table = (rows: PaymentRequest[]) => (
+    <DataTable
+      data={rows}
+      columns={columns}
+      caption="Your requests"
+      searchPlaceholder="Search requests"
+      searchText={(r) => `${r.purpose} ${recipientName(state, r.destination)}`}
+      onRowClick={(r) => router.push(href(`requests/${r.id}`))}
+      empty={
+        <EmptyState
+          compact
+          icon={<Send />}
+          title="No requests here"
+          description="Requests you send will appear here with their status."
+        />
+      }
+      renderMobile={(r) => (
+        <div className="flex items-center justify-between gap-3">
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span className="truncate text-sm font-medium">{r.purpose}</span>
+            <span className="truncate text-xs text-subtle">
+              {formatDate(r.createdAt)} · {recipientName(state, r.destination)}
             </span>
-            <span className="flex flex-col items-end gap-1">
-              <Amount value={r.amount} size="sm" />
-              <StatusBadge status={requestStatus[r.status]} />
-            </span>
-          </div>
-        )}
-      />
-    )
+          </span>
+          <span className="flex flex-col items-end gap-1">
+            <Amount value={r.amount} size="sm" />
+            <StatusBadge status={requestStatus[r.status]} />
+          </span>
+        </div>
+      )}
+    />
+  )
 
   const open = mine.filter((r) => IN_PROGRESS.has(r.status))
   const done = mine.filter((r) => r.status === 'completed')
   const closed = mine.filter((r) => NOT_APPROVED.has(r.status))
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Requests"
         description="Everything you asked to spend, and where it stands."

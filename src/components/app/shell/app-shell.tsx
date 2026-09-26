@@ -17,6 +17,9 @@ import { Topbar } from './topbar'
 type ShellUi = {
   openCommand: () => void
   openNotifications: () => void
+  /** True while a screen shows a sticky action bar at the bottom. */
+  bottomBar: boolean
+  setBottomBar: (active: boolean) => void
 }
 
 const ShellUiContext = React.createContext<ShellUi | null>(null)
@@ -25,6 +28,16 @@ export function useShellUi() {
   const context = React.useContext(ShellUiContext)
   if (!context) throw new Error('useShellUi must be used inside AppShell')
   return context
+}
+
+/** Screens with a bottom action bar declare it, so floating chrome moves out of the way. */
+export function useBottomBar(active = true) {
+  const { setBottomBar } = useShellUi()
+  React.useEffect(() => {
+    if (!active) return
+    setBottomBar(true)
+    return () => setBottomBar(false)
+  }, [active, setBottomBar])
 }
 
 const TABLET = '(min-width: 768px) and (max-width: 1023px)'
@@ -61,9 +74,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  const [bottomBar, setBottomBar] = React.useState(false)
   const ui = React.useMemo<ShellUi>(
-    () => ({ openCommand: () => setCommandOpen(true), openNotifications: () => setNotificationsOpen(true) }),
-    [],
+    () => ({
+      openCommand: () => setCommandOpen(true),
+      openNotifications: () => setNotificationsOpen(true),
+      bottomBar,
+      setBottomBar,
+    }),
+    [bottomBar],
   )
 
   return (

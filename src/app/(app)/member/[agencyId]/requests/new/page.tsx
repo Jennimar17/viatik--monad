@@ -10,6 +10,7 @@ import { FormField, SimpleSelect } from '@/components/app/form-controls'
 import { receiptHref } from '@/components/app/nav'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
 import { useHref, useRole } from '@/components/app/role-context'
+import { useBottomBar } from '@/components/app/shell/app-shell'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Amount } from '@/components/viatik/amount'
@@ -112,6 +113,8 @@ function NewRequest() {
       ? state.requests.find((r) => r.idempotencyKey === idempotencyKey && r.status === 'rejected')
       : undefined
   const result = created ?? rejected ?? null
+  // The form's action bar sits at the bottom until a result screen replaces it.
+  useBottomBar(budgets.length > 0 && !result)
 
   const errors = {
     budget: !budgetId ? 'Choose a budget.' : undefined,
@@ -165,7 +168,7 @@ function NewRequest() {
     const receipt = receiptFor(state, payment?.receiptId)
     const recipient = recipientName(state, result.destination)
     return (
-      <div className="mx-auto flex w-full max-w-xl flex-col gap-6 py-4">
+      <div className="mx-auto flex w-full max-w-xl flex-col gap-6 py-10">
         {result.status === 'rejected' ? (
           <>
             <PageHeader
@@ -176,8 +179,10 @@ function NewRequest() {
             <p className="flex items-start gap-2.5 rounded-xl border border-border bg-card px-4 py-3 text-sm text-pretty text-muted-foreground">
               <ShieldX className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden="true" />
               <span>
-                <span className="font-medium text-foreground">Rejected on Monad as well.</span> The budget
-                rules are enforced by the ledger, not only in the app
+                <span className="font-medium text-foreground">
+                  The settlement contract rejected it as well.
+                </span>{' '}
+                Budget rules are enforced at settlement, not only in the app
                 {command.error ? `: ${command.error}` : '.'}
               </span>
             </p>
@@ -217,13 +222,15 @@ function NewRequest() {
           </>
         ) : (
           <>
-            <div className="flex items-center gap-3">
-              <CircleCheck className="size-7 text-success" aria-hidden="true" />
-              <h1 className="font-display text-3xl font-medium tracking-tight">Payment completed</h1>
-            </div>
-            <p className="text-base text-muted-foreground">
-              The payment and its supporting evidence are now connected.
-            </p>
+            <PageHeader
+              eyebrow={
+                <span className="flex items-center gap-1.5 text-success">
+                  <CircleCheck className="size-4" aria-hidden="true" /> Approved by policy
+                </span>
+              }
+              title="Payment completed"
+              description="The payment and its supporting evidence are now connected."
+            />
             <Panel>
               <div className="flex items-center gap-4">
                 <span className="flex min-w-0 flex-1 flex-col">
@@ -251,7 +258,7 @@ function NewRequest() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
       <PageHeader
         eyebrow={
           <Link href={href('requests')} className="hover:text-foreground">
@@ -282,9 +289,7 @@ function NewRequest() {
               htmlFor="budget"
               error={touched ? errors.budget : undefined}
               hint={
-                selected
-                  ? `${formatUsd(selected.remaining as Cents, { withCode: true })} left this period`
-                  : undefined
+                selected ? `${formatUsd(selected.remaining, { withCode: true })} left this period` : undefined
               }
             >
               <SimpleSelect
@@ -294,7 +299,7 @@ function NewRequest() {
                 options={budgets.map((b) => ({
                   value: b.budget.id,
                   label: b.budget.name,
-                  description: `${formatUsd(b.remaining as Cents)} left`,
+                  description: `${formatUsd(b.remaining)} left`,
                 }))}
               />
             </FormField>
@@ -320,7 +325,7 @@ function NewRequest() {
               value={amount}
               onChange={setAmount}
               invalid={touched && Boolean(errors.amount)}
-              available={selected ? min(selected.remaining as Cents, selected.usage.available) : undefined}
+              available={selected ? min(selected.remaining, selected.usage.available) : undefined}
             />
           </FormField>
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">

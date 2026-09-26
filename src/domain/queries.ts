@@ -1,3 +1,4 @@
+import { cents, clampToZero, sum } from './money'
 import { budgetUsage } from './selectors'
 import type {
   Actor,
@@ -99,8 +100,8 @@ export function memberBudgets(state: ViatikState, agencyId: Id, userId: Id, now:
       if (!budget) return null
       const usage = budgetUsage(state, budget, now)
       const window = usage.window
-      const used = state.requests
-        .filter(
+      const used = sum(
+        state.requests.filter(
           (r) =>
             r.budgetId === budget.id &&
             r.requester.kind === 'user' &&
@@ -108,9 +109,10 @@ export function memberBudgets(state: ViatikState, agencyId: Id, userId: Id, now:
             (r.status === 'completed' || r.status === 'approved' || r.status === 'processing') &&
             r.createdAt >= window.start &&
             r.createdAt < window.end,
-        )
-        .reduce((sum, r) => sum + r.amount, 0)
-      return { allowance, budget, usage, used, remaining: Math.max(0, allowance.periodLimit - used) }
+        ),
+        (r) => r.amount,
+      )
+      return { allowance, budget, usage, used, remaining: clampToZero(cents(allowance.periodLimit - used)) }
     })
     .filter((x): x is NonNullable<typeof x> => x !== null)
 }

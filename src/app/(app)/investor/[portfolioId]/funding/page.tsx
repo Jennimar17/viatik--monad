@@ -146,7 +146,7 @@ export default function FundingPage() {
   const pending = byStatus((s) => s === 'pending_acceptance')
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Funding"
         description="Funding agreements define the commitment, how it is released, and the operating boundaries."

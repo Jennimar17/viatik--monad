@@ -83,7 +83,7 @@ export function ApprovalSheet({
     >
       <SheetContent
         side={mobile ? 'bottom' : 'right'}
-        className="max-h-[94svh] w-full gap-0 overflow-y-auto p-0 data-[side=bottom]:rounded-t-2xl sm:max-w-lg"
+        className="max-h-[94svh] gap-0 overflow-y-auto p-0 data-[side=bottom]:rounded-t-2xl data-[side=right]:w-full data-[side=right]:sm:max-w-lg"
       >
         <SheetHeader className="border-b border-border px-5 py-4 sm:px-6">
           <SheetTitle className="font-display text-xl font-medium">
@@ -111,7 +111,7 @@ export function ApprovalSheet({
                     <span className="rounded-full border border-border px-3 py-1 text-muted-foreground">
                       {summary.from}
                     </span>
-                    <ArrowRight className="size-4 text-subtle" aria-label="to" />
+                    <ArrowRight className="size-4 text-subtle" role="img" aria-label="to" />
                     <span className="rounded-full border border-border px-3 py-1 text-foreground">
                       {summary.to}
                     </span>

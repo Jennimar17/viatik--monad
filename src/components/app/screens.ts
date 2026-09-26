@@ -1,0 +1,350 @@
+import { DEMO } from '@/domain/fixtures/ids'
+import type { Role } from '@/domain/types'
+
+/**
+ * Every product screen the spec defines (A6.4–A6.7), with its build status.
+ * Drives the internal screens index at /design/screens and doubles as the
+ * checklist for the remaining front-end phases. Update it when a screen ships.
+ */
+export type ScreenStatus = 'ready' | 'planned'
+
+export type Screen = {
+  /** Path relative to the role's workspace; `[param]` marks a record page. */
+  path: string
+  title: string
+  summary: string
+  status: ScreenStatus
+  /** Phase that builds it, while planned. */
+  phase?: string
+  /** A concrete demo path to open, when the path has a parameter. */
+  open?: string
+}
+
+export const SCREENS: Record<Role, Screen[]> = {
+  investor: [
+    {
+      path: 'overview',
+      title: 'Overview',
+      summary: 'KPIs, capital states, charts, pending tranches, agencies.',
+      status: 'ready',
+    },
+    {
+      path: 'agencies',
+      title: 'Agencies',
+      summary: 'Every funded team, with filters.',
+      status: 'planned',
+      phase: '4.6',
+    },
+    {
+      path: 'agencies/new',
+      title: 'New Agency',
+      summary: 'Name, type, description, time zone, admin invite.',
+      status: 'planned',
+      phase: '4.6',
+    },
+    {
+      path: 'agencies/[agencyId]',
+      title: 'Agency detail',
+      summary: 'Overview · Spending · Team · Activity; freeze agreement.',
+      status: 'planned',
+      phase: '4.6',
+      open: `agencies/${DEMO.agencies.arc}`,
+    },
+    { path: 'funding', title: 'Funding', summary: 'Agreements by status.', status: 'ready' },
+    {
+      path: 'funding/new',
+      title: 'New agreement',
+      summary: 'Five-step wizard: commitment, tranches, milestones, policy.',
+      status: 'planned',
+      phase: '4.6',
+    },
+    {
+      path: 'funding/[agreementId]',
+      title: 'Agreement detail',
+      summary: 'Progress, tranches, capital trail, policy, documents.',
+      status: 'ready',
+      open: `funding/${DEMO.agreements.arc}`,
+    },
+    {
+      path: 'funding/[agreementId]/milestones/[milestoneId]',
+      title: 'Milestone review',
+      summary: 'Evidence, criteria, release / request changes / reject.',
+      status: 'ready',
+      open: `funding/${DEMO.agreements.arc}/milestones/${DEMO.milestones.arc2}`,
+    },
+    {
+      path: 'vaults',
+      title: 'Vaults',
+      summary: 'Portfolio, funding, reserve and yield vaults with movements.',
+      status: 'planned',
+      phase: '4.6',
+    },
+    {
+      path: 'vaults/add-funds',
+      title: 'Add funds',
+      summary: 'USDC deposit with waiting → received → credited.',
+      status: 'planned',
+      phase: '4.6',
+    },
+    {
+      path: 'approvals',
+      title: 'Approvals',
+      summary: 'Tranche requests · Exceptions · Policy changes.',
+      status: 'planned',
+      phase: '4.6',
+    },
+    {
+      path: 'activity',
+      title: 'Activity',
+      summary: 'Grouped feed with filters and CSV export.',
+      status: 'planned',
+      phase: '4.6',
+    },
+    {
+      path: 'reports',
+      title: 'Reports',
+      summary: 'Deployment and spend charts, per-agency comparison.',
+      status: 'planned',
+      phase: '4.6',
+    },
+    { path: 'team', title: 'Team', summary: 'Investors and invitations.', status: 'planned', phase: '4.6' },
+    {
+      path: 'settings',
+      title: 'Settings',
+      summary: 'Profile, portfolio, notifications, security, developer.',
+      status: 'planned',
+      phase: '4.6',
+    },
+  ],
+  agency_admin: [
+    {
+      path: 'overview',
+      title: 'Overview',
+      summary: 'KPIs, next tranche, requests, bills due, budget health.',
+      status: 'ready',
+    },
+    {
+      path: 'funding',
+      title: 'Funding',
+      summary: 'Agreement summary, tranches and release history.',
+      status: 'planned',
+      phase: '4.5a',
+    },
+    {
+      path: 'funding/tranches/[trancheId]/request',
+      title: 'Request tranche',
+      summary: 'Destination account and note.',
+      status: 'planned',
+      phase: '4.5a',
+      open: `funding/tranches/${DEMO.tranches.arc3}/request`,
+    },
+    {
+      path: 'funding/milestones/[milestoneId]/submit',
+      title: 'Submit milestone',
+      summary: 'Evidence uploader and note.',
+      status: 'planned',
+      phase: '4.5a',
+      open: `funding/milestones/${DEMO.milestones.arc3}/submit`,
+    },
+    {
+      path: 'accounts',
+      title: 'Accounts',
+      summary: 'Account cards with balances and sparklines.',
+      status: 'planned',
+      phase: '4.5a',
+    },
+    {
+      path: 'accounts/[accountId]',
+      title: 'Account detail',
+      summary: 'Balance, budgets, chart, movements.',
+      status: 'planned',
+      phase: '4.5a',
+      open: `accounts/${DEMO.accounts.arcOperations}`,
+    },
+    {
+      path: 'accounts/new',
+      title: 'New account',
+      summary: 'Template, name, purpose, initial funding.',
+      status: 'planned',
+      phase: '4.5a',
+    },
+    {
+      path: 'accounts/transfer',
+      title: 'Transfer funds',
+      summary: 'Between accounts of the Agency.',
+      status: 'planned',
+      phase: '4.5a',
+    },
+    {
+      path: 'budgets',
+      title: 'Budgets',
+      summary: 'Cards with availability, usage and holders.',
+      status: 'ready',
+    },
+    {
+      path: 'budgets/new',
+      title: 'New budget',
+      summary: 'Source → Amount → Rules → People → Review.',
+      status: 'ready',
+    },
+    {
+      path: 'budgets/[budgetId]',
+      title: 'Budget detail',
+      summary: 'KPIs, rules, allowances, holds, payments.',
+      status: 'ready',
+      open: `budgets/${DEMO.budgets.arcTools}`,
+    },
+    {
+      path: 'payments',
+      title: 'Payments',
+      summary: 'All · Team · Vendors · Reimbursements · Automation.',
+      status: 'planned',
+      phase: '4.5a',
+    },
+    {
+      path: 'payments/new',
+      title: 'New payment',
+      summary: 'Type, recipient, policy preview, operation.',
+      status: 'planned',
+      phase: '4.5a',
+    },
+    { path: 'payments/team', title: 'Pay team', summary: 'Batch payouts.', status: 'planned', phase: '4.5a' },
+    { path: 'bills', title: 'Bills', summary: 'To pay · Scheduled · Paid · Reconciled.', status: 'ready' },
+    { path: 'bills/new', title: 'Add bill', summary: 'Upload and fields.', status: 'planned', phase: '4.5a' },
+    {
+      path: 'bills/[billId]',
+      title: 'Bill detail',
+      summary: 'Document, pay or schedule, reconcile.',
+      status: 'ready',
+      open: 'bills/bill_0024',
+    },
+    {
+      path: 'bills/reconcile',
+      title: 'Reconciliation',
+      summary: 'Match paid bills to payments.',
+      status: 'ready',
+    },
+    { path: 'team', title: 'Team', summary: 'Members and invitations.', status: 'planned', phase: '4.5b' },
+    {
+      path: 'team/[memberId]',
+      title: 'Member detail',
+      summary: 'Edit allowance, revoke access.',
+      status: 'planned',
+      phase: '4.5b',
+      open: `team/${DEMO.users.alex}`,
+    },
+    {
+      path: 'automations',
+      title: 'Automations',
+      summary: 'AI Agent cards.',
+      status: 'planned',
+      phase: '4.5b',
+    },
+    {
+      path: 'automations/new',
+      title: 'New AI Agent',
+      summary: 'Purpose, budget, caps, destinations, expiry.',
+      status: 'planned',
+      phase: '4.5b',
+    },
+    {
+      path: 'automations/[agentId]',
+      title: 'AI Agent detail',
+      summary: 'Policy, daily chart, decision log.',
+      status: 'planned',
+      phase: '4.5b',
+      open: `automations/${DEMO.agent}`,
+    },
+    {
+      path: 'approvals',
+      title: 'Approvals',
+      summary: 'Queue with approval sheet.',
+      status: 'planned',
+      phase: '4.5b',
+    },
+    {
+      path: 'activity',
+      title: 'Activity',
+      summary: 'Grouped feed with filters and CSV export.',
+      status: 'planned',
+      phase: '4.5b',
+    },
+    {
+      path: 'settings',
+      title: 'Settings',
+      summary: 'Profile, approval rules, destinations, notifications, security, developer.',
+      status: 'planned',
+      phase: '4.5b',
+    },
+  ],
+  member: [
+    {
+      path: 'home',
+      title: 'Home',
+      summary: 'Available to spend, requests, next payment, receipts.',
+      status: 'ready',
+    },
+    { path: 'budget', title: 'My budget', summary: 'Assigned budgets.', status: 'planned', phase: '4.7' },
+    {
+      path: 'budget/[budgetId]',
+      title: 'Budget rules',
+      summary: 'Rules, destinations, history.',
+      status: 'planned',
+      phase: '4.7',
+      open: `budget/${DEMO.budgets.arcTools}`,
+    },
+    { path: 'requests', title: 'Requests', summary: 'By status.', status: 'ready' },
+    { path: 'requests/new', title: 'New request', summary: 'Live policy evaluation.', status: 'ready' },
+    {
+      path: 'requests/[requestId]',
+      title: 'Request detail',
+      summary: 'Progress, verdict, receipt.',
+      status: 'ready',
+    },
+    {
+      path: 'expenses',
+      title: 'Expenses',
+      summary: 'Receipt status and filters.',
+      status: 'planned',
+      phase: '4.7',
+    },
+    {
+      path: 'expenses/new',
+      title: 'New expense',
+      summary: 'Merchant, amount, receipt.',
+      status: 'planned',
+      phase: '4.7',
+    },
+    { path: 'payments', title: 'Payments', summary: 'Payouts received.', status: 'planned', phase: '4.7' },
+    { path: 'activity', title: 'Activity', summary: 'Personal activity.', status: 'planned', phase: '4.7' },
+    {
+      path: 'profile',
+      title: 'Profile',
+      summary: 'Payment destination, notifications, passkey, return funds.',
+      status: 'planned',
+      phase: '4.7',
+    },
+  ],
+}
+
+/** Screens outside the role workspaces. */
+export const SHARED_SCREENS: Screen[] = [
+  { path: '/sign-in', title: 'Sign in', summary: 'Demo personas and deep links.', status: 'ready' },
+  {
+    path: '/invite/[code]',
+    title: 'Accept invitation',
+    summary: 'Public invitation preview.',
+    status: 'ready',
+    open: '/invite/arc-sam-rivera',
+  },
+  { path: '/receipts/[receiptId]', title: 'Receipt', summary: 'Printable paper receipt.', status: 'ready' },
+  { path: '/not-found', title: '404', summary: 'Branded not found.', status: 'planned', phase: '4.7' },
+  { path: '/error', title: 'Error', summary: 'Branded error with retry.', status: 'planned', phase: '4.7' },
+  {
+    path: '/~offline',
+    title: 'Offline',
+    summary: 'Service worker fallback.',
+    status: 'planned',
+    phase: '4.9 (PWA)',
+  },
+]

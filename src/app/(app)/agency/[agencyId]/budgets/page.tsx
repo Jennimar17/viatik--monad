@@ -5,18 +5,16 @@ import Link from 'next/link'
 
 import { ButtonLink } from '@/components/app/button-link'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
-import { Amount } from '@/components/viatik/amount'
 import { EmptyState } from '@/components/viatik/feedback'
-import { KpiTile, UsageBar } from '@/components/viatik/finance'
+import { BudgetCard, KpiTile } from '@/components/viatik/finance'
 import { HairlineGrid, PageHeader } from '@/components/viatik/layout'
-import { AgentAvatar, PersonAvatar } from '@/components/viatik/people'
-import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useViatikState } from '@/data/react'
 import { budgetPeriodLabel } from '@/domain/labels'
 import { formatUsd, sum } from '@/domain/money'
-import { accountName, userName } from '@/domain/queries'
+import { accountName, holderName } from '@/domain/queries'
 import { budgetUsage } from '@/domain/selectors'
 import { budgetStatus } from '@/domain/status'
+import { pluralize } from '@/lib/format'
 
 export default function BudgetsPage() {
   const { state, now } = useViatikState()
@@ -33,7 +31,7 @@ export default function BudgetsPage() {
   ) : null
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Budgets"
         description="Budgets hold the rules: who can spend, how much, when, and where the money can go."
@@ -63,7 +61,7 @@ export default function BudgetsPage() {
                   {budgets.filter((b) => b.status === 'active').length}
                 </span>
               }
-              hint={`${budgets.length} in total`}
+              hint={pluralize(budgets.length, 'budget')}
             />
           </HairlineGrid>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -75,54 +73,28 @@ export default function BudgetsPage() {
                 <Link
                   key={budget.id}
                   href={href(`budgets/${budget.id}`)}
-                  className="surface flex flex-col gap-4 rounded-xl p-5 transition-colors outline-none hover:border-foreground/25 focus-visible:ring-2 focus-visible:ring-ring"
+                  className="group rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="flex min-w-0 flex-col gap-1">
-                      <span className="truncate font-medium">{budget.name}</span>
-                      <span className="text-xs text-subtle">
-                        From {accountName(state, budget.sourceAccountId)}
-                      </span>
-                    </span>
-                    <span className="flex flex-col items-end gap-1.5">
-                      <StatusBadge status={budgetStatus[budget.status]} />
-                      <Tag>{budgetPeriodLabel[budget.period]}</Tag>
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-xs text-subtle">Available</span>
-                    <Amount value={usage.available} size="lg" />
-                  </div>
-                  <UsageBar
-                    used={usage.spentThisPeriod}
+                  <BudgetCard
+                    name={budget.name}
+                    source={accountName(state, budget.sourceAccountId)}
+                    period={budgetPeriodLabel[budget.period]}
+                    status={budgetStatus[budget.status]}
+                    allocated={usage.balance}
+                    spent={usage.spentThisPeriod}
                     reserved={usage.reserved}
-                    limit={budget.periodLimit}
-                    label={`${budget.name} usage`}
+                    assignees={holders.map((h) => ({
+                      name: holderName(state, h.holder),
+                      kind: h.holder.kind === 'member' ? 'user' : 'ai_agent',
+                    }))}
+                    action={
+                      <span className="text-xs text-subtle">
+                        {holders.length === 0 ? 'No one assigned · ' : ''}Max{' '}
+                        {formatUsd(budget.perOperationLimit)} per payment
+                      </span>
+                    }
+                    className="h-full transition-colors group-hover:border-foreground/25"
                   />
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="flex -space-x-2">
-                      {holders
-                        .slice(0, 5)
-                        .map((h) =>
-                          h.holder.kind === 'member' ? (
-                            <PersonAvatar
-                              key={h.id}
-                              name={userName(state, h.holder.userId)}
-                              size="xs"
-                              className="ring-2 ring-card"
-                            />
-                          ) : (
-                            <AgentAvatar key={h.id} size="xs" className="ring-2 ring-card" />
-                          ),
-                        )}
-                      {holders.length === 0 ? (
-                        <span className="text-xs text-subtle">No one assigned</span>
-                      ) : null}
-                    </span>
-                    <span className="text-xs text-subtle">
-                      Max {formatUsd(budget.perOperationLimit)} per payment
-                    </span>
-                  </div>
                 </Link>
               )
             })}

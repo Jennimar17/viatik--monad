@@ -35,7 +35,7 @@ const SUGGESTED = 50
 const optionClass = (selected: boolean) =>
   cn(
     'flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring',
-    selected ? 'border-mist bg-mist/[0.07]' : 'border-border hover:bg-muted/40',
+    selected ? 'border-mist bg-mist/10' : 'border-border hover:bg-muted/40',
   )
 
 export default function ReconcilePage() {
@@ -82,7 +82,7 @@ export default function ReconcilePage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <PageHeader
         eyebrow={
           <Link href={href('bills')} className="hover:text-foreground">
@@ -160,7 +160,11 @@ export default function ReconcilePage() {
           >
             {bill ? (
               suggestions.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No completed payment matches this bill yet.</p>
+                <EmptyState
+                  compact
+                  title="No matching payment yet"
+                  description="Completed payments to this vendor for a similar amount will show here."
+                />
               ) : (
                 <ul className="flex flex-col gap-2">
                   {suggestions.map(({ payment: p, score: s }) => (
@@ -194,7 +198,11 @@ export default function ReconcilePage() {
                 </ul>
               )
             ) : (
-              <p className="text-sm text-muted-foreground">Nothing selected.</p>
+              <EmptyState
+                compact
+                title="Select a bill"
+                description="Pick a paid bill on the left to see the payments that match it."
+              />
             )}
             <Button
               size="pill"

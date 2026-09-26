@@ -18,7 +18,7 @@ import { HairlineGrid, PageHeader, Panel } from '@/components/viatik/layout'
 import { OrgAvatar } from '@/components/viatik/people'
 import { StatusBadge, Tag, type StatusDescriptor } from '@/components/viatik/status'
 import { useViatikState } from '@/data/react'
-import { percentOf, type Cents } from '@/domain/money'
+import { percentOf, sum, ZERO, type Cents } from '@/domain/money'
 import { investorApprovals } from '@/domain/queries'
 import {
   agencyCapital,
@@ -28,7 +28,7 @@ import {
   portfolioCapital,
 } from '@/domain/selectors'
 import { agreementStatus, milestoneStatus } from '@/domain/status'
-import { formatDate, formatShortDate, partOfDay } from '@/lib/format'
+import { formatDate, formatShortDate, partOfDay, pluralize } from '@/lib/format'
 
 type AgencyRow = {
   id: string
@@ -38,6 +38,9 @@ type AgencyRow = {
   committed: Cents
   released: Cents
   spentThisMonth: Cents
+  /** Committed spend this period against the sum of active budget limits. */
+  budgetUsed: Cents
+  budgetLimit: Cents
   health: number
   nextMilestone: string
 }
@@ -53,6 +56,9 @@ export default function InvestorOverviewPage() {
   const history = capitalOverTime(state, { portfolioId }, now, 6)
   const approvals = investorApprovals(state, portfolioId)
   const agencies = state.agencies.filter((a) => a.portfolioId === portfolioId)
+  const agreementCount = state.agreements.filter(
+    (a) => a.portfolioId === portfolioId && a.status !== 'draft' && a.status !== 'cancelled',
+  ).length
 
   if (agencies.length === 0) {
     return (
@@ -74,13 +80,13 @@ export default function InvestorOverviewPage() {
 
   const rows: AgencyRow[] = agencies.map((agency) => {
     const agreement = state.agreements.find((a) => a.agencyId === agency.id)
-    const released = agreement ? agreementCapital(state, agreement.id).released : (0 as Cents)
+    const released = agreement ? agreementCapital(state, agreement.id).released : ZERO
     const cap = agencyCapital(state, agency.id, now)
     const usage = state.budgets
       .filter((b) => b.agencyId === agency.id && b.status === 'active')
       .map((b) => budgetUsage(state, b, now))
-    const limit = usage.reduce((s, u) => s + u.periodLimit, 0)
-    const used = usage.reduce((s, u) => s + u.committedThisPeriod, 0)
+    const limit = sum(usage, (u) => u.periodLimit)
+    const used = sum(usage, (u) => u.committedThisPeriod)
     const next = state.milestones
       .filter((m) => m.agreementId === agreement?.id && m.status !== 'approved')
       .sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1))[0]
@@ -89,10 +95,12 @@ export default function InvestorOverviewPage() {
       name: agency.name,
       agreement: agreement?.title ?? 'No agreement',
       status: agreement ? agreementStatus[agreement.status] : { label: 'No agreement', tone: 'neutral' },
-      committed: agreement?.committed ?? (0 as Cents),
+      committed: agreement?.committed ?? ZERO,
       released,
       spentThisMonth: cap.spentThisPeriod,
-      health: limit > 0 ? percentOf(used as Cents, limit as Cents) : 0,
+      budgetUsed: used,
+      budgetLimit: limit,
+      health: percentOf(used, limit),
       nextMilestone: next ? `${next.title} · ${formatShortDate(next.dueDate)}` : '—',
     }
   })
@@ -153,18 +161,12 @@ export default function InvestorOverviewPage() {
       header: 'Budget health',
       cell: ({ row }) => (
         <span className="flex w-28 flex-col gap-1">
-          <span className="h-1.5 overflow-hidden rounded-[2px] bg-muted">
-            <span
-              className={
-                row.original.health >= 90
-                  ? 'block h-full bg-danger'
-                  : row.original.health >= 70
-                    ? 'block h-full bg-warning'
-                    : 'block h-full bg-sage'
-              }
-              style={{ width: `${row.original.health}%` }}
-            />
-          </span>
+          <UsageBar
+            used={row.original.budgetUsed}
+            limit={row.original.budgetLimit}
+            label={`${row.original.name} budget limits used`}
+            showLegend={false}
+          />
           <span className="text-xs text-subtle">{row.original.health}% of limits used</span>
         </span>
       ),
@@ -207,7 +209,7 @@ export default function InvestorOverviewPage() {
               Add funds
             </ButtonLink>
             <ButtonLink href={href('funding/new')} size="pill">
-              <Plus data-icon="inline-start" /> Create funding agreement
+              <Plus data-icon="inline-start" /> Create agreement
             </ButtonLink>
           </>
         }
@@ -218,7 +220,7 @@ export default function InvestorOverviewPage() {
       {reviewTranche && reviewMilestone && reviewAgreement && reviewAgency ? (
         <Link
           href={href(`funding/${reviewAgreement.id}/milestones/${reviewMilestone.id}`)}
-          className="group flex flex-col gap-4 rounded-xl border border-warning/30 bg-warning-soft p-5 transition-colors outline-none hover:bg-warning/[0.18] focus-visible:ring-2 focus-visible:ring-ring sm:flex-row sm:items-center"
+          className="group flex flex-col gap-4 rounded-xl border border-warning/30 bg-warning-soft p-5 transition-colors outline-none hover:bg-warning/20 focus-visible:ring-2 focus-visible:ring-ring sm:flex-row sm:items-center"
         >
           <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-warning/40 text-warning">
             <FileClock className="size-5" aria-hidden="true" />
@@ -229,9 +231,7 @@ export default function InvestorOverviewPage() {
             </span>
             <span className="text-sm text-muted-foreground">
               Review the evidence to release {reviewTranche.name} of {reviewAgreement.title}.
-              {approvals.total > 1
-                ? ` ${approvals.total - 1} more item${approvals.total > 2 ? 's' : ''} in Approvals.`
-                : ''}
+              {approvals.total > 1 ? ` ${pluralize(approvals.total - 1, 'more item')} in Approvals.` : ''}
             </span>
           </span>
           <span className="flex items-center gap-3">
@@ -248,7 +248,11 @@ export default function InvestorOverviewPage() {
       ) : null}
 
       <HairlineGrid className="grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <KpiTile label="Total committed" value={capital.committed} hint={`${agencies.length} agreements`} />
+        <KpiTile
+          label="Total committed"
+          value={capital.committed}
+          hint={pluralize(agreementCount, 'agreement')}
+        />
         <KpiTile
           label="Total funded"
           value={capital.funded}
@@ -272,7 +276,7 @@ export default function InvestorOverviewPage() {
           value={<span className="font-display text-2xl">{approvals.tranches.length}</span>}
           hint={
             approvals.exceptions.length > 0
-              ? `${approvals.exceptions.length} exception${approvals.exceptions.length > 1 ? 's' : ''} waiting`
+              ? `${pluralize(approvals.exceptions.length, 'exception')} waiting`
               : 'Nothing else waiting'
           }
         />
@@ -411,7 +415,12 @@ export default function InvestorOverviewPage() {
           </ButtonLink>
         }
       >
-        <ActivityList state={state} records={state.activity.slice(0, 8)} now={now} showAgency />
+        <ActivityList
+          state={state}
+          records={state.activity.filter((a) => a.portfolioId === portfolioId).slice(0, 8)}
+          now={now}
+          showAgency
+        />
       </Panel>
     </div>
   )

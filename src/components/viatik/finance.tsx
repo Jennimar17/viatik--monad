@@ -1,7 +1,9 @@
 import { ArrowDownRight, ArrowUpRight, Check, Circle, CircleDot, X } from 'lucide-react'
+import type { Route } from 'next'
+import Link from 'next/link'
 import type * as React from 'react'
 
-import { formatUsd, percentOf, type Cents } from '@/domain/money'
+import { add, formatUsd, percentOf, ZERO, type Cents } from '@/domain/money'
 import { cn } from '@/lib/utils'
 
 import { Amount } from './amount'
@@ -456,38 +458,58 @@ export function BudgetCard({
   )
 }
 
+export type BudgetHealthItem = {
+  id: string
+  name: string
+  used: Cents
+  reserved?: Cents
+  limit: Cents
+  /** Makes the row a link to the budget. */
+  href?: Route
+  /** Right-hand text or badge; defaults to the percentage used. */
+  note?: React.ReactNode
+}
+
+const committedShare = (b: BudgetHealthItem) => percentOf(add(b.used, b.reserved ?? ZERO), b.limit)
+
 /** Consumption of every budget in one list, worst first. */
-export function BudgetHealth({
-  budgets,
-  className,
-}: {
-  budgets: { id: string; name: string; used: Cents; reserved?: Cents; limit: Cents }[]
-  className?: string
-}) {
-  const ranked = [...budgets].sort(
-    (a, b) =>
-      percentOf((b.used + (b.reserved ?? 0)) as Cents, b.limit) -
-      percentOf((a.used + (a.reserved ?? 0)) as Cents, a.limit),
-  )
+export function BudgetHealth({ budgets, className }: { budgets: BudgetHealthItem[]; className?: string }) {
+  const ranked = [...budgets].sort((a, b) => committedShare(b) - committedShare(a))
   return (
     <ul className={cn('flex flex-col gap-4', className)}>
-      {ranked.map((budget) => (
-        <li key={budget.id} className="flex flex-col gap-1.5">
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="truncate text-sm text-foreground">{budget.name}</span>
-            <span className="text-xs text-subtle num">
-              {percentOf((budget.used + (budget.reserved ?? 0)) as Cents, budget.limit)}%
-            </span>
-          </div>
-          <UsageBar
-            used={budget.used}
-            reserved={budget.reserved}
-            limit={budget.limit}
-            label={`${budget.name} usage`}
-            showLegend={false}
-          />
-        </li>
-      ))}
+      {ranked.map((budget) => {
+        const content = (
+          <>
+            <div className="flex items-center justify-between gap-3">
+              <span className="truncate text-sm font-medium text-foreground">{budget.name}</span>
+              <span className="shrink-0 text-xs text-subtle num">
+                {budget.note ?? `${committedShare(budget)}%`}
+              </span>
+            </div>
+            <UsageBar
+              used={budget.used}
+              reserved={budget.reserved}
+              limit={budget.limit}
+              label={`${budget.name} usage`}
+              showLegend={false}
+            />
+          </>
+        )
+        return (
+          <li key={budget.id}>
+            {budget.href ? (
+              <Link
+                href={budget.href}
+                className="flex flex-col gap-1.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {content}
+              </Link>
+            ) : (
+              <div className="flex flex-col gap-1.5">{content}</div>
+            )}
+          </li>
+        )
+      })}
     </ul>
   )
 }

@@ -1,16 +1,15 @@
-import { chains, type MonadNetwork } from '@/web3/chains'
+import { MONAD_NETWORKS, type MonadNetwork } from '@/web3/networks'
 
 import { pseudoAddress, pseudoHash } from './ids'
 import type { ISODate, VerifiedDetails } from './types'
 
 /**
- * Display metadata for Monad networks, derived from the chain definitions in
- * `src/web3`. Contract addresses, ABIs and RPC endpoints stay in the ledger
- * adapter; this is only what "Verified details" shows to people.
+ * Display metadata for Monad networks. Contract addresses, ABIs and RPC
+ * endpoints stay in the ledger adapter; this is only what "Verified details"
+ * shows to people.
  */
 export function networkInfo(network: MonadNetwork) {
-  const chain = chains[network]
-  return { name: chain.name, chainId: chain.id, explorer: chain.blockExplorers.default.url }
+  return MONAD_NETWORKS[network]
 }
 
 /** Genesis-relative block height used to derive plausible demo block numbers. */

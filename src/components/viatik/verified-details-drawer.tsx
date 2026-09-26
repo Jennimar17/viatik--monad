@@ -38,7 +38,7 @@ export function VerifiedDetailsDrawer({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side={mobile ? 'bottom' : 'right'}
-        className="max-h-[92svh] w-full gap-0 overflow-y-auto p-0 data-[side=bottom]:rounded-t-2xl sm:max-w-md"
+        className="max-h-[92svh] gap-0 overflow-y-auto p-0 data-[side=bottom]:rounded-t-2xl data-[side=right]:w-full data-[side=right]:sm:max-w-md"
       >
         <SheetHeader className="border-b border-border px-5 py-4">
           <SheetTitle className="font-display text-xl font-medium">Verified details</SheetTitle>

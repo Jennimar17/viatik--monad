@@ -36,6 +36,11 @@ function writeSession(userId: string | null) {
   for (const listener of listeners) listener()
 }
 
+/** Switches the demo session from outside the provider (the design screens index). */
+export function setDemoSession(userId: string) {
+  writeSession(userId)
+}
+
 function subscribe(listener: () => void) {
   listeners.add(listener)
   window.addEventListener('storage', listener)

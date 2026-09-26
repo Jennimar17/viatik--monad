@@ -9,7 +9,7 @@ Built for the Monad Metropolis hackathon (Consumer Products & Payments track).
 - Next.js 16 (App Router, Turbopack), React 19, TypeScript
 - Tailwind CSS 4 and shadcn/ui (`base-nova`, on Base UI)
 - viem with the Monad chains (mainnet 143, testnet 10143)
-- Hono (API), TanStack Query, react-hook-form, zod
+- TanStack Query and Table, Recharts, zod
 
 One app serves both the marketing site and the product.
 

@@ -67,6 +67,51 @@ export function PendingOperation({
   )
 }
 
+export type StepState = 'done' | 'current' | 'upcoming' | 'failed'
+
+export type Step = { id: string; label: React.ReactNode; detail?: React.ReactNode; state: StepState }
+
+const stepIcon: Record<StepState, React.ReactNode> = {
+  done: <Check className="size-3.5" />,
+  current: <Loader2 className="size-3.5 animate-spin" />,
+  upcoming: <CircleDashed className="size-3.5" />,
+  failed: <X className="size-3.5" />,
+}
+
+const stepMarker: Record<StepState, string> = {
+  done: 'border-sage bg-sage text-primary-foreground',
+  current: 'border-warning text-warning',
+  upcoming: 'border-border text-subtle',
+  failed: 'border-danger bg-danger-soft text-danger',
+}
+
+/** The path of a record so far (a request, a bill…). A stopped path ends at the step that stopped it. */
+export function Steps({ steps, className }: { steps: Step[]; className?: string }) {
+  return (
+    <ol className={cn('flex flex-col gap-4', className)}>
+      {steps.map((step) => (
+        <li key={step.id} className="flex items-start gap-3">
+          <span
+            className={cn(
+              'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border',
+              stepMarker[step.state],
+            )}
+            aria-hidden="true"
+          >
+            {stepIcon[step.state]}
+          </span>
+          <span className="flex min-w-0 flex-col">
+            <span className={cn('text-sm font-medium', step.state === 'upcoming' && 'text-subtle')}>
+              {step.label}
+            </span>
+            {step.detail ? <span className="text-sm text-muted-foreground">{step.detail}</span> : null}
+          </span>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 /** Settlement record of one operation. The only place chain terms appear. */
 export type VerifiedDetails = {
   status: 'confirmed' | 'pending'
@@ -174,6 +219,8 @@ export function CopyButton({
   className?: string
 }) {
   const [copied, setCopied] = React.useState(false)
+  const timer = React.useRef<ReturnType<typeof setTimeout>>(undefined)
+  React.useEffect(() => () => clearTimeout(timer.current), [])
   return (
     <button
       type="button"
@@ -182,7 +229,8 @@ export function CopyButton({
         try {
           await navigator.clipboard.writeText(value)
           setCopied(true)
-          setTimeout(() => setCopied(false), 1500)
+          clearTimeout(timer.current)
+          timer.current = setTimeout(() => setCopied(false), 1500)
         } catch {
           setCopied(false)
         }

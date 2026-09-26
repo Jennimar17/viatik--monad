@@ -85,6 +85,11 @@ export function shortHash(hash: string, head = 6, tail = 4): string {
   return `${hash.slice(0, head)}…${hash.slice(-tail)}`
 }
 
+/** "1 bill", "3 bills". Pass `plural` for irregular nouns. */
+export function pluralize(count: number, noun: string, plural = `${noun}s`): string {
+  return `${count} ${count === 1 ? noun : plural}`
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`

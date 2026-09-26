@@ -86,20 +86,18 @@ export function BillsTable({ bills, emptyTitle = 'No bills here' }: { bills: Bil
     },
   ]
 
-  if (bills.length === 0)
-    return (
-      <EmptyState
-        compact
-        title={emptyTitle}
-        description="Upload a bill to pay it and keep its evidence with the payment."
-      />
-    )
-
   return (
     <DataTable
       data={[...bills].sort((a, b) => (a.dueDate < b.dueDate ? 1 : -1))}
       columns={columns}
       caption="Bills"
+      empty={
+        <EmptyState
+          compact
+          title={emptyTitle}
+          description="Upload a bill to pay it and keep its evidence with the payment."
+        />
+      }
       searchPlaceholder="Search bills"
       searchText={(b) => `${destinationName(state, b.destinationId)} ${b.number}`}
       onRowClick={(b) => router.push(href(`bills/${b.id}`))}

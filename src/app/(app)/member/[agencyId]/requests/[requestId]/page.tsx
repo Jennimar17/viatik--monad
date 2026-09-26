@@ -1,6 +1,5 @@
 'use client'
 
-import { Check, CircleDashed, X } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import * as React from 'react'
@@ -8,12 +7,13 @@ import * as React from 'react'
 import { ButtonLink } from '@/components/app/button-link'
 import { receiptHref } from '@/components/app/nav'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
-import { useHref } from '@/components/app/role-context'
+import { useHref, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
 import { Button } from '@/components/ui/button'
 import { Amount } from '@/components/viatik/amount'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
 import { KeyValueList, PageHeader, Panel } from '@/components/viatik/layout'
+import { Steps, type Step } from '@/components/viatik/operation'
 import { PolicyVerdict } from '@/components/viatik/policy'
 import { StatusBadge } from '@/components/viatik/status'
 import { useCommand, useViatikState } from '@/data/react'
@@ -22,10 +22,6 @@ import { budgetName, receiptFor, recipientName, userName } from '@/domain/querie
 import { requestStatus } from '@/domain/status'
 import type { PaymentRequest, ViatikState } from '@/domain/types'
 import { formatDateTime } from '@/lib/format'
-import { cn } from '@/lib/utils'
-
-type StepState = 'done' | 'current' | 'upcoming' | 'failed'
-type Step = { label: string; detail?: string; state: StepState }
 
 const policyDetail: Record<PaymentRequest['decision']['outcome'], string> = {
   approved: 'Within the budget rules',
@@ -36,36 +32,53 @@ const policyDetail: Record<PaymentRequest['decision']['outcome'], string> = {
 /** The request's path so far. A stopped request ends at the step that stopped it. */
 function progressSteps(state: ViatikState, request: PaymentRequest, completedAt?: string): Step[] {
   const { status } = request
-  const submitted: Step = { label: 'Submitted', detail: formatDateTime(request.createdAt), state: 'done' }
+  const submitted: Step = {
+    id: 'submitted',
+    label: 'Submitted',
+    detail: formatDateTime(request.createdAt),
+    state: 'done',
+  }
   if (status === 'rejected') {
     return [
       submitted,
       {
+        id: 'policy',
         label: 'Policy check',
-        detail: 'Outside the budget rules, and rejected on Monad as well. Nothing was paid.',
+        detail: 'Outside the budget rules; the settlement contract rejected it as well. Nothing was paid.',
         state: 'failed',
       },
     ]
   }
   const policy: Step = {
+    id: 'policy',
     label: 'Policy check',
     detail: policyDetail[request.decision.outcome],
     state: 'done',
   }
   if (status === 'declined') {
-    return [submitted, policy, { label: 'Declined', detail: request.declinedReason, state: 'failed' }]
+    return [
+      submitted,
+      policy,
+      { id: 'decision', label: 'Declined', detail: request.declinedReason, state: 'failed' },
+    ]
   }
   if (status === 'cancelled') {
     return [
       submitted,
       policy,
-      { label: 'Cancelled', detail: 'Withdrawn before a decision. Nothing was paid.', state: 'failed' },
+      {
+        id: 'decision',
+        label: 'Cancelled',
+        detail: 'Withdrawn before a decision. Nothing was paid.',
+        state: 'failed',
+      },
     ]
   }
   return [
     submitted,
     policy,
     {
+      id: 'decision',
       label: status === 'needs_approval' ? 'Waiting for approval' : 'Approved',
       detail: request.approvedBy
         ? `By ${userName(state, request.approvedBy)}`
@@ -75,10 +88,12 @@ function progressSteps(state: ViatikState, request: PaymentRequest, completedAt?
       state: status === 'needs_approval' ? 'current' : 'done',
     },
     {
+      id: 'processing',
       label: 'Processing',
       state: status === 'processing' ? 'current' : status === 'completed' ? 'done' : 'upcoming',
     },
     {
+      id: 'completed',
       label: 'Completed',
       detail: completedAt ? formatDateTime(completedAt) : undefined,
       state: status === 'completed' ? 'done' : 'upcoming',
@@ -88,12 +103,20 @@ function progressSteps(state: ViatikState, request: PaymentRequest, completedAt?
 
 export default function RequestDetailPage() {
   const { requestId } = useParams<{ requestId: string }>()
-  const { state } = useViatikState()
+  const { state, userId } = useViatikState()
+  const { scopeId: agencyId } = useRole()
   const href = useHref()
   const cancel = useCommand('cancelRequest')
   const [cancelOpen, setCancelOpen] = React.useState(false)
 
-  const request = state.requests.find((r) => r.id === requestId)
+  // Members see their own requests in their Agency only.
+  const request = state.requests.find(
+    (r) =>
+      r.id === requestId &&
+      r.agencyId === agencyId &&
+      r.requester.kind === 'user' &&
+      r.requester.userId === userId,
+  )
   if (!request) {
     return (
       <ScreenUnavailable
@@ -109,7 +132,7 @@ export default function RequestDetailPage() {
   const recipient = recipientName(state, request.destination)
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
       <PageHeader
         eyebrow={
           <Link href={href('requests')} className="hover:text-foreground">
@@ -142,36 +165,7 @@ export default function RequestDetailPage() {
       </Panel>
 
       <Panel title="Progress">
-        <ol className="flex flex-col gap-4">
-          {steps.map((step) => (
-            <li key={step.label} className="flex items-start gap-3">
-              <span
-                className={cn(
-                  'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border',
-                  step.state === 'done' && 'border-sage bg-sage text-primary-foreground',
-                  step.state === 'current' && 'border-warning text-warning',
-                  step.state === 'upcoming' && 'border-border text-subtle',
-                  step.state === 'failed' && 'border-danger bg-danger-soft text-danger',
-                )}
-                aria-hidden="true"
-              >
-                {step.state === 'done' ? (
-                  <Check className="size-3.5" />
-                ) : step.state === 'failed' ? (
-                  <X className="size-3.5" />
-                ) : (
-                  <CircleDashed className="size-3.5" />
-                )}
-              </span>
-              <span className="flex flex-col">
-                <span className={cn('text-sm font-medium', step.state === 'upcoming' && 'text-subtle')}>
-                  {step.label}
-                </span>
-                {step.detail ? <span className="text-sm text-muted-foreground">{step.detail}</span> : null}
-              </span>
-            </li>
-          ))}
-        </ol>
+        <Steps steps={steps} />
       </Panel>
 
       <PolicyVerdict decision={request.decision} />
