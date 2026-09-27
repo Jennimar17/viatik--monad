@@ -1,7 +1,7 @@
 'use client'
 
 import { CheckCircle2, FileText, Link2, Send, Sparkles } from 'lucide-react'
-import { AppLink as Link } from '@/components/viatik/app-link'
+import Link from 'next/link'
 import * as React from 'react'
 
 import { ButtonLink } from '@/components/app/button-link'

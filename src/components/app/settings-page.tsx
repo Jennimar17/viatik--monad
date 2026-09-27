@@ -1,7 +1,7 @@
 'use client'
 
 import { Fingerprint, KeyRound, Laptop, Plus } from 'lucide-react'
-import { AppLink as Link } from '@/components/viatik/app-link'
+import Link from 'next/link'
 import * as React from 'react'
 import { toast } from 'sonner'
 
@@ -95,7 +95,17 @@ function usePreferences(userId: string) {
 }
 
 /** Profile, workspace, rules and device settings; the tabs depend on the role. */
-export function SettingsPage({ title = 'Settings' }: { title?: string }) {
+export function SettingsPage({
+  title = 'Settings',
+  leading,
+  children,
+}: {
+  title?: string
+  /** Panels a role puts before the tabs, e.g. the Member's payment destination. */
+  leading?: React.ReactNode
+  /** Sheets and dialogs the caller controls. */
+  children?: React.ReactNode
+}) {
   const { state, user, userId } = useViatikState()
   const { role, agencyId, portfolioId } = useRole()
   const href = useHref()
@@ -206,7 +216,11 @@ export function SettingsPage({ title = 'Settings' }: { title?: string }) {
       content: (
         <Panel
           title="Agency profile"
-          description="Set up with the funding agreement. Changes to these details go through your Investor."
+          description={
+            role === 'agency_admin'
+              ? 'Set up with the funding agreement. Changes to these details go through your Investor.'
+              : 'The Agency you work with.'
+          }
         >
           <div className="flex flex-col gap-5">
             <div className="flex items-center gap-4">
@@ -573,10 +587,12 @@ export function SettingsPage({ title = 'Settings' }: { title?: string }) {
         title={title}
         description="Your profile, your workspace, and how Viatik keeps you informed."
       />
+      {leading}
       <PageTabs tabs={tabs} />
       {role === 'agency_admin' && agency ? (
         <AddDestinationSheet open={destinationOpen} onOpenChange={setDestinationOpen} agencyId={agency.id} />
       ) : null}
+      {children}
     </div>
   )
 }

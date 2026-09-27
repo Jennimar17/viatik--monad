@@ -1,6 +1,6 @@
 import { CircleCheck, type LucideIcon } from 'lucide-react'
 import type { Route } from 'next'
-import { AppLink as Link } from '@/components/viatik/app-link'
+import Link from 'next/link'
 
 import type { Cents } from '@/domain/money'
 import { dayGroup, formatRelative } from '@/lib/format'

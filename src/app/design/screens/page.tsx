@@ -2,7 +2,7 @@
 
 import { ArrowLeft, ArrowUpRight } from 'lucide-react'
 import type { Route } from 'next'
-import { AppLink as Link } from '@/components/viatik/app-link'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 import { basePath } from '@/components/app/nav'

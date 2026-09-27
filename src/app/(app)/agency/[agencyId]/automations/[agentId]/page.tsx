@@ -2,7 +2,7 @@
 
 import type { ColumnDef } from '@tanstack/react-table'
 import { OctagonX, Pencil, PlayCircle } from 'lucide-react'
-import { AppLink as Link } from '@/components/viatik/app-link'
+import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import * as React from 'react'
 

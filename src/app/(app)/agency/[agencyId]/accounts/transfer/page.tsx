@@ -1,7 +1,7 @@
 'use client'
 
 import { ArrowDown } from 'lucide-react'
-import { AppLink as Link } from '@/components/viatik/app-link'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import * as React from 'react'
 

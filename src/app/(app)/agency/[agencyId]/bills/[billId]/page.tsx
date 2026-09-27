@@ -1,7 +1,7 @@
 'use client'
 
 import { CalendarClock, FileText, Link2, Send } from 'lucide-react'
-import { AppLink as Link } from '@/components/viatik/app-link'
+import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import * as React from 'react'
 

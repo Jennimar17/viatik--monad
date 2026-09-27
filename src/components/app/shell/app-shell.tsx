@@ -10,6 +10,7 @@ import { useRole } from '../role-context'
 import { AppSidebar } from './app-sidebar'
 import { CommandMenu } from './command-menu'
 import { DemoPill } from './demo-pill'
+import { HeadFallback } from './head-fallback'
 import { MobileTabBar } from './mobile-tab-bar'
 import { NotificationsSheet } from './notifications-sheet'
 import { Topbar } from './topbar'
@@ -102,6 +103,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </SidebarInset>
         {role === 'member' ? <MobileTabBar /> : null}
+        <HeadFallback />
         {publicEnv.NEXT_PUBLIC_DEMO_MODE ? <DemoPill /> : null}
         <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
         <NotificationsSheet open={notificationsOpen} onOpenChange={setNotificationsOpen} />

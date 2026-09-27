@@ -2,7 +2,7 @@
 
 import type { ColumnDef } from '@tanstack/react-table'
 import { ArrowRight, ArrowUpRight, Building2, FileClock, Plus } from 'lucide-react'
-import { AppLink as Link } from '@/components/viatik/app-link'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 import { ActivityList } from '@/components/app/activity'

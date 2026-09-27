@@ -1,7 +1,7 @@
 'use client'
 
 import { CheckCircle2, CircleAlert, MessageSquareText, ShieldCheck } from 'lucide-react'
-import { AppLink as Link } from '@/components/viatik/app-link'
+import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import * as React from 'react'
 

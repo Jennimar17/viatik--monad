@@ -1,7 +1,7 @@
 'use client'
 
 import { Bell, LogOut, Search, Settings, UserRound } from 'lucide-react'
-import { AppLink as Link } from '@/components/viatik/app-link'
+import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 
 import {
