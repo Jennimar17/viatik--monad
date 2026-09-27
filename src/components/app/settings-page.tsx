@@ -1,7 +1,7 @@
 'use client'
 
 import { Fingerprint, KeyRound, Laptop, Plus } from 'lucide-react'
-import Link from 'next/link'
+import { AppLink as Link } from '@/components/viatik/app-link'
 import * as React from 'react'
 import { toast } from 'sonner'
 
@@ -27,22 +27,7 @@ import type { PaymentDestination, SpendingCategory } from '@/domain/types'
 import { networkInfo } from '@/domain/verification'
 import { publicEnv } from '@/lib/env'
 import { formatDate, pluralize, shortHash } from '@/lib/format'
-
-const TIME_ZONES = [
-  'UTC',
-  'Europe/Lisbon',
-  'Europe/Dublin',
-  'Europe/Berlin',
-  'America/New_York',
-  'America/Los_Angeles',
-  'America/Mexico_City',
-  'America/Bogota',
-  'Africa/Lagos',
-  'Asia/Kolkata',
-  'Asia/Singapore',
-  'Asia/Seoul',
-  'Asia/Tokyo',
-]
+import { timeZoneOptions } from '@/lib/time-zones'
 
 const LOCALES = [
   { value: 'en-US', label: 'English (United States) · 1,234.56' },
@@ -132,7 +117,6 @@ export function SettingsPage({ title = 'Settings' }: { title?: string }) {
     jobTitle.trim() !== (user?.title ?? '') ||
     timeZone !== user?.timeZone ||
     locale !== user?.locale
-  const timeZones = TIME_ZONES.includes(timeZone) ? TIME_ZONES : [timeZone, ...TIME_ZONES]
 
   const discard = () => {
     setName(user?.name ?? '')
@@ -177,7 +161,7 @@ export function SettingsPage({ title = 'Settings' }: { title?: string }) {
                   id="profile-tz"
                   value={timeZone}
                   onValueChange={setTimeZone}
-                  options={timeZones.map((tz) => ({ value: tz, label: tz.replace(/_/g, ' ') }))}
+                  options={timeZoneOptions(timeZone)}
                 />
               </FormField>
               <FormField label="Number and date format" htmlFor="profile-locale">

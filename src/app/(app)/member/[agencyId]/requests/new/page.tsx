@@ -1,7 +1,7 @@
 'use client'
 
 import { CircleCheck, Clock, Pencil, ReceiptText, ShieldX, ShoppingBag, Wallet } from 'lucide-react'
-import Link from 'next/link'
+import { AppLink as Link } from '@/components/viatik/app-link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import * as React from 'react'
 

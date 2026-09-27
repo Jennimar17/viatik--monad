@@ -1,4 +1,5 @@
 import type {
+  AgencyStatus,
   AgentStatus,
   AgreementStatus,
   BillStatus,
@@ -25,6 +26,13 @@ export const agreementStatus: Record<AgreementStatus, StatusDescriptor> = {
   completed: { label: 'Completed', tone: 'info' },
   cancelled: { label: 'Cancelled', tone: 'neutral' },
   expired: { label: 'Expired', tone: 'neutral' },
+}
+
+export const agencyStatus: Record<AgencyStatus, StatusDescriptor> = {
+  onboarding: { label: 'Onboarding', tone: 'info' },
+  active: { label: 'Active', tone: 'success' },
+  frozen: { label: 'Frozen', tone: 'danger' },
+  closed: { label: 'Closed', tone: 'neutral' },
 }
 
 export const trancheStatus: Record<TrancheStatus, StatusDescriptor> = {

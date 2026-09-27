@@ -1,7 +1,7 @@
 'use client'
 
 import { Bot, Briefcase, Cloud, Folder, Plane, Plus, Trash2, Users } from 'lucide-react'
-import Link from 'next/link'
+import { AppLink as Link } from '@/components/viatik/app-link'
 import { useRouter } from 'next/navigation'
 import * as React from 'react'
 

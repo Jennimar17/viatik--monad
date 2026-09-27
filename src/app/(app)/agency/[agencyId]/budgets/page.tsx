@@ -1,7 +1,7 @@
 'use client'
 
 import { PieChart, Plus } from 'lucide-react'
-import Link from 'next/link'
+import { AppLink as Link } from '@/components/viatik/app-link'
 
 import { ButtonLink } from '@/components/app/button-link'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
