@@ -58,6 +58,13 @@ const outcomeCopy = {
   },
 } as const
 
+/** The same verdict read by the person who decides on it, not by the requester. */
+const reviewerTitle: Record<PolicyDecision['outcome'], string> = {
+  approved: 'Within the budget rules — approved automatically',
+  needs_approval: 'Above the automatic limit — needs an Agency Admin',
+  rejected: 'Outside the budget rules — rejected before anyone decided',
+}
+
 /**
  * Live policy evaluation. Shows the outcome in words, then each rule that
  * was checked, so the requester knows why before anything is submitted.
@@ -65,13 +72,17 @@ const outcomeCopy = {
 export function PolicyVerdict({
   decision,
   showChecks = true,
+  perspective = 'requester',
   className,
 }: {
   decision: PolicyDecision
   showChecks?: boolean
+  /** Who is reading: the requester (default) or the person reviewing the request. */
+  perspective?: 'requester' | 'reviewer'
   className?: string
 }) {
   const copy = outcomeCopy[decision.outcome]
+  const title = perspective === 'reviewer' ? reviewerTitle[decision.outcome] : copy.title
   const Icon = copy.icon
   return (
     <div
@@ -82,7 +93,7 @@ export function PolicyVerdict({
       <div className="flex items-start gap-3">
         <Icon className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
         <div className="flex min-w-0 flex-col gap-1">
-          <p className="text-sm font-medium text-foreground">{copy.title}</p>
+          <p className="text-sm font-medium text-foreground">{title}</p>
           {decision.reason && decision.outcome !== 'approved' ? (
             <p className="text-sm text-pretty text-muted-foreground">{decision.reason.message}</p>
           ) : null}

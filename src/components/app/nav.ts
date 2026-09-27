@@ -125,6 +125,11 @@ export function receiptHref(receiptId: string): Route {
   return `/receipts/${receiptId}` as Route
 }
 
+/** An invitation's landing page, the link shared with the invited person. */
+export function inviteHref(code: string): Route {
+  return `/invite/${code}` as Route
+}
+
 /** Section label for a path inside a role, used by the breadcrumb. */
 export function sectionFor(role: Role, relativePath: string): NavItem | undefined {
   const navigation = NAVIGATION[role]
