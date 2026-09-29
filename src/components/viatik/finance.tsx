@@ -440,7 +440,7 @@ export function BudgetCard({
       <UsageBar used={spent} reserved={reserved} limit={allocated} label={`${name} usage`} />
       {assignees.length > 0 || action ? (
         <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
-          <div className="flex -space-x-2" aria-label={`${assignees.length} assigned`}>
+          <div className="flex -space-x-2" role="group" aria-label={`${assignees.length} assigned`}>
             {assignees
               .slice(0, 5)
               .map((person) =>

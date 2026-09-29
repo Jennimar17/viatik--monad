@@ -1,6 +1,11 @@
+import type { Metadata } from 'next'
+
 import { ButtonLink } from '@/components/app/button-link'
 import { Tag } from '@/components/viatik/status'
 import { ViatikLogo } from '@/components/viatik/viatik-logo'
+
+// Next adds `noindex` to not-found pages by itself.
+export const metadata: Metadata = { title: 'Page not found' }
 
 /** Branded 404 for any path outside a workspace; screens inside a workspace use `ScreenUnavailable`. */
 export default function NotFound() {

@@ -5,10 +5,22 @@ import { Dialog as SheetPrimitive } from '@base-ui/react/dialog'
 import { cn } from '@/lib/utils'
 
 import { Button } from '@/components/ui/button'
+import { useReturnFocus } from '@/hooks/use-return-focus'
 import { XIcon } from 'lucide-react'
 
-function Sheet({ ...props }: SheetPrimitive.Root.Props) {
-  return <SheetPrimitive.Root data-slot="sheet" {...props} />
+function Sheet({ open, onOpenChangeComplete, ...props }: SheetPrimitive.Root.Props) {
+  const returnFocus = useReturnFocus()
+  return (
+    <SheetPrimitive.Root
+      data-slot="sheet"
+      open={open}
+      onOpenChangeComplete={(next) => {
+        if (!next) returnFocus()
+        onOpenChangeComplete?.(next)
+      }}
+      {...props}
+    />
+  )
 }
 
 function SheetTrigger({ ...props }: SheetPrimitive.Trigger.Props) {

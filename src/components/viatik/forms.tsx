@@ -116,7 +116,7 @@ export function EvidenceUploader({
   hint?: string
   className?: string
 }) {
-  const inputRef = React.useRef<HTMLInputElement>(null)
+  const hintId = React.useId()
   const [dragging, setDragging] = React.useState(false)
   const [link, setLink] = React.useState('')
 
@@ -133,16 +133,9 @@ export function EvidenceUploader({
 
   return (
     <div className={cn('flex flex-col gap-3', className)}>
-      <div
-        role="button"
-        tabIndex={0}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault()
-            inputRef.current?.click()
-          }
-        }}
-        onClick={() => inputRef.current?.click()}
+      {/* The label is the drop zone: clicking it opens the picker and the
+          (visually hidden) file input keeps native keyboard and screen-reader support. */}
+      <label
         onDragOver={(event) => {
           event.preventDefault()
           setDragging(true)
@@ -154,22 +147,24 @@ export function EvidenceUploader({
           addFiles(event.dataTransfer.files)
         }}
         className={cn(
-          'flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-border px-6 py-8 text-center transition-colors outline-none hover:border-foreground/40 hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring',
+          'flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-border px-6 py-8 text-center transition-colors hover:border-foreground/40 hover:bg-muted/30 focus-within:ring-2 focus-within:ring-ring',
           dragging && 'border-foreground/60 bg-muted/40',
         )}
       >
         <Upload className="size-5 text-subtle" aria-hidden="true" />
-        <p className="text-sm font-medium text-foreground">{label}</p>
-        <p className="max-w-sm text-xs text-pretty text-subtle">{hint}</p>
+        <span className="block text-sm font-medium text-foreground">{label}</span>
+        <span id={hintId} className="block max-w-sm text-xs text-pretty text-subtle">
+          {hint}
+        </span>
         <input
-          ref={inputRef}
           type="file"
           multiple
           accept={accept}
+          aria-describedby={hintId}
           className="sr-only"
           onChange={(event) => addFiles(event.target.files)}
         />
-      </div>
+      </label>
 
       {allowLinks ? (
         <div className="flex gap-2">

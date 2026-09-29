@@ -19,6 +19,7 @@ export function SimpleSelect({
   invalid,
   className,
   disabled,
+  'aria-label': ariaLabel,
 }: {
   id?: string
   value: string | null
@@ -28,6 +29,8 @@ export function SimpleSelect({
   invalid?: boolean
   className?: string
   disabled?: boolean
+  /** Name for selects without a visible label, e.g. a toolbar filter. */
+  'aria-label'?: string
 }) {
   return (
     <Select
@@ -38,6 +41,7 @@ export function SimpleSelect({
     >
       <SelectTrigger
         id={id}
+        aria-label={ariaLabel}
         aria-invalid={invalid || undefined}
         className={cn(
           'h-11 w-full min-w-0 bg-input/30 px-5 data-placeholder:text-subtle data-[size=default]:h-11',

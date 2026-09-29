@@ -20,6 +20,7 @@ import { destinationName, memberBudgets, recipientName, userName } from '@/domai
 
 import { NAVIGATION } from '../nav'
 import { useHref, usePermissions, useRole } from '../role-context'
+import type { ScreenPath } from '../screens'
 
 /** ⌘K: jump to any screen of the current role or find its records. */
 export function CommandMenu({
@@ -45,7 +46,7 @@ export function CommandMenu({
   const inScope = <T extends { agencyId: string }>(items: T[]) =>
     agencyId ? items.filter((i) => i.agencyId === agencyId) : items
 
-  const actions: { label: string; path: string; icon: LucideIcon }[] = []
+  const actions: { label: string; path: ScreenPath; icon: LucideIcon }[] = []
   if (role === 'investor') {
     actions.push({ label: 'Create agreement', path: 'funding/new', icon: Plus })
     actions.push({ label: 'Create Agency', path: 'agencies/new', icon: Plus })

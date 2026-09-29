@@ -18,7 +18,7 @@ export function ShellSkeleton() {
           ))}
         </div>
       </aside>
-      <div className="flex-1">
+      <div className="min-w-0 flex-1">
         <div className="glass-chrome h-16 border-b" />
         <div className="mx-auto w-full max-w-[1360px] px-4 py-8 sm:px-6 lg:px-8">
           <PageSkeleton />

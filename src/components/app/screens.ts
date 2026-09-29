@@ -20,7 +20,7 @@ export type Screen = {
   open?: string
 }
 
-export const SCREENS: Record<Role, Screen[]> = {
+export const SCREENS = {
   investor: [
     {
       path: 'overview',
@@ -295,10 +295,10 @@ export const SCREENS: Record<Role, Screen[]> = {
       status: 'ready',
     },
   ],
-}
+} as const satisfies Record<Role, readonly Screen[]>
 
 /** Screens outside the role workspaces. */
-export const SHARED_SCREENS: Screen[] = [
+export const SHARED_SCREENS = [
   { path: '/sign-in', title: 'Sign in', summary: 'Demo personas and deep links.', status: 'ready' },
   {
     path: '/invite/[code]',
@@ -317,4 +317,13 @@ export const SHARED_SCREENS: Screen[] = [
     status: 'planned',
     phase: '4.9 (PWA)',
   },
-]
+] as const satisfies readonly Screen[]
+
+// Path patterns derived from the inventory: `[param]` becomes any slug, so
+// `href('budgets/nope')` fails the typecheck while `href(`budgets/${id}`)` passes.
+type ParamsToPattern<S extends string> = S extends `${infer Head}[${string}]${infer Tail}`
+  ? `${Head}${string}${ParamsToPattern<Tail>}`
+  : S
+
+/** Every screen path of a role (or of any role), relative to its workspace. */
+export type ScreenPath<R extends Role = Role> = ParamsToPattern<(typeof SCREENS)[R][number]['path']>

@@ -25,21 +25,27 @@ import type { Route } from 'next'
 import type { Capability } from '@/domain/permissions'
 import type { Membership, Role } from '@/domain/types'
 
-export type NavItem = {
+import type { ScreenPath } from './screens'
+
+export type NavItem<R extends Role = Role> = {
   key: string
   label: string
   /** Path relative to the role's scoped base, e.g. "overview". */
-  path: string
+  path: ScreenPath<R>
   icon: LucideIcon
   /** Rendered only when the subject can at least view this capability. */
   capability?: Capability
   badge?: 'approvals' | 'bills' | 'requests'
 }
 
-export type RoleNavigation = { primary: NavItem[]; secondary: NavItem[]; mobileTabs?: NavItem[] }
+export type RoleNavigation<R extends Role = Role> = {
+  primary: NavItem<R>[]
+  secondary: NavItem<R>[]
+  mobileTabs?: NavItem<R>[]
+}
 
 /** Navigation exactly as the product spec defines it, per role. */
-export const NAVIGATION: Record<Role, RoleNavigation> = {
+export const NAVIGATION: { [R in Role]: RoleNavigation<R> } = {
   investor: {
     primary: [
       { key: 'overview', label: 'Overview', path: 'overview', icon: LayoutDashboard },

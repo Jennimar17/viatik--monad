@@ -1,27 +1,33 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
-import { Archivo, Inter, JetBrains_Mono } from 'next/font/google'
+import localFont from 'next/font/local'
 
 import { siteConfig } from '@/components/site/content/site'
 import './globals.css'
 
-const inter = Inter({
-  subsets: ['latin'],
+// Variable fonts, latin subset, served from the repo (src/fonts, OFL licensed)
+// so builds never depend on Google Fonts being reachable.
+const inter = localFont({
+  src: '../fonts/inter-latin.woff2',
+  weight: '100 900',
   variable: '--font-inter',
   display: 'swap',
 })
 
-const archivo = Archivo({
-  subsets: ['latin'],
+const archivo = localFont({
+  src: '../fonts/archivo-latin.woff2',
+  weight: '100 900',
   variable: '--font-archivo',
   display: 'swap',
-  axes: ['wdth'],
+  // Width axis, used by the `wide-set` utility on display text.
+  declarations: [{ prop: 'font-stretch', value: '62.5% 125%' }],
 })
 
 // Product-only monospace (hashes, addresses, tags). Not preloaded: the browser
 // fetches it only when a product screen renders with it, never on the landing.
-const jetbrains = JetBrains_Mono({
-  subsets: ['latin'],
+const jetbrains = localFont({
+  src: '../fonts/jetbrains-mono-latin.woff2',
+  weight: '100 800',
   variable: '--font-jetbrains',
   display: 'swap',
   preload: false,

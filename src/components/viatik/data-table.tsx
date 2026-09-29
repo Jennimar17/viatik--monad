@@ -47,6 +47,17 @@ export type DataTableProps<T> = {
 // starts inside a pointer event, which froze the whole tab.
 const NO_FACETS: never[] = []
 
+// Column defs are written inline in the screens, so their render functions are
+// new on every render. `flexRender` would mount each one as a component and
+// remount every cell whenever the screen re-renders (losing focus, e.g. on the
+// button that just opened a sheet); calling plain functions keeps the DOM.
+function renderDef<TProps extends object>(def: unknown, props: TProps): React.ReactNode {
+  if (typeof def === 'function' && !(def.prototype && 'isReactComponent' in def.prototype)) {
+    return (def as (props: TProps) => React.ReactNode)(props)
+  }
+  return flexRender(def as Parameters<typeof flexRender>[0], props)
+}
+
 /**
  * Tables for money: search, facet chips, sorting, pagination, and a card
  * layout on phones. Numeric columns should right-align with `num` cells.
@@ -249,7 +260,7 @@ export function DataTable<T>({
                                 align === 'right' && 'flex-row-reverse',
                               )}
                             >
-                              {flexRender(header.column.columnDef.header, header.getContext())}
+                              {renderDef(header.column.columnDef.header, header.getContext())}
                               {sorted === 'asc' ? (
                                 <ArrowUp className="size-3" />
                               ) : sorted === 'desc' ? (
@@ -259,7 +270,7 @@ export function DataTable<T>({
                               )}
                             </button>
                           ) : (
-                            flexRender(header.column.columnDef.header, header.getContext())
+                            renderDef(header.column.columnDef.header, header.getContext())
                           )}
                         </TableHead>
                       )
@@ -286,7 +297,7 @@ export function DataTable<T>({
                       const align = (cell.column.columnDef.meta as { align?: 'right' } | undefined)?.align
                       return (
                         <TableCell key={cell.id} className={cn('py-3', align === 'right' && 'text-right')}>
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          {renderDef(cell.column.columnDef.cell, cell.getContext())}
                         </TableCell>
                       )
                     })}

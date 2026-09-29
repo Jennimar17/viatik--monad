@@ -99,7 +99,7 @@ function ScreenList({
   onOpen,
   persona,
 }: {
-  screens: Screen[]
+  screens: readonly Screen[]
   hrefFor: (screen: Screen) => string
   onOpen: (path: string) => void
   persona: string

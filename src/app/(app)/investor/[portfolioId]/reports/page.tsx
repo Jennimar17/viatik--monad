@@ -212,7 +212,13 @@ export default function ReportsPage() {
         description="How deployed capital is being used across the portfolio."
         actions={
           <>
-            <SimpleSelect value={months} onValueChange={setMonths} options={RANGE_OPTIONS} className="w-44" />
+            <SimpleSelect
+              value={months}
+              onValueChange={setMonths}
+              options={RANGE_OPTIONS}
+              aria-label="Period"
+              className="w-44"
+            />
             <Button variant="outline" size="pill" onClick={exportReport}>
               <Download data-icon="inline-start" /> Export report
             </Button>

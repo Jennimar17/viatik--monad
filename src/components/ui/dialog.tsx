@@ -5,10 +5,22 @@ import { Dialog as DialogPrimitive } from '@base-ui/react/dialog'
 import { cn } from '@/lib/utils'
 
 import { Button } from '@/components/ui/button'
+import { useReturnFocus } from '@/hooks/use-return-focus'
 import { XIcon } from 'lucide-react'
 
-function Dialog({ ...props }: DialogPrimitive.Root.Props) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+function Dialog({ open, onOpenChangeComplete, ...props }: DialogPrimitive.Root.Props) {
+  const returnFocus = useReturnFocus()
+  return (
+    <DialogPrimitive.Root
+      data-slot="dialog"
+      open={open}
+      onOpenChangeComplete={(next) => {
+        if (!next) returnFocus()
+        onOpenChangeComplete?.(next)
+      }}
+      {...props}
+    />
+  )
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {

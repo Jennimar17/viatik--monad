@@ -8,6 +8,7 @@ import { can, canView, type Capability, type PermissionContext } from '@/domain/
 import type { Membership, Role } from '@/domain/types'
 
 import { basePath } from './nav'
+import type { ScreenPath } from './screens'
 
 export type RoleScope = {
   role: Role
@@ -31,11 +32,24 @@ export function useRole(): RoleScope {
   return context
 }
 
-/** Link builder scoped to the current role, e.g. href('budgets/new'). */
-export function useHref() {
+/**
+ * A relative screen path, optionally with a query string. Only paths from the
+ * screen inventory (`SCREENS`) fit, so a dead link fails the typecheck.
+ */
+export type ScreenTarget = ScreenPath | `${ScreenPath}?${string}`
+
+export type Href = {
+  /** The role's home base, e.g. "/agency/ag_arc". */
+  (): Route
+  /** A screen inside the role's workspace, e.g. href('budgets/new') or href(`budgets/${id}`). */
+  <P extends ScreenTarget>(path: P): Route
+}
+
+/** Link builder scoped to the current role. Only paths from the screen inventory typecheck. */
+export function useHref(): Href {
   const { base } = useRole()
-  return React.useCallback(
-    (path = ''): Route => (path ? `${base}/${path.replace(/^\//, '')}` : base) as Route,
+  return React.useMemo<Href>(
+    () => ((path = '') => (path ? `${base}/${path.replace(/^\//, '')}` : base) as Route) as Href,
     [base],
   )
 }
