@@ -577,7 +577,7 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
       status: 'approved',
       addedAt: at,
     })
-  destination(DST.vertex, A.arc, 'Vertex Cloud', 'vendor', 'cloud', 'Bank account •• 4821', b.ago(183))
+  destination(DST.vertex, A.arc, 'Vertex Cloud', 'vendor', 'cloud', 'USDC account •• 4821', b.ago(183))
   destination(DST.canvasly, A.arc, 'Canvasly', 'service', 'software', 'Card on file •• 1107', b.ago(183))
   destination(DST.tasklane, A.arc, 'Tasklane', 'service', 'software', 'Card on file •• 1107', b.ago(183))
   destination(DST.pagecraft, A.arc, 'Pagecraft', 'service', 'software', 'Card on file •• 1107', b.ago(183))
@@ -596,20 +596,20 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     'Northwind Travel',
     'vendor',
     'travel',
-    'Bank account •• 7730',
+    'USDC account •• 7730',
     b.ago(165),
   )
-  destination(DST.atlas, A.arc, 'Atlas Legal', 'vendor', 'legal', 'Bank account •• 2204', b.ago(150))
+  destination(DST.atlas, A.arc, 'Atlas Legal', 'vendor', 'legal', 'USDC account •• 2204', b.ago(150))
   destination(
     DST.harbor,
     A.arc,
     'Harbor Contractors',
     'contractor',
     'contractors',
-    'Bank account •• 5518',
+    'USDC account •• 5518',
     b.ago(40),
   )
-  destination(DST.stratus, A.lumen, 'Stratus Hosting', 'vendor', 'cloud', 'Bank account •• 3190', b.ago(127))
+  destination(DST.stratus, A.lumen, 'Stratus Hosting', 'vendor', 'cloud', 'USDC account •• 3190', b.ago(127))
   destination(
     DST.codepath,
     A.lumen,
@@ -625,7 +625,7 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     'Sentinel Security Audits',
     'vendor',
     'legal',
-    'Bank account •• 8045',
+    'USDC account •• 8045',
     b.ago(12),
   )
 

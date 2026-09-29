@@ -252,7 +252,7 @@ export function SettingsPage({
               ]}
             />
             <p className="text-xs text-pretty text-subtle">
-              Viatik is global by default: no country-specific bank rails or tax terms. Local settlement
+              Viatik is global by default: no country-specific payment rails or tax terms. Local settlement
               methods are future integrations.
             </p>
           </div>
@@ -683,7 +683,7 @@ function AddDestinationSheet({
         <FormField
           label="Settlement method"
           htmlFor="dest-settlement"
-          hint="A generic label, e.g. “Bank account •• 1234” or “Card on file •• 1107”."
+          hint="A generic label, e.g. “USDC account •• 9f3a” or “Card on file •• 1107”."
         >
           <PillInput
             id="dest-settlement"

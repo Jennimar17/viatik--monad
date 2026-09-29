@@ -1,6 +1,6 @@
 'use client'
 
-import { Landmark, Undo2 } from 'lucide-react'
+import { Undo2, Wallet } from 'lucide-react'
 import * as React from 'react'
 import { toast } from 'sonner'
 
@@ -16,17 +16,21 @@ import { useCommand, useViatikState } from '@/data/react'
 import { cents, clampToZero, formatUsd, ZERO, type Cents } from '@/domain/money'
 import { receiptFor } from '@/domain/queries'
 
-type PayoutMethod = 'bank' | 'usdc' | 'card'
+type PayoutMethod = 'viatik' | 'usdc'
 
+// Payouts settle in USDC: to the person's own Viatik account by default, or to
+// an external USDC account they name. Local rails are not offered for now.
 const METHOD_OPTIONS: { value: PayoutMethod; label: string }[] = [
-  { value: 'bank', label: 'Bank account' },
-  { value: 'usdc', label: 'USDC account' },
-  { value: 'card', label: 'Debit card' },
+  { value: 'viatik', label: 'Viatik account' },
+  { value: 'usdc', label: 'External USDC account' },
 ]
 
 type PayoutDestination = { method: PayoutMethod; label: string }
 
-const DEFAULT_DESTINATION: PayoutDestination = { method: 'bank', label: 'Bank account •• 2291' }
+const DEFAULT_DESTINATION: PayoutDestination = { method: 'viatik', label: 'Viatik account •• 2291' }
+
+const isMethod = (value: unknown): value is PayoutMethod =>
+  METHOD_OPTIONS.some((option) => option.value === value)
 
 /**
  * Where the Agency pays this person. There is no server side for it yet, so
@@ -38,8 +42,10 @@ function usePayoutDestination(userId: string) {
   const [destination, setDestination] = React.useState<PayoutDestination>(() => {
     try {
       const raw = window.localStorage.getItem(key)
-      return raw
-        ? { ...DEFAULT_DESTINATION, ...(JSON.parse(raw) as Partial<PayoutDestination>) }
+      const stored = raw ? (JSON.parse(raw) as Partial<PayoutDestination>) : null
+      // Older saved choices (e.g. a bank account) fall back to the default.
+      return stored && isMethod(stored.method) && stored.label
+        ? { method: stored.method, label: stored.label }
         : DEFAULT_DESTINATION
     } catch {
       return DEFAULT_DESTINATION
@@ -100,7 +106,7 @@ export default function ProfilePage() {
           <Panel title="Payment destination" description={`Where ${agencyName} sends your payments.`}>
             <div className="flex items-center gap-3">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border text-subtle">
-                <Landmark className="size-5" aria-hidden="true" />
+                <Wallet className="size-5" aria-hidden="true" />
               </span>
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate text-sm font-medium">{destination.label}</span>

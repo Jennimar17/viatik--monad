@@ -11,7 +11,6 @@ export function ShellSkeleton() {
           <ViatikMark className="size-7" />
           <Skeleton className="h-4 w-24" />
         </div>
-        <Skeleton className="h-14 w-full rounded-xl" />
         <div className="flex flex-col gap-2">
           {Array.from({ length: 7 }, (_, i) => (
             <Skeleton key={i} className="h-8 w-full rounded-lg" />

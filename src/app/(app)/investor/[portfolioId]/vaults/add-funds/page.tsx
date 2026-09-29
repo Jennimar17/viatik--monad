@@ -1,6 +1,6 @@
 'use client'
 
-import { Building, Coins, TriangleAlert } from 'lucide-react'
+import { TriangleAlert } from 'lucide-react'
 import Link from '@/components/viatik/link'
 import * as React from 'react'
 
@@ -11,7 +11,7 @@ import { useHref, useRole } from '@/components/app/role-context'
 import { Button } from '@/components/ui/button'
 import { Amount } from '@/components/viatik/amount'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
-import { ChoiceCard, MoneyInput } from '@/components/viatik/forms'
+import { MoneyInput } from '@/components/viatik/forms'
 import { KeyValueList, PageHeader, Panel } from '@/components/viatik/layout'
 import { CopyButton, Steps, type OperationPhase, type Step } from '@/components/viatik/operation'
 import { QrCode } from '@/components/viatik/qr-code'
@@ -67,7 +67,6 @@ export default function AddFundsPage() {
   const { portfolioId } = useRole()
   const href = useHref()
   const add = useCommand('addFunds')
-  const [method, setMethod] = React.useState<'usdc' | 'bank'>('usdc')
   const [amount, setAmount] = React.useState<Cents | null>(null)
   const [open, setOpen] = React.useState(false)
   const [receiptId, setReceiptId] = React.useState<string | null>(null)
@@ -98,52 +97,32 @@ export default function AddFundsPage() {
         </div>
       </Panel>
 
-      <div role="radiogroup" aria-label="Funding source" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <ChoiceCard
-          selected={method === 'usdc'}
-          onSelect={() => setMethod('usdc')}
-          title="USDC on Monad"
-          description="Send USDC from an exchange or another account on Monad."
-          icon={<Coins />}
-        />
-        <ChoiceCard
-          selected={method === 'bank'}
-          onSelect={() => setMethod('bank')}
-          title="Bank transfer"
-          description="Local bank rails are a future integration."
-          icon={<Building />}
-          disabled
-        />
-      </div>
-
-      {method === 'usdc' ? (
-        <Panel title="Deposit instructions" description="One of the few places where network details matter.">
-          <div className="flex flex-col gap-6 sm:flex-row">
-            <QrCode value={address} label="Deposit address as a QR code" />
-            <div className="flex min-w-0 flex-1 flex-col gap-4">
-              <KeyValueList
-                items={[
-                  { label: 'Asset', value: 'USDC' },
-                  { label: 'Network', value: `${network.name} · chain ${network.chainId}` },
-                  {
-                    label: 'Deposit address',
-                    value: (
-                      <span className="inline-flex items-center gap-1 font-mono text-xs">
-                        {address.slice(0, 12)}…{address.slice(-8)}
-                        <CopyButton value={address} label="Copy deposit address" />
-                      </span>
-                    ),
-                  },
-                ]}
-              />
-              <p className="flex gap-2 rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm text-pretty">
-                <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-                Only send USDC on {network.name}. Funds sent on another network will not arrive.
-              </p>
-            </div>
+      <Panel title="Deposit instructions" description="One of the few places where network details matter.">
+        <div className="flex flex-col gap-6 sm:flex-row">
+          <QrCode value={address} label="Deposit address as a QR code" />
+          <div className="flex min-w-0 flex-1 flex-col gap-4">
+            <KeyValueList
+              items={[
+                { label: 'Asset', value: 'USDC' },
+                { label: 'Network', value: `${network.name} · chain ${network.chainId}` },
+                {
+                  label: 'Deposit address',
+                  value: (
+                    <span className="inline-flex items-center gap-1 font-mono text-xs">
+                      {address.slice(0, 12)}…{address.slice(-8)}
+                      <CopyButton value={address} label="Copy deposit address" />
+                    </span>
+                  ),
+                },
+              ]}
+            />
+            <p className="flex gap-2 rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm text-pretty">
+              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+              Only send USDC on {network.name}. Funds sent on another network will not arrive.
+            </p>
           </div>
-        </Panel>
-      ) : null}
+        </div>
+      </Panel>
 
       <Panel
         title="Demo deposit"
