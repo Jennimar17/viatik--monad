@@ -10,7 +10,7 @@ import {
   Send,
   Users,
 } from 'lucide-react'
-import Link from 'next/link'
+import Link from '@/components/viatik/link'
 
 import { ActivityList } from '@/components/app/activity'
 import { ButtonLink } from '@/components/app/button-link'

@@ -1,7 +1,7 @@
 'use client'
 
 import { CalendarClock, Flag, Hand, Plus, Repeat, Trash2 } from 'lucide-react'
-import Link from 'next/link'
+import Link from '@/components/viatik/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import * as React from 'react'
 

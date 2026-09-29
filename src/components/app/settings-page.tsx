@@ -1,7 +1,7 @@
 'use client'
 
 import { Fingerprint, KeyRound, Laptop, Plus } from 'lucide-react'
-import Link from 'next/link'
+import Link from '@/components/viatik/link'
 import * as React from 'react'
 import { toast } from 'sonner'
 

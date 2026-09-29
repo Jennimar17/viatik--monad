@@ -1,6 +1,6 @@
 import { ArrowDownRight, ArrowUpRight, Check, Circle, CircleDot, X } from 'lucide-react'
 import type { Route } from 'next'
-import Link from 'next/link'
+import Link from '@/components/viatik/link'
 import type * as React from 'react'
 
 import { add, formatUsd, percentOf, ZERO, type Cents } from '@/domain/money'

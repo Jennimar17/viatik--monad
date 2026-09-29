@@ -1,7 +1,7 @@
 'use client'
 
 import { CheckCircle2, CircleAlert } from 'lucide-react'
-import Link from 'next/link'
+import Link from '@/components/viatik/link'
 import { useRouter } from 'next/navigation'
 import * as React from 'react'
 

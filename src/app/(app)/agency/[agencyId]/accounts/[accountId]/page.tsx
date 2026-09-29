@@ -2,7 +2,7 @@
 
 import type { ColumnDef } from '@tanstack/react-table'
 import { ArrowLeftRight, PieChart } from 'lucide-react'
-import Link from 'next/link'
+import Link from '@/components/viatik/link'
 import { useParams } from 'next/navigation'
 
 import { accountHistory } from '@/components/app/account-parts'

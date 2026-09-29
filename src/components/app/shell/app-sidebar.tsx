@@ -1,7 +1,7 @@
 'use client'
 
 import { ChevronsUpDown, LogOut, Plus } from 'lucide-react'
-import Link from 'next/link'
+import Link from '@/components/viatik/link'
 import { usePathname, useRouter } from 'next/navigation'
 
 import {

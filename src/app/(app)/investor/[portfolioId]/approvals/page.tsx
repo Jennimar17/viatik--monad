@@ -167,7 +167,7 @@ export default function InvestorApprovalsPage() {
       />
 
       <RequestReviewSheet
-        key={reviewingId ?? 'none'}
+        key={`review-${reviewingId ?? 'none'}`}
         requestId={reviewingId}
         open={reviewOpen}
         onOpenChange={setReviewOpen}
@@ -175,7 +175,7 @@ export default function InvestorApprovalsPage() {
       />
 
       <ApprovalSheet
-        key={releasingId ?? 'none'}
+        key={`release-${releasingId ?? 'none'}`}
         open={releaseOpen}
         onOpenChange={setReleaseOpen}
         onClosed={() => {

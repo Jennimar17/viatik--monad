@@ -1,7 +1,7 @@
 'use client'
 
 import { ArrowLeftRight, Landmark, Plus } from 'lucide-react'
-import Link from 'next/link'
+import Link from '@/components/viatik/link'
 
 import { accountHistory, accountIcons, isHeldAccount } from '@/components/app/account-parts'
 import { ButtonLink } from '@/components/app/button-link'

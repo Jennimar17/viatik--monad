@@ -1,7 +1,7 @@
 'use client'
 
 import { Building, Coins, TriangleAlert } from 'lucide-react'
-import Link from 'next/link'
+import Link from '@/components/viatik/link'
 import * as React from 'react'
 
 import { ButtonLink } from '@/components/app/button-link'

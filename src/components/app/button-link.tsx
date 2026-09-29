@@ -1,5 +1,5 @@
 import type { Route } from 'next'
-import Link from 'next/link'
+import Link from '@/components/viatik/link'
 import type * as React from 'react'
 
 import { buttonVariants } from '@/components/ui/button'

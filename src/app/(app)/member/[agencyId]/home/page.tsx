@@ -1,7 +1,7 @@
 'use client'
 
 import { ArrowUpRight, CalendarClock, FileWarning, PieChart, Plus, Upload } from 'lucide-react'
-import Link from 'next/link'
+import Link from '@/components/viatik/link'
 
 import { ButtonLink } from '@/components/app/button-link'
 import { useHref, useRole } from '@/components/app/role-context'

@@ -41,6 +41,12 @@ export type DataTableProps<T> = {
   caption?: string
 }
 
+// Stable default: a fresh `[]` per render would change the `filtered` memo on
+// every render, and TanStack's automatic page reset (a microtask that sets
+// state) would then re-render the table forever — a synchronous loop when it
+// starts inside a pointer event, which froze the whole tab.
+const NO_FACETS: never[] = []
+
 /**
  * Tables for money: search, facet chips, sorting, pagination, and a card
  * layout on phones. Numeric columns should right-align with `num` cells.
@@ -51,7 +57,7 @@ export function DataTable<T>({
   renderMobile,
   searchPlaceholder = 'Search',
   searchText,
-  facets = [],
+  facets = NO_FACETS,
   toolbar,
   onRowClick,
   empty,
@@ -88,6 +94,9 @@ export function DataTable<T>({
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     initialState: { pagination: { pageSize } },
+    // The page index is reset below when the search or a facet changes; the
+    // automatic reset would also fire on every parent re-render.
+    autoResetPageIndex: false,
   })
 
   React.useEffect(() => {

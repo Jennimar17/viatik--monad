@@ -1,7 +1,7 @@
 'use client'
 
 import { Menu, Plus } from 'lucide-react'
-import Link from 'next/link'
+import Link from '@/components/viatik/link'
 import { usePathname } from 'next/navigation'
 
 import { useSidebar } from '@/components/ui/sidebar'

@@ -2,7 +2,7 @@
 
 import type { ColumnDef } from '@tanstack/react-table'
 import { Building2, LayoutGrid, Plus, Rows3 } from 'lucide-react'
-import Link from 'next/link'
+import Link from '@/components/viatik/link'
 import { useRouter } from 'next/navigation'
 import * as React from 'react'
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { Pencil, UserMinus } from 'lucide-react'
-import Link from 'next/link'
+import Link from '@/components/viatik/link'
 import { useParams, useRouter } from 'next/navigation'
 import * as React from 'react'
 

@@ -1,6 +1,6 @@
 'use client'
 
-import Link from 'next/link'
+import Link from '@/components/viatik/link'
 import { useParams, useRouter } from 'next/navigation'
 import * as React from 'react'
 
