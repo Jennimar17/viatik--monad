@@ -49,7 +49,7 @@ const demoAccounts = z
       // A person listed without an email yet (`u_maya=`) is simply not bound.
       if (userId && email === '') continue
       if (!userId || !email || !email.includes('@')) {
-        ctx.addIssue({ code: 'custom', message: `DEMO_ACCOUNTS: expected userId=email, got "${pair}".` })
+        ctx.addIssue({ code: 'custom', message: 'each entry must look like userId=email' })
         return z.NEVER
       }
       accounts[email.toLowerCase()] = userId
@@ -73,6 +73,14 @@ const serverEnvSchema = z.object({
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>
 
+/**
+ * Server environment. A key left blank in a .env file (`VIATIK_LEDGER_ADDRESS=`)
+ * counts as unset. Invalid values fail with the key names only, never the values.
+ */
 export function readServerEnv(): ServerEnv {
-  return serverEnvSchema.parse(process.env)
+  const values = Object.fromEntries(Object.entries(process.env).filter(([, value]) => value !== ''))
+  const parsed = serverEnvSchema.safeParse(values)
+  if (parsed.success) return parsed.data
+  const keys = parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+  throw new Error(`Invalid server environment. ${keys.join('; ')}`)
 }
