@@ -1,8 +1,14 @@
 # Single-app repo: this file only holds pnpm settings.
 
-# Install scripts. Native binaries already ship as prebuilt optional dependencies.
-allowBuilds:
-  unrs-resolver: false
+# Dependency build scripts that never run. Native binaries already ship as
+# prebuilt optional dependencies; bufferutil, utf-8-validate and keccak fall
+# back to JavaScript; @reown/appkit's postinstall is telemetry.
+ignoredBuiltDependencies:
+  - '@reown/appkit'
+  - bufferutil
+  - keccak
+  - unrs-resolver
+  - utf-8-validate
 
 minimumReleaseAgeExclude:
   - prettier@3.9.9

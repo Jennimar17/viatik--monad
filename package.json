@@ -2,7 +2,7 @@
   "name": "viatik",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@12.5.1",
+  "packageManager": "pnpm@10.34.6",
   "engines": {
     "node": ">=22"
   },
@@ -15,14 +15,19 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
+    "@privy-io/node": "^0.35.0",
+    "@privy-io/react-auth": "^3.46.0",
     "@tanstack/react-query": "^5.103.2",
     "@tanstack/react-table": "^8.21.3",
     "@vercel/analytics": "^2.0.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "drizzle-orm": "^0.45.3",
+    "hono": "^4.13.12",
     "lucide-react": "^1.47.0",
     "next": "16.3.6",
+    "postgres": "^3.4.9",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "recharts": "^3.10.1",

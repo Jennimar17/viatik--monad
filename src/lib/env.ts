@@ -33,10 +33,36 @@ const address = z
   .regex(/^0x[0-9a-fA-F]{40}$/, 'Expected a contract address.')
   .transform((value) => value as `0x${string}`)
 
+/**
+ * `userId=email` pairs, comma separated, that bind sign-in emails to the
+ * seeded demo people (e.g. `u_elena=test-1234@privy.io`). Parsed to
+ * `{ [email]: userId }` with lowercased emails.
+ */
+const demoAccounts = z
+  .string()
+  .optional()
+  .transform((value, ctx) => {
+    const accounts: Record<string, string> = {}
+    for (const pair of (value ?? '').split(',')) {
+      if (!pair.trim()) continue
+      const [userId, email] = pair.split('=').map((part) => part.trim())
+      // A person listed without an email yet (`u_maya=`) is simply not bound.
+      if (userId && email === '') continue
+      if (!userId || !email || !email.includes('@')) {
+        ctx.addIssue({ code: 'custom', message: `DEMO_ACCOUNTS: expected userId=email, got "${pair}".` })
+        return z.NEVER
+      }
+      accounts[email.toLowerCase()] = userId
+    }
+    return accounts
+  })
+
 /** Server-only secrets. Read lazily so client bundles never reference them. */
 const serverEnvSchema = z.object({
   PRIVY_APP_SECRET: z.string().min(1).optional(),
-  PIMLICO_API_KEY: z.string().min(1).optional(),
+  /** Dashboard verification key: verifies access tokens without calling Privy. */
+  PRIVY_JWT_VERIFICATION_KEY: z.string().min(1).optional(),
+  DEMO_ACCOUNTS: demoAccounts,
   MONAD_RPC_URL: z.url().optional(),
   /** Deployed ViatikLedger contract. While unset, operations settle on the mock ledger. */
   VIATIK_LEDGER_ADDRESS: address.optional(),

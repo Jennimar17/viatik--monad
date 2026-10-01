@@ -16,7 +16,7 @@ One app serves both the marketing site and the product.
 ## Requirements
 
 - Node.js 22
-- pnpm 12 (`corepack enable`)
+- pnpm 10 (`corepack enable`; the version is pinned in `package.json`)
 
 ## Getting started
 
@@ -40,15 +40,16 @@ The app runs on http://localhost:3000.
 
 All variables are optional in development. See `.env.example`.
 
-| Variable                     | Purpose                                        |
-| ---------------------------- | ---------------------------------------------- |
-| `NEXT_PUBLIC_SITE_URL`       | Public origin, used for metadata               |
-| `NEXT_PUBLIC_DATA_SOURCE`    | `mock` (default) or `api`                      |
-| `NEXT_PUBLIC_DEMO_MODE`      | Enables the demo personas and reset (`true`)   |
-| `NEXT_PUBLIC_MONAD_NETWORK`  | `testnet` (10143, default) or `mainnet` (143)  |
-| `NEXT_PUBLIC_PRIVY_APP_ID`   | Privy app for sign-in and smart wallets        |
-| `PRIVY_APP_SECRET`           | Server-side Privy token verification           |
-| `PIMLICO_API_KEY`            | Bundler and paymaster for sponsored operations |
-| `MONAD_RPC_URL`              | RPC endpoint for server-side reads and writes  |
-| `VIATIK_LEDGER_ADDRESS`      | Deployed ViatikLedger contract                 |
-| `DATABASE_URL`, `SUPABASE_*` | Offchain data                                  |
+| Variable                     | Purpose                                         |
+| ---------------------------- | ----------------------------------------------- |
+| `NEXT_PUBLIC_SITE_URL`       | Public origin, used for metadata                |
+| `NEXT_PUBLIC_DATA_SOURCE`    | `mock` (default) or `api`                       |
+| `NEXT_PUBLIC_DEMO_MODE`      | Enables the demo personas and reset (`true`)    |
+| `NEXT_PUBLIC_MONAD_NETWORK`  | `testnet` (10143, default) or `mainnet` (143)   |
+| `NEXT_PUBLIC_PRIVY_APP_ID`   | Privy app for sign-in and embedded accounts     |
+| `PRIVY_APP_SECRET`           | Server-side Privy token verification            |
+| `PRIVY_JWT_VERIFICATION_KEY` | Optional, verifies tokens without calling Privy |
+| `DEMO_ACCOUNTS`              | Sign-in emails bound to the demo people         |
+| `MONAD_RPC_URL`              | RPC endpoint for server-side reads and writes   |
+| `VIATIK_LEDGER_ADDRESS`      | Deployed ViatikLedger contract                  |
+| `DATABASE_URL`, `SUPABASE_*` | Offchain data                                   |
