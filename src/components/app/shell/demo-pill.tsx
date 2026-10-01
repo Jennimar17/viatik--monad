@@ -31,7 +31,7 @@ import { useShellUi } from './app-shell'
 export function DemoPill() {
   const { userId, user } = useViatikState()
   const { role } = useRole()
-  const { signIn } = useSession()
+  const { enterDemo } = useSession()
   const router = useRouter()
   const resetDemo = useResetDemo()
   const { bottomBar } = useShellUi()
@@ -78,7 +78,7 @@ export function DemoPill() {
                 <DropdownMenuItem
                   key={persona.key}
                   onClick={() => {
-                    signIn(persona.userId)
+                    enterDemo(persona.userId)
                     router.push(persona.href as Route)
                   }}
                   className="items-start gap-3 rounded-lg p-2.5"

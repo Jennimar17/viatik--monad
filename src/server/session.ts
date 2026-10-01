@@ -1,5 +1,5 @@
 import type { LinkedAccount, User } from '@privy-io/node'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { getAddress, isAddress } from 'viem'
 
@@ -18,14 +18,16 @@ type Profile = { email: string | null; name: string | null; address: `0x${string
 /**
  * The person behind a verified access token. The identity token (when the
  * client sends it and it belongs to the same person) saves a call to Privy;
- * otherwise the user is fetched by the verified id.
+ * otherwise the user is fetched by the verified id. The embedded account is
+ * created right after the first sign-in, so an identity token issued before
+ * that has no address yet: the API lookup then has the fresh record.
  */
 async function readIdentity(privyUserId: string, identityToken: string | undefined): Promise<User> {
   const privy = getPrivy()
   if (identityToken) {
     try {
       const user = await privy.users().get({ id_token: identityToken })
-      if (user.id === privyUserId) return user
+      if (user.id === privyUserId && embeddedAddress(user.linked_accounts)) return user
     } catch {
       // Expired or malformed identity token: the API lookup below is authoritative.
     }
@@ -99,18 +101,29 @@ async function upsertUser(privyId: string, profile: Profile): Promise<{ row: Use
     lastSeenAt: now,
   }
   const demoId = profile.email ? readServerEnv().DEMO_ACCOUNTS[profile.email] : undefined
+  // Concurrent sign-ins (two tabs, or the refresh that records a new wallet)
+  // can reach these conflicts in any order: a missing value never erases a known one.
+  const keepKnown = {
+    email: sql`coalesce(excluded.email, ${users.email})`,
+    walletAddress: sql`coalesce(excluded.wallet_address, ${users.walletAddress})`,
+    lastSeenAt: now,
+  }
 
   const [row] = demoId
-    ? await db
+    ? // A demo person signing in from a new Privy account takes over the seeded id.
+      await db
         .insert(users)
         .values({ id: demoId, ...values })
-        .onConflictDoUpdate({ target: users.id, set: values })
+        .onConflictDoUpdate({
+          target: users.id,
+          set: { ...keepKnown, privyId, name: sql`coalesce(${users.name}, excluded.name)` },
+        })
         .returning()
-    : // Two tabs signing in at once both land here; the second keeps the first one's id.
+    : // Two requests for the same new person: the second keeps the first one's id.
       await db
         .insert(users)
         .values({ id: newId('u'), ...values })
-        .onConflictDoUpdate({ target: users.privyId, set: { lastSeenAt: now } })
+        .onConflictDoUpdate({ target: users.privyId, set: keepKnown })
         .returning()
 
   if (!row) throw new Error('The user row was not written.')

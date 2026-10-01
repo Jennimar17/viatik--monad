@@ -16,9 +16,35 @@ import {
   type DataSource,
   type DispatchOptions,
   type InvitationPreview,
+  type LoadOptions,
   type OperationPhase,
+  type SessionProfile,
 } from './data-source'
 import { planSettlement } from './settlement'
+
+/**
+ * A real account the demo data has never seen (anyone but Elena, Maya and
+ * Alex). They start with no memberships: they create a portfolio or accept an
+ * invitation. Their profile comes from what the server verified.
+ */
+function withNewPerson(state: ViatikState, userId: string, profile: SessionProfile): ViatikState {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  return {
+    ...state,
+    users: [
+      ...state.users,
+      {
+        id: userId,
+        name: profile.name ?? profile.email ?? 'New member',
+        email: profile.email ?? '',
+        title: '',
+        timeZone,
+        locale: 'en-US',
+        createdAt: new Date().toISOString(),
+      },
+    ],
+  }
+}
 
 const STORAGE_KEY = 'viatik:demo-state'
 const STATE_VERSION = 1
@@ -72,8 +98,12 @@ export class MockDataSource implements DataSource {
     }
   }
 
-  async load(userId: string): Promise<ViatikState> {
+  async load(userId: string, options: LoadOptions = {}): Promise<ViatikState> {
     await wait(jitter(300, 900))
+    const state = this.read()
+    if (options.profile && !state.users.some((u) => u.id === userId)) {
+      this.write(withNewPerson(state, userId, options.profile))
+    }
     return scopeStateForUser(this.read(), userId)
   }
 

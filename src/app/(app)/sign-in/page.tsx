@@ -42,7 +42,7 @@ export default function SignInPage() {
 function SignIn() {
   const router = useRouter()
   const params = useSearchParams()
-  const { userId, signIn } = useSession()
+  const { userId, mode, enterDemo } = useSession()
   const [chooseDemo, setChooseDemo] = React.useState(false)
   const personasRef = React.useRef<HTMLDivElement>(null)
 
@@ -50,10 +50,10 @@ function SignIn() {
     (key: DemoPersonaKey) => {
       const persona = DEMO_PERSONAS.find((p) => p.key === key)
       if (!persona) return
-      signIn(persona.userId)
+      enterDemo(persona.userId)
       router.push(persona.href as Route)
     },
-    [router, signIn],
+    [router, enterDemo],
   )
 
   // Deep links from viatik.xyz ("Explore the Investor view").
@@ -68,7 +68,7 @@ function SignIn() {
     personasRef.current?.querySelector('button')?.focus()
   }
 
-  const current = DEMO_PERSONAS.find((p) => p.userId === userId)
+  const current = mode === 'demo' ? DEMO_PERSONAS.find((p) => p.userId === userId) : undefined
 
   return (
     <main id="main" className="grid min-h-svh grid-cols-1 lg:grid-cols-[1.05fr_1fr]">

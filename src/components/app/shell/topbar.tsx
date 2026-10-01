@@ -140,8 +140,8 @@ export function Topbar() {
             </DropdownMenuItem>
             <DropdownMenuItem
               className="gap-2 rounded-lg"
-              onClick={() => {
-                signOut()
+              onClick={async () => {
+                await signOut()
                 router.replace('/sign-in')
               }}
             >

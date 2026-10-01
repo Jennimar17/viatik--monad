@@ -14,7 +14,13 @@ import type { CommandInput, CommandName, CommandResult } from '@/domain/engine'
 import { subjectFor } from '@/domain/permissions'
 import type { Membership, User, ViatikState } from '@/domain/types'
 
-import { getDataSource, type OperationPhase } from './index'
+import {
+  DataSourceError,
+  getDataSource,
+  type OperationPhase,
+  type SessionMode,
+  type SessionProfile,
+} from './index'
 
 type ViatikContextValue = {
   state: ViatikState | undefined
@@ -22,6 +28,8 @@ type ViatikContextValue = {
   isError: boolean
   refetch: () => void
   userId: string | null
+  /** Demo person or real account; null while nobody is signed in. */
+  mode: SessionMode | null
   user: User | undefined
   memberships: Membership[]
   /** Frozen per data load so derived numbers are stable during a render. */
@@ -30,14 +38,34 @@ type ViatikContextValue = {
 
 const ViatikContext = React.createContext<ViatikContextValue | null>(null)
 
-const STATE_KEY = ['viatik', 'state'] as const
+/** Prefix of every Viatik state query; invalidate it to reload what screens show. */
+export const STATE_KEY = ['viatik', 'state'] as const
+
+/** One query cache for the product: the session and the Viatik state both live in it. */
+export function QueryProvider({ children }: { children: React.ReactNode }) {
+  const [client] = React.useState(
+    () => new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } } }),
+  )
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+}
 
 /** Loads everything the signed-in user may see and shares it with every screen. */
-function ViatikProvider({ userId, children }: { userId: string | null; children: React.ReactNode }) {
+export function ViatikProvider({
+  userId,
+  mode,
+  profile,
+  children,
+}: {
+  userId: string | null
+  mode: SessionMode | null
+  /** A real account's verified profile, so the data knows the person on their first visit. */
+  profile: SessionProfile | null
+  children: React.ReactNode
+}) {
   const query = useQuery({
-    queryKey: [...STATE_KEY, userId],
-    queryFn: () => getDataSource().load(userId as string),
-    enabled: Boolean(userId),
+    queryKey: [...STATE_KEY, mode, userId],
+    queryFn: () => getDataSource(mode as SessionMode).load(userId as string, { profile }),
+    enabled: Boolean(userId && mode),
     staleTime: 60_000,
   })
 
@@ -52,31 +80,20 @@ function ViatikProvider({ userId, children }: { userId: string | null; children:
       isError,
       refetch: () => void refetch(),
       userId,
+      mode,
       user: state?.users.find((u) => u.id === userId),
       memberships: state?.memberships.filter((m) => m.userId === userId && m.status === 'active') ?? [],
       now,
     }),
-    [state, isLoading, isError, refetch, userId, now],
+    [state, isLoading, isError, refetch, userId, mode, now],
   )
 
   return <ViatikContext.Provider value={value}>{children}</ViatikContext.Provider>
 }
 
-/** Query client plus the Viatik state for `userId` (null while nobody is signed in). */
-export function DataProvider({ userId, children }: { userId: string | null; children: React.ReactNode }) {
-  const [client] = React.useState(
-    () => new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } } }),
-  )
-  return (
-    <QueryClientProvider client={client}>
-      <ViatikProvider userId={userId}>{children}</ViatikProvider>
-    </QueryClientProvider>
-  )
-}
-
 export function useViatik() {
   const context = React.useContext(ViatikContext)
-  if (!context) throw new Error('useViatik must be used inside DataProvider')
+  if (!context) throw new Error('useViatik must be used inside ViatikProvider')
   return context
 }
 
@@ -103,13 +120,15 @@ export function useCommand<N extends CommandName>(
   name: N,
   options: { success?: string | ((result: CommandResult<N>) => string); silent?: boolean } = {},
 ) {
-  const { userId } = useViatik()
+  const { userId, mode } = useViatik()
   const queryClient = useQueryClient()
   const [phase, setPhase] = React.useState<OperationPhase | 'idle'>('idle')
 
   const mutation = useMutation({
-    mutationFn: (input: CommandInput<N>) =>
-      getDataSource().dispatch(userId as string, name, input, { onPhase: setPhase }),
+    mutationFn: (input: CommandInput<N>) => {
+      if (!userId || !mode) throw new DataSourceError('Sign in to continue.', 'unauthenticated')
+      return getDataSource(mode).dispatch(userId, name, input, { onPhase: setPhase })
+    },
     onSuccess: (result) => {
       if (!options.silent && options.success) {
         toast.success(typeof options.success === 'function' ? options.success(result) : options.success)
@@ -151,7 +170,7 @@ export function useCommand<N extends CommandName>(
 export function useResetDemo() {
   const queryClient = useQueryClient()
   return React.useCallback(async () => {
-    await getDataSource().reset?.()
+    await getDataSource('demo').reset?.()
     await queryClient.invalidateQueries({ queryKey: STATE_KEY })
   }, [queryClient])
 }

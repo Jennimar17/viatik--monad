@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/viatik/feedback'
 import { OrgAvatar, roleIcons } from '@/components/viatik/people'
 import { ViatikLogo } from '@/components/viatik/viatik-logo'
 import { getDataSource } from '@/data'
+import { STATE_KEY } from '@/data/react'
 import type { Invitation } from '@/domain/types'
 import { roleDescription, roleLabel } from '@/domain/permissions'
 import { useSession } from '@/lib/session'
@@ -24,14 +25,14 @@ import { useSession } from '@/lib/session'
 export default function InvitePage() {
   const { code } = useParams<{ code: string }>()
   const router = useRouter()
-  const { signIn } = useSession()
+  const { enterDemo } = useSession()
   const queryClient = useQueryClient()
   const [accepting, setAccepting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
   const { data: invitation, isLoading } = useQuery({
     queryKey: ['invitation', code],
-    queryFn: () => getDataSource().lookupInvitation(code),
+    queryFn: () => getDataSource('demo').lookupInvitation(code),
   })
 
   if (isLoading) {
@@ -70,9 +71,11 @@ export default function InvitePage() {
     try {
       // Demo: the invitee gets a new account of their own.
       const inviteeId = `u_${code.replace(/[^a-z0-9]/gi, '').slice(0, 18)}`
-      const accepted = (await getDataSource().dispatch(inviteeId, 'acceptInvitation', { code })) as Invitation
-      signIn(inviteeId)
-      await queryClient.invalidateQueries()
+      const accepted = (await getDataSource('demo').dispatch(inviteeId, 'acceptInvitation', {
+        code,
+      })) as Invitation
+      enterDemo(inviteeId)
+      await queryClient.invalidateQueries({ queryKey: STATE_KEY })
       router.push(
         roleHome({
           id: 'new',

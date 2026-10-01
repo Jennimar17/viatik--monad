@@ -1,15 +1,19 @@
-import type { DataSource } from './data-source'
+import type { DataSource, SessionMode } from './data-source'
 import { MockDataSource } from './mock-data-source'
 
 export * from './data-source'
 
-let instance: DataSource | null = null
+let demo: MockDataSource | null = null
+const demoSource = () => (demo ??= new MockDataSource())
 
-/**
- * The data source for this page load. The API data source arrives with the
- * backend phase; until then `NEXT_PUBLIC_DATA_SOURCE=api` still uses the demo.
- */
-export function getDataSource(): DataSource {
-  instance ??= new MockDataSource()
-  return instance
+/** Which data each kind of session reads and changes. */
+const SOURCES: Record<SessionMode, () => DataSource> = {
+  demo: demoSource,
+  // Until the API data source lands (phase 7), real accounts share this
+  // device's demo data under their verified identity.
+  account: demoSource,
+}
+
+export function getDataSource(mode: SessionMode): DataSource {
+  return SOURCES[mode]()
 }

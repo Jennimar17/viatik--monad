@@ -4,24 +4,37 @@ import type * as React from 'react'
 
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { DataProvider } from '@/data/react'
+import { QueryProvider, ViatikProvider } from '@/data/react'
+import { ViatikPrivyProvider } from '@/lib/privy'
 import { SessionProvider, useSession } from '@/lib/session'
 
 function SessionData({ children }: { children: React.ReactNode }) {
-  const { userId } = useSession()
-  return <DataProvider userId={userId ?? null}>{children}</DataProvider>
+  const { userId, mode, account } = useSession()
+  return (
+    <ViatikProvider userId={userId ?? null} mode={mode} profile={account}>
+      {children}
+    </ViatikProvider>
+  )
 }
 
-/** Session, data, tooltips and toasts for every product screen (not the landing). */
+/** Accounts, session, data, tooltips and toasts for every product screen (not the landing). */
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
-    <SessionProvider>
-      <SessionData>
-        <TooltipProvider delay={300}>
-          {children}
-          <Toaster position="bottom-right" offset={{ bottom: 24, right: 24 }} mobileOffset={{ bottom: 88 }} />
-        </TooltipProvider>
-      </SessionData>
-    </SessionProvider>
+    <QueryProvider>
+      <ViatikPrivyProvider>
+        <SessionProvider>
+          <SessionData>
+            <TooltipProvider delay={300}>
+              {children}
+              <Toaster
+                position="bottom-right"
+                offset={{ bottom: 24, right: 24 }}
+                mobileOffset={{ bottom: 88 }}
+              />
+            </TooltipProvider>
+          </SessionData>
+        </SessionProvider>
+      </ViatikPrivyProvider>
+    </QueryProvider>
   )
 }
