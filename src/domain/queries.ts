@@ -57,9 +57,19 @@ export function activeAgreement(state: ViatikState, agencyId: Id): FundingAgreem
   )
 }
 
+/**
+ * The agreement whose spending policy governs an Agency's payments: the
+ * active one, or one the Investor paused (a pause must not lift its rules).
+ */
+export function governingAgreement(state: ViatikState, agencyId: Id): FundingAgreement | undefined {
+  return state.agreements.find(
+    (a) => a.agencyId === agencyId && (a.status === 'active' || a.status === 'paused'),
+  )
+}
+
 /** Above the agreement's exception threshold → the Investor decides. */
 export function isException(state: ViatikState, request: PaymentRequest): boolean {
-  const agreement = state.agreements.find((a) => a.agencyId === request.agencyId && a.status === 'active')
+  const agreement = governingAgreement(state, request.agencyId)
   return agreement ? request.amount > agreement.spendingPolicy.exceptionThreshold : false
 }
 

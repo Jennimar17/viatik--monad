@@ -1,5 +1,6 @@
 import type { CommandInput, CommandName, CommandResult } from '@/domain/engine'
-import type { Invitation, Role, ViatikState } from '@/domain/types'
+import type { InvitationPreview, VerifiedProfile } from '@/domain/identity'
+import type { ViatikState } from '@/domain/types'
 import type { LedgerStatus } from '@/ledger/types'
 
 /** Human operation lifecycle shown while a command settles. */
@@ -12,7 +13,7 @@ export type OperationPhase = LedgerStatus
 export type SessionMode = 'demo' | 'account'
 
 /** What the server verified about a real account; used to create its profile the first time. */
-export type SessionProfile = { name: string | null; email: string | null }
+export type SessionProfile = VerifiedProfile
 
 export type LoadOptions = {
   /** A real account's verified profile; the person is added if the data does not know them yet. */
@@ -25,16 +26,7 @@ export type DispatchOptions = {
   idempotencyKey?: string
 }
 
-/** What an invitation link may show before anyone signs in. */
-export type InvitationPreview = {
-  code: string
-  name: string
-  email: string
-  role: Role
-  status: Invitation['status']
-  workspace: string
-  invitedBy: string
-}
+export type { InvitationPreview }
 
 /**
  * The only way screens read or change data. Swapping the implementation

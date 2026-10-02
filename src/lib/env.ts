@@ -63,6 +63,8 @@ const serverEnvSchema = z.object({
   /** Dashboard verification key: verifies access tokens without calling Privy. */
   PRIVY_JWT_VERIFICATION_KEY: z.string().min(1).optional(),
   DEMO_ACCOUNTS: demoAccounts,
+  /** Enables POST /api/v1/admin/seed (restores the demo story); without it the route does not exist. */
+  ADMIN_SEED_TOKEN: z.string().min(24).optional(),
   MONAD_RPC_URL: z.url().optional(),
   /** Deployed ViatikLedger contract. While unset, operations settle on the mock ledger. */
   VIATIK_LEDGER_ADDRESS: address.optional(),

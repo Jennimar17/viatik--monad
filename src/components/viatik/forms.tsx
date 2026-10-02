@@ -147,7 +147,7 @@ export function EvidenceUploader({
           addFiles(event.dataTransfer.files)
         }}
         className={cn(
-          'flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-border px-6 py-8 text-center transition-colors hover:border-foreground/40 hover:bg-muted/30 focus-within:ring-2 focus-within:ring-ring',
+          'flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-border px-6 py-8 text-center transition-colors focus-within:ring-2 focus-within:ring-ring hover:border-foreground/40 hover:bg-muted/30',
           dragging && 'border-foreground/60 bg-muted/40',
         )}
       >
@@ -180,9 +180,12 @@ export function EvidenceUploader({
           </div>
           <button
             type="button"
-            disabled={!/^https?:\/\/\S+\.\S+/.test(link)}
+            disabled={!/^https?:\/\/\S+\.\S+/.test(link.trim()) || link.trim().length > 2000}
             onClick={() => {
-              onChange([...files, { kind: 'link', name: link.replace(/^https?:\/\//, ''), url: link }])
+              const url = link.trim()
+              // The shown name is the link without its scheme, kept to the 300 characters a name allows.
+              const name = url.replace(/^https?:\/\//i, '').slice(0, 300)
+              onChange([...files, { kind: 'link', name, url }])
               setLink('')
             }}
             className="h-10 rounded-full border border-border px-4 text-sm font-medium transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-40"

@@ -6,6 +6,7 @@ import {
   type CommandResult,
 } from '@/domain/engine'
 import { createDemoState } from '@/domain/fixtures'
+import { invitationPreview, withVerifiedPerson } from '@/domain/identity'
 import { newId } from '@/domain/ids'
 import type { ViatikState } from '@/domain/types'
 import { scopeStateForUser } from '@/domain/visibility'
@@ -18,34 +19,8 @@ import {
   type InvitationPreview,
   type LoadOptions,
   type OperationPhase,
-  type SessionProfile,
 } from './data-source'
 import { planSettlement } from './settlement'
-
-/**
- * A real account the demo data has never seen (anyone but Elena, Maya and
- * Alex). They start with no memberships: they create a portfolio or accept an
- * invitation. Their profile comes from what the server verified; without a
- * verified name it stays empty until onboarding or the invitation fills it.
- */
-function withNewPerson(state: ViatikState, userId: string, profile: SessionProfile): ViatikState {
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-  return {
-    ...state,
-    users: [
-      ...state.users,
-      {
-        id: userId,
-        name: profile.name ?? '',
-        email: profile.email ?? '',
-        title: '',
-        timeZone,
-        locale: 'en-US',
-        createdAt: new Date().toISOString(),
-      },
-    ],
-  }
-}
 
 const STORAGE_KEY = 'viatik:demo-state'
 const STATE_VERSION = 1
@@ -101,46 +76,20 @@ export class MockDataSource implements DataSource {
 
   async load(userId: string, options: LoadOptions = {}): Promise<ViatikState> {
     await wait(jitter(300, 900))
-    const state = this.read()
-    const profile = options.profile
-    const known = state.users.find((u) => u.id === userId)
-    if (profile && !known) {
-      this.write(withNewPerson(state, userId, profile))
-    } else if (profile && known) {
-      // What the server verified wins, as it does in the database: the email
-      // (so invitations check the address the person proved) and a Google name
-      // for someone who has none yet. A name typed in Settings is kept.
-      const email = profile.email && known.email !== profile.email ? profile.email : known.email
-      const name = !known.name.trim() && profile.name ? profile.name : known.name
-      if (email !== known.email || name !== known.name) {
-        this.write({
-          ...state,
-          users: state.users.map((u) => (u.id === userId ? { ...u, email, name } : u)),
-        })
-      }
+    // A real account reading the device's demo data: the same rule the server applies.
+    if (options.profile) {
+      const next = withVerifiedPerson(this.read(), userId, options.profile, {
+        now: new Date().toISOString(),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      })
+      if (next) this.write(next)
     }
     return scopeStateForUser(this.read(), userId)
   }
 
   async lookupInvitation(code: string): Promise<InvitationPreview | null> {
     await wait(jitter(200, 500))
-    const state = this.read()
-    const invitation = state.invitations.find((i) => i.code === code)
-    if (!invitation) return null
-    const workspace =
-      invitation.scope.kind === 'agency'
-        ? state.agencies.find((a) => a.id === (invitation.scope as { agencyId: string }).agencyId)?.name
-        : state.portfolios.find((p) => p.id === (invitation.scope as { portfolioId: string }).portfolioId)
-            ?.name
-    return {
-      code: invitation.code,
-      name: invitation.name,
-      email: invitation.email,
-      role: invitation.role,
-      status: invitation.status,
-      workspace: workspace ?? 'Viatik',
-      invitedBy: state.users.find((u) => u.id === invitation.invitedBy)?.name ?? 'Your team',
-    }
+    return invitationPreview(this.read(), code)
   }
 
   async dispatch<N extends CommandName>(

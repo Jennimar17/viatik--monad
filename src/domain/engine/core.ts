@@ -1,10 +1,11 @@
-import { newId } from '../ids'
+import { newId, pseudoSha256 } from '../ids'
 import { formatUsd, type Cents } from '../money'
 import { decide, type Capability, type PermissionContext, type Subject } from '../permissions'
 import type {
   Activity,
   ActivityType,
   Actor,
+  Evidence,
   Id,
   ISODate,
   Location,
@@ -209,6 +210,34 @@ export const usdText = (value: Cents) => formatUsd(value, { withCode: true })
 export function requirePositive(amount: Cents, label = 'Amount') {
   if (!Number.isSafeInteger(amount) || amount <= 0) {
     throw new DomainError('validation', `${label} must be greater than zero.`)
+  }
+}
+
+/** What a person attaches: a file's metadata, a link or a note. */
+export type EvidenceDraft = Pick<Evidence, 'kind' | 'name' | 'url' | 'mimeType' | 'sizeBytes'>
+
+/**
+ * A stored piece of evidence. Only the known draft fields are copied, so a
+ * caller can never choose the record id or add fields of its own; links must
+ * be http(s) because they are rendered as anchors for other people.
+ */
+export function evidenceFrom(draft: EvidenceDraft, addedBy: Id, now: ISODate): Evidence {
+  const id = newId('ev')
+  const name = requireText(draft.name, 'Document name', 300)
+  const url = draft.url?.trim() || undefined
+  if (url && !/^https?:\/\//i.test(url)) {
+    throw new DomainError('validation', 'Links must start with http:// or https://.')
+  }
+  return {
+    id,
+    kind: draft.kind,
+    name,
+    url,
+    mimeType: draft.mimeType,
+    sizeBytes: draft.sizeBytes,
+    sha256: pseudoSha256(`${id}:${name}:${url ?? ''}`),
+    addedAt: now,
+    addedBy,
   }
 }
 

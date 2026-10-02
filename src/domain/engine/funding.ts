@@ -15,7 +15,15 @@ import type {
   SpendingPolicy,
   Tranche,
 } from '../types'
-import { DomainError, requirePositive, requireText, usdText, type Tx } from './core'
+import {
+  DomainError,
+  evidenceFrom,
+  requirePositive,
+  requireText,
+  usdText,
+  type EvidenceDraft,
+  type Tx,
+} from './core'
 
 // ─── Portfolios ──────────────────────────────────────────────────────────────
 
@@ -435,13 +443,7 @@ export function fundAgreement(tx: Tx, input: { agreementId: Id; amount: Cents })
 
 // ─── Milestones and tranches ─────────────────────────────────────────────────
 
-export type EvidenceDraft = {
-  kind: Evidence['kind']
-  name: string
-  url?: string
-  mimeType?: string
-  sizeBytes?: number
-}
+export type { EvidenceDraft } from './core'
 
 export function submitMilestoneEvidence(
   tx: Tx,
@@ -464,16 +466,7 @@ export function submitMilestoneEvidence(
   }
   assertTransition('Milestone', canTransitionMilestone, next, 'ready_for_review')
 
-  const evidence: Evidence[] = input.evidence.map((item) => {
-    const id = newId('ev')
-    return {
-      id,
-      ...item,
-      sha256: pseudoSha256(`${id}:${item.name}:${item.url ?? ''}`),
-      addedAt: tx.now,
-      addedBy: tx.userId,
-    }
-  })
+  const evidence: Evidence[] = input.evidence.map((item) => evidenceFrom(item, tx.userId, tx.now))
   milestone.evidence = [...milestone.evidence, ...evidence]
   milestone.status = 'ready_for_review'
   milestone.submittedAt = tx.now

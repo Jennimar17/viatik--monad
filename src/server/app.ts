@@ -4,14 +4,18 @@ import { Hono } from 'hono'
 import type { ApiErrorBody } from '@/data/api-contract'
 import { publicEnv, readServerEnv } from '@/lib/env'
 
+import { admin } from './admin'
+import { commands } from './commands'
 import { requestId, type AppEnv } from './context'
 import { getDb } from './db/client'
-import { ApiError } from './errors'
+import { toErrorResponse } from './errors'
 import { session } from './session'
+import { invitations, state } from './state'
 
 /**
- * The Viatik API, mounted by Next at `/api`. Every product route verifies the
- * caller's Privy token; the next phases add state, commands and evidence.
+ * The Viatik API, mounted by Next at `/api`. Product routes verify the
+ * caller's Privy token and run the same domain engine as the demo, on the
+ * state stored in Supabase.
  */
 export const app = new Hono<AppEnv>()
   .basePath('/api')
@@ -34,18 +38,17 @@ export const app = new Hono<AppEnv>()
     })
   })
   .route('/v1/session', session)
+  .route('/v1/state', state)
+  .route('/v1/invitations', invitations)
+  .route('/v1/commands', commands)
+  .route('/v1/admin', admin)
 
 app.notFound((c) =>
   c.json<ApiErrorBody>({ error: { code: 'not_found', message: 'This endpoint does not exist.' } }, 404),
 )
 
 app.onError((error, c) => {
-  if (error instanceof ApiError) {
-    return c.json<ApiErrorBody>({ error: { code: error.code, message: error.message } }, error.status)
-  }
-  console.error(`[api] ${c.get('requestId')}`, error)
-  return c.json<ApiErrorBody>(
-    { error: { code: 'unknown', message: 'Something went wrong. Nothing was changed.' } },
-    500,
-  )
+  const { status, code, message, expected } = toErrorResponse(error)
+  if (!expected) console.error(`[api] ${c.get('requestId')}`, error)
+  return c.json<ApiErrorBody>({ error: { code, message } }, status)
 })

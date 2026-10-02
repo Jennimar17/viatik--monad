@@ -168,8 +168,9 @@ export function planSettlement<N extends CommandName>(args: PlanArgs<N>): Settle
 
     case 'requestPayment': {
       const request = args.result as PaymentRequest
-      // Requests waiting for an Agency Admin are settled when approved.
-      if (request.status === 'needs_approval') return null
+      // Requests waiting for an Agency Admin are settled when approved; a
+      // retry that returned an existing request was settled when it was made.
+      if (request.status === 'needs_approval' || before.requests.some((r) => r.id === request.id)) return null
       const budget = before.budgets.find((b) => b.id === request.budgetId)
       if (!budget || request.destination.kind !== 'destination') return null
       const allowance = before.allowances.find(
