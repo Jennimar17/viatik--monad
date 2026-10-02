@@ -62,9 +62,14 @@ export function HowItWorksSection() {
   }, [])
 
   return (
-    <Section id="how-it-works" ref={sectionRef} aria-labelledby="flow-heading" className="theme-light">
+    <Section
+      id="how-it-works"
+      ref={sectionRef}
+      aria-labelledby="flow-heading"
+      className="theme-light pt-0 md:pt-0"
+    >
       <Container>
-        <div className="grid items-end gap-8 lg:grid-cols-12">
+        <div className="grid items-end gap-8 border-t border-border pt-16 md:pt-20 lg:grid-cols-12">
           <div className="flex flex-col gap-5 lg:col-span-7">
             <Eyebrow>{howItWorks.eyebrow}</Eyebrow>
             <h2

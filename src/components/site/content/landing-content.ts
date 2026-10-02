@@ -1,5 +1,6 @@
 import type { DemoRole } from '@/components/site/content/site'
-import type { StageId, UseCaseSceneId } from '@/components/site/illustrations/scenes'
+import type { GlassFigureId } from '@/components/site/illustrations/glass-figures'
+import type { StageId } from '@/components/site/illustrations/scenes'
 
 /*
  * Landing copy. Message hierarchy every section expands:
@@ -26,6 +27,36 @@ export const hero = {
   proofStrip: {
     lead: 'For the people backing what comes next.',
     items: ['Settles in USDC on Monad', 'No wallets or gas for users', 'Every payment keeps its receipt'],
+  },
+}
+
+export const showcase = {
+  eyebrow: 'Why Viatik',
+  headline: ['Clear terms for the people who fund.', 'Room to work for the people who build.'],
+  body: 'Investors set the terms once. Operators see everything the capital powers. Teams spend within rules they can read.',
+  cards: {
+    investors: {
+      title: 'Back what comes next.',
+      description: 'Commit with purpose. Release when the work is proven.',
+      chipLabel: 'Funding agreement',
+      chipValue: '$100,000.00',
+      chipNote: 'Four milestones, one clear plan.',
+      link: 'Built for investors',
+    },
+    operators: {
+      title: 'More room to build.',
+      description: 'One view of everything your capital powers.',
+      metricLabel: 'September spending',
+      metricValue: '$11,170.00',
+      link: 'Made for operators',
+    },
+    teams: {
+      title: 'Good work, less friction.',
+      description: 'Clear budgets give your team more autonomy.',
+      chipTitle: 'You’re good to go.',
+      chipNote: 'Tools & services · Within budget',
+      link: 'Designed for teams',
+    },
   },
 }
 
@@ -148,7 +179,7 @@ export const roles = {
 }
 
 export type UseCase = {
-  id: UseCaseSceneId
+  id: GlassFigureId
   title: string
   caption: string
   body: string
@@ -335,12 +366,6 @@ export const closing = {
   heading: 'Put capital to work without losing the trail',
   body: 'Open the demo and follow one tranche from commitment to completed payment, from each side of the agreement.',
   primary: 'Open the demo',
-  rolesLabel: 'or start as',
-  roles: [
-    { role: 'investor', label: 'Investor' },
-    { role: 'agency-admin', label: 'Agency Admin' },
-    { role: 'member', label: 'Member' },
-  ] satisfies { role: DemoRole; label: string }[],
 }
 
 export const footer = {

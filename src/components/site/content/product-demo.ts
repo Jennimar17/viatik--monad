@@ -170,3 +170,11 @@ export const verifiedRelease = {
     { label: 'Receipt hash', value: '0x9c2e…41ab', mono: true },
   ],
 }
+
+/** September spending by week, in whole dollars, for the operators card. */
+export const spendingByWeek = [
+  { week: 'W1', team: 1650, tools: 420 },
+  { week: 'W2', team: 2300, tools: 680 },
+  { week: 'W3', team: 1850, tools: 520 },
+  { week: 'W4', team: 2900, tools: 850 },
+]

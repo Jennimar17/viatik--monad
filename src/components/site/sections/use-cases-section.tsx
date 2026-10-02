@@ -6,7 +6,7 @@ import { ArrowUpRightIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 import { Container, Section, SectionIntro } from '@/components/site/chrome/section'
-import { UseCaseScene } from '@/components/site/illustrations/scenes'
+import { GlassFigure } from '@/components/site/illustrations/glass-figures'
 import { useCases, type UseCase } from '@/components/site/content/landing-content'
 import { siteConfig, type DemoRole } from '@/components/site/content/site'
 
@@ -18,7 +18,7 @@ const roleView: Record<DemoRole, string> = {
 
 /**
  * An editorial index of use cases. Pointing at or focusing a row brings its
- * isometric scene into the panel beside the list. Until the use-case pages
+ * glass figure into the grainy panel beside the list. Until the use-case pages
  * exist, each row opens the demo as the role that case starts from.
  */
 export function UseCasesSection() {
@@ -37,16 +37,15 @@ export function UseCasesSection() {
         <div className="mt-12 grid items-start gap-10 lg:mt-16 lg:grid-cols-12 lg:gap-12">
           <div
             aria-hidden="true"
-            className="theme-dark blueprint-grid grain grain-strong relative isolate hidden aspect-[4/5] overflow-hidden rounded-3xl border border-border text-foreground lg:sticky lg:top-28 lg:col-span-5 lg:block"
+            className="theme-dark grain grain-strong relative isolate hidden aspect-[4/5] overflow-hidden rounded-3xl border border-border bg-brand text-foreground lg:sticky lg:top-28 lg:col-span-5 lg:block"
           >
             {useCases.items.map((item, index) => (
-              <div
+              <GlassFigure
                 key={item.id}
-                className="scene-fade absolute inset-x-8 top-10 bottom-32"
+                id={item.id}
+                className="scene-fade absolute inset-x-[9%] top-[6%]"
                 style={{ opacity: index === active ? 1 : 0 }}
-              >
-                <UseCaseScene scene={item.id} className="size-full" />
-              </div>
+              />
             ))}
             <div className="image-shade absolute inset-0" />
             <div className="absolute inset-x-0 bottom-0 z-[2] flex items-end justify-between gap-4 p-7">
@@ -118,9 +117,12 @@ function UseCaseRow({
           </span>
           <span
             aria-hidden="true"
-            className="theme-dark blueprint-grid relative mt-3 block h-40 overflow-hidden rounded-2xl border border-border lg:hidden"
+            className="theme-dark grain grain-strong relative isolate mt-3 block h-48 overflow-hidden rounded-2xl border border-border bg-brand lg:hidden"
           >
-            <UseCaseScene scene={item.id} className="absolute inset-4 size-[calc(100%-2rem)]" />
+            <GlassFigure
+              id={item.id}
+              className="absolute top-1/2 left-1/2 h-[118%] w-auto -translate-x-1/2 -translate-y-1/2"
+            />
           </span>
         </span>
 

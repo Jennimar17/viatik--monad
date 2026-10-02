@@ -44,23 +44,11 @@ export function SiteFooter() {
             </h2>
             <p className="max-w-lg text-base text-pretty text-muted-foreground md:text-lg">{closing.body}</p>
           </div>
-          <div className="flex flex-col items-start gap-4 lg:col-span-5 lg:items-end">
+          <div className="flex lg:col-span-5 lg:justify-end">
             <a href={siteConfig.routes.demo} className={buttonVariants({ size: 'pill' })}>
               {closing.primary}
               <ArrowRightIcon data-icon="inline-end" aria-hidden="true" />
             </a>
-            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-              <span className="mr-1 text-sm text-subtle">{closing.rolesLabel}</span>
-              {closing.roles.map((item) => (
-                <Link
-                  key={item.role}
-                  href={siteConfig.routes.demoRole(item.role)}
-                  className={buttonVariants({ variant: 'outline', size: 'pill-sm' })}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </div>
           </div>
         </section>
 

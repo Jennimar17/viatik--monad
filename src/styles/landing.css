@@ -32,14 +32,30 @@
 }
 
 @layer components {
-  /* Thin plan lines behind isometric scenes. */
-  .blueprint-grid {
-    background-color: var(--brand-plum);
-    background-image:
-      linear-gradient(color-mix(in srgb, var(--brand-mist) 6%, transparent) 1px, transparent 1px),
-      linear-gradient(90deg, color-mix(in srgb, var(--brand-mist) 6%, transparent) 1px, transparent 1px);
-    background-size: 32px 32px;
-    background-position: -1px -1px;
+  /*
+   * Frosted glass for the use-case figures: a translucent mist fill that blurs
+   * the coloured orbs behind it, a bright top edge and a soft drop shadow.
+   */
+  .glass-shape {
+    border: 1px solid color-mix(in srgb, var(--brand-mist) 30%, transparent);
+    background: linear-gradient(
+      150deg,
+      color-mix(in srgb, var(--brand-mist) 22%, transparent),
+      color-mix(in srgb, var(--brand-mist) 6%, transparent) 62%
+    );
+    box-shadow:
+      0 30px 60px -30px rgb(0 0 0 / 0.6),
+      inset 0 1px 0 color-mix(in srgb, #fff 40%, transparent);
+    backdrop-filter: blur(14px) saturate(1.4);
+  }
+
+  /* A blurred pool of iridescent light behind glass. */
+  .glow-orb {
+    position: absolute;
+    border-radius: 9999px;
+    opacity: 0.85;
+    filter: blur(22px);
+    pointer-events: none;
   }
 
   /* A stronger film grain for illustrated surfaces (pairs with `.grain`). */
