@@ -14,6 +14,8 @@ type ApiRequest = {
   ifNoneMatch?: string
   /** Product user the screen shows; the server answers 409 if the token is someone else's. */
   expectedUserId?: string
+  /** Cancels the request (e.g. a timeout); it then fails as a connection problem. */
+  signal?: AbortSignal
 }
 
 /**
@@ -22,7 +24,7 @@ type ApiRequest = {
  * product-language message, the same error the demo data source throws.
  */
 export async function apiRequest(path: `/${string}`, request: ApiRequest): Promise<Response> {
-  const { method = 'GET', body, credentials, idempotencyKey, ifNoneMatch, expectedUserId } = request
+  const { method = 'GET', body, credentials, idempotencyKey, ifNoneMatch, expectedUserId, signal } = request
   const headers: Record<string, string> = { accept: 'application/json' }
   if (body !== undefined) headers['content-type'] = 'application/json'
   if (credentials.accessToken) headers.authorization = `Bearer ${credentials.accessToken}`
@@ -40,6 +42,7 @@ export async function apiRequest(path: `/${string}`, request: ApiRequest): Promi
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       cache: 'no-store',
+      signal,
     })
   } catch {
     throw connectionFailed()

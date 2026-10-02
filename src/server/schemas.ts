@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { EVIDENCE_MAX_BYTES } from '@/data/api-contract'
 import type { CommandInput, CommandName } from '@/domain/engine'
 import type { Cents } from '@/domain/money'
 
@@ -46,9 +47,25 @@ const evidence = z.object({
     .number()
     .int()
     .min(0)
-    .max(50 * 1024 * 1024)
+    .max(EVIDENCE_MAX_BYTES)
+    .optional(),
+  sha256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
     .optional(),
 })
+  // Each kind carries only its own fields: a file is an upload (its fingerprint,
+  // with type and size taken from the verified upload), a link is a URL.
+  .superRefine((item, ctx) => {
+    const file = item.kind === 'file'
+    if (file && !item.sha256) ctx.addIssue({ code: 'custom', path: ['sha256'], message: 'Upload the file first.' })
+    if (!file && (item.sha256 || item.mimeType || item.sizeBytes !== undefined)) {
+      ctx.addIssue({ code: 'custom', path: ['kind'], message: 'Only files carry file details.' })
+    }
+    if (item.kind === 'link' ? !item.url : item.url) {
+      ctx.addIssue({ code: 'custom', path: ['url'], message: 'Only links have a web address.' })
+    }
+  })
 
 const allowanceHolder = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('member'), userId: id }),

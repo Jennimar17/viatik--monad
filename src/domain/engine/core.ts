@@ -1,4 +1,5 @@
-import { newId, pseudoSha256 } from '../ids'
+import { linkFingerprint, noteFingerprint, standInFingerprint } from '../evidence'
+import { newId } from '../ids'
 import { formatUsd, type Cents } from '../money'
 import { decide, type Capability, type PermissionContext, type Subject } from '../permissions'
 import type {
@@ -214,7 +215,12 @@ export function requirePositive(amount: Cents, label = 'Amount') {
 }
 
 /** What a person attaches: a file's metadata, a link or a note. */
-export type EvidenceDraft = Pick<Evidence, 'kind' | 'name' | 'url' | 'mimeType' | 'sizeBytes'>
+export type EvidenceDraft = Pick<Evidence, 'kind' | 'name' | 'url' | 'mimeType' | 'sizeBytes'> & {
+  /** SHA-256 of an uploaded file's content (hex). The API only accepts it for files it has verified. */
+  sha256?: string
+}
+
+const SHA256_HEX = /^[0-9a-f]{64}$/
 
 /**
  * A stored piece of evidence. Only the known draft fields are copied, so a
@@ -224,18 +230,34 @@ export type EvidenceDraft = Pick<Evidence, 'kind' | 'name' | 'url' | 'mimeType' 
 export function evidenceFrom(draft: EvidenceDraft, addedBy: Id, now: ISODate): Evidence {
   const id = newId('ev')
   const name = requireText(draft.name, 'Document name', 300)
+  const isFile = draft.kind === 'file'
+  // Only links have a URL, and only files have a type, a size and an uploaded fingerprint.
   const url = draft.url?.trim() || undefined
-  if (url && !/^https?:\/\//i.test(url)) {
-    throw new DomainError('validation', 'Links must start with http:// or https://.')
+  if (draft.kind === 'link') {
+    if (!url || !/^https?:\/\//i.test(url)) {
+      throw new DomainError('validation', 'Links must start with http:// or https://.')
+    }
+  } else if (url) {
+    throw new DomainError('validation', 'Only links can point to a web address.')
   }
+  if (draft.sha256 !== undefined && (!isFile || !SHA256_HEX.test(draft.sha256))) {
+    throw new DomainError('validation', 'This file could not be verified. Upload it again.')
+  }
+  const sha256 =
+    draft.sha256 ??
+    (draft.kind === 'link'
+      ? linkFingerprint(url as string)
+      : draft.kind === 'note'
+        ? noteFingerprint(name)
+        : standInFingerprint(id, name))
   return {
     id,
     kind: draft.kind,
     name,
-    url,
-    mimeType: draft.mimeType,
-    sizeBytes: draft.sizeBytes,
-    sha256: pseudoSha256(`${id}:${name}:${url ?? ''}`),
+    url: draft.kind === 'link' ? url : undefined,
+    mimeType: isFile ? draft.mimeType : undefined,
+    sizeBytes: isFile ? draft.sizeBytes : undefined,
+    sha256,
     addedAt: now,
     addedBy,
   }

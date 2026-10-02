@@ -1,18 +1,27 @@
 import type { CommandInput, CommandName, CommandResult } from '@/domain/engine'
 import { newId } from '@/domain/ids'
-import type { ViatikState } from '@/domain/types'
+import { hasStoredCopy } from '@/domain/evidence'
+import type { Evidence, ViatikState } from '@/domain/types'
 
 import { apiFetch, apiRequest } from './api'
-import { CONNECTION_FAILED } from './api-contract'
+import {
+  CONNECTION_FAILED,
+  type EvidenceLink,
+  type EvidenceUploadTicket,
+  type VerifiedUpload,
+} from './api-contract'
 import {
   DataSourceError,
   type CredentialsProvider,
   type DataSource,
   type DispatchOptions,
+  type EvidenceOptions,
   type InvitationPreview,
   type LoadOptions,
   type OperationPhase,
+  type UploadedFile,
 } from './data-source'
+import { assertEvidenceFile, sha256Hex } from './evidence-files'
 
 const PHASE_ORDER: OperationPhase[] = ['preparing', 'waiting_for_confirmation', 'processing', 'completed']
 
@@ -29,6 +38,12 @@ const RESEND_AFTER_MS = [800, 2000]
 const UNANSWERED = new Set([CONNECTION_FAILED, '502', '503', '504'])
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** Files uploaded at once; the rest wait their turn (each one is read into memory to hash it). */
+const PARALLEL_UPLOADS = 3
+
+/** A stalled upload fails after this, scaled to the file so slow connections still finish. */
+const uploadDeadline = (bytes: number) => 30_000 + Math.ceil(bytes / 50)
 
 function requireCredentials(credentials: CredentialsProvider | undefined): CredentialsProvider {
   if (!credentials) throw new DataSourceError('Sign in to continue.', 'unauthenticated')
@@ -126,5 +141,58 @@ export class ApiDataSource implements DataSource {
     } finally {
       clearTimeout(processing)
     }
+  }
+
+  private uploading = 0
+  private waiting: (() => void)[] = []
+
+  async uploadEvidence(file: File, options: EvidenceOptions = {}): Promise<UploadedFile> {
+    assertEvidenceFile(file)
+    const credentials = requireCredentials(options.credentials)
+    if (this.uploading >= PARALLEL_UPLOADS) await new Promise<void>((resolve) => this.waiting.push(resolve))
+    this.uploading++
+    try {
+      const sha256 = await sha256Hex(file)
+      const ticket = await apiFetch<EvidenceUploadTicket>('/v1/evidence', {
+        method: 'POST',
+        body: { name: file.name.slice(0, 300), mimeType: file.type, sizeBytes: file.size, sha256 },
+        credentials: await credentials(),
+      })
+      // The bytes go straight to private storage; the API only checks them afterwards.
+      const failed = () =>
+        new DataSourceError(`${file.name} could not be uploaded. Check your connection and try again.`, 'upload_failed')
+      let stored: Response
+      try {
+        stored = await fetch(ticket.uploadUrl, {
+          method: 'PUT',
+          headers: { 'content-type': file.type },
+          body: file,
+          signal: AbortSignal.timeout(uploadDeadline(file.size)),
+        })
+      } catch {
+        throw failed()
+      }
+      if (!stored.ok) throw failed()
+      return await apiFetch<VerifiedUpload>(`/v1/evidence/${encodeURIComponent(ticket.uploadId)}/verify`, {
+        method: 'POST',
+        credentials: await credentials(),
+        signal: AbortSignal.timeout(uploadDeadline(file.size)),
+      })
+    } finally {
+      this.uploading--
+      this.waiting.shift()?.()
+    }
+  }
+
+  canOpenEvidence(evidence: Evidence): boolean {
+    return hasStoredCopy(evidence)
+  }
+
+  async evidenceLink(userId: string, evidenceId: string, options: EvidenceOptions = {}): Promise<string> {
+    const { url } = await apiFetch<EvidenceLink>(`/v1/evidence/${encodeURIComponent(evidenceId)}/link`, {
+      credentials: await requireCredentials(options.credentials)(),
+      expectedUserId: userId,
+    })
+    return url
   }
 }

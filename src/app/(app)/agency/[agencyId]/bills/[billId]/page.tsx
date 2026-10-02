@@ -9,6 +9,7 @@ import { ActivityList } from '@/components/app/activity'
 import { ButtonLink } from '@/components/app/button-link'
 import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
 import { receiptHref } from '@/components/app/nav'
+import { OpenFileButton } from '@/components/app/open-file'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
 import { useHref, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
@@ -158,6 +159,11 @@ export default function BillDetailPage() {
               {bill.document.name} · fingerprint {bill.document.sha256.slice(0, 16)}…
             </p>
           </div>
+          {bill.document.kind === 'file' ? (
+            <OpenFileButton evidence={bill.document} className="mt-3 text-sm font-medium text-foreground">
+              Open the original document
+            </OpenFileButton>
+          ) : null}
         </Panel>
 
         <div className="flex flex-col gap-6">

@@ -20,12 +20,14 @@ import {
   EvidenceUploader,
   FormActions,
   MoneyInput,
+  pendingUploads,
+  toEvidence,
   type DraftFile,
 } from '@/components/viatik/forms'
 import { PageHeader, Panel } from '@/components/viatik/layout'
 import { PendingOperation } from '@/components/viatik/operation'
 import { PolicyVerdict } from '@/components/viatik/policy'
-import { useCommand, useViatikState } from '@/data/react'
+import { useCommand, useEvidenceFiles, useViatikState } from '@/data/react'
 import { execute, previewPolicy } from '@/domain/engine'
 import { newId } from '@/domain/ids'
 import { categoryLabel, requestTypeLabel } from '@/domain/labels'
@@ -65,6 +67,7 @@ function NewRequest() {
   const router = useRouter()
   const params = useSearchParams()
   const command = useCommand('requestPayment', { silent: true })
+  const evidenceFiles = useEvidenceFiles()
   // One key per submission: retries of the same draft cannot create duplicates.
   const [idempotencyKey, setIdempotencyKey] = React.useState(() => newId('idem'))
 
@@ -128,6 +131,7 @@ function NewRequest() {
       : undefined,
     amount: !amount ? 'Enter an amount.' : undefined,
     purpose: purpose.trim().length < 3 ? 'Say what this is for.' : undefined,
+    files: pendingUploads(files) ?? undefined,
   }
   const valid = !Object.values(errors).some(Boolean)
   const busy = command.phase !== 'idle' && command.phase !== 'failed' && command.phase !== 'completed'
@@ -143,7 +147,7 @@ function NewRequest() {
       amount,
       category,
       purpose: purpose.trim(),
-      attachments: files,
+      attachments: files.map(toEvidence),
       idempotencyKey,
     })
     if (next) setCreated(next)
@@ -386,10 +390,16 @@ function NewRequest() {
         <EvidenceUploader
           files={files}
           onChange={setFiles}
+          onUpload={evidenceFiles.upload}
           allowLinks={false}
           maxFiles={10}
           label="Attach a quote, invoice, or receipt"
         />
+        {touched && errors.files ? (
+          <p className="mt-3 text-xs text-destructive" role="alert">
+            {errors.files}
+          </p>
+        ) : null}
       </Panel>
 
       {command.phase !== 'idle' ? (

@@ -8,7 +8,9 @@ import {
 import { createDemoState } from '@/domain/fixtures'
 import { invitationPreview, withVerifiedPerson } from '@/domain/identity'
 import { newId } from '@/domain/ids'
-import type { ViatikState } from '@/domain/types'
+import { hasStoredCopy } from '@/domain/evidence'
+import { findEvidence } from '@/domain/queries'
+import type { Evidence, ViatikState } from '@/domain/types'
 import { scopeStateForUser } from '@/domain/visibility'
 import { MockLedgerAdapter } from '@/ledger/mock'
 
@@ -19,7 +21,9 @@ import {
   type InvitationPreview,
   type LoadOptions,
   type OperationPhase,
+  type UploadedFile,
 } from './data-source'
+import { assertEvidenceFile, sha256Hex } from './evidence-files'
 import { planSettlement } from './settlement'
 
 const STORAGE_KEY = 'viatik:demo-state'
@@ -42,6 +46,8 @@ const PHASE_ORDER: OperationPhase[] = ['preparing', 'waiting_for_confirmation', 
 export class MockDataSource implements DataSource {
   readonly kind = 'mock' as const
   private state: ViatikState | null = null
+  /** Files added in this tab, by fingerprint. The demo stores nothing elsewhere. */
+  private files = new Map<string, string>()
 
   private read(): ViatikState {
     if (this.state) return this.state
@@ -161,7 +167,33 @@ export class MockDataSource implements DataSource {
     return outcome.result
   }
 
+  async uploadEvidence(file: File): Promise<UploadedFile> {
+    assertEvidenceFile(file)
+    const [sha256] = await Promise.all([sha256Hex(file), wait(jitter(250, 600))])
+    if (!this.files.has(sha256)) this.files.set(sha256, URL.createObjectURL(file))
+    return { kind: 'file', name: file.name.slice(0, 300), mimeType: file.type, sizeBytes: file.size, sha256 }
+  }
+
+  async evidenceLink(userId: string, evidenceId: string): Promise<string> {
+    const item = findEvidence(scopeStateForUser(this.read(), userId), evidenceId)
+    if (!item || item.kind !== 'file') throw new DataSourceError('This file is not available.', 'not_found')
+    const url = this.files.get(item.sha256)
+    if (!url) {
+      throw new DataSourceError(
+        'In the demo, a file only opens in the browser tab where it was added. Example files cannot be opened.',
+        'not_stored',
+      )
+    }
+    return url
+  }
+
+  canOpenEvidence(evidence: Evidence): boolean {
+    return hasStoredCopy(evidence) && this.files.has(evidence.sha256)
+  }
+
   async reset() {
+    for (const url of this.files.values()) URL.revokeObjectURL(url)
+    this.files.clear()
     this.write(createDemoState(new Date().toISOString()))
   }
 }

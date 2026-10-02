@@ -13,7 +13,7 @@ import { toast } from 'sonner'
 import type { CommandInput, CommandName, CommandResult } from '@/domain/engine'
 import { newId } from '@/domain/ids'
 import { subjectFor } from '@/domain/permissions'
-import type { Membership, User, ViatikState } from '@/domain/types'
+import type { Evidence, Membership, User, ViatikState } from '@/domain/types'
 
 import { canonical } from './canonical'
 import {
@@ -23,6 +23,7 @@ import {
   type OperationPhase,
   type SessionMode,
   type SessionProfile,
+  type UploadedFile,
 } from './index'
 
 type ViatikContextValue = {
@@ -210,6 +211,60 @@ export function useCommand<N extends CommandName>(
     isPending: mutation.isPending,
     reset,
   }
+}
+
+/**
+ * Evidence files for the signed-in person: `upload` stores a file privately
+ * and returns what a command attaches; `canOpen` says whether a file has a
+ * copy to show; `open` shows it in a new tab.
+ */
+export function useEvidenceFiles() {
+  const { userId, mode, credentials } = useViatik()
+
+  const upload = React.useCallback(
+    async (file: File): Promise<UploadedFile> => {
+      if (!mode) throw new DataSourceError('Sign in to continue.', 'unauthenticated')
+      try {
+        return await getDataSource(mode).uploadEvidence(file, { credentials })
+      } catch (error) {
+        if (error instanceof DataSourceError) throw error
+        throw new DataSourceError(`${file.name} could not be uploaded. Try again.`, 'upload_failed')
+      }
+    },
+    [mode, credentials],
+  )
+
+  const canOpen = React.useCallback(
+    (evidence: Evidence) => (mode ? getDataSource(mode).canOpenEvidence(evidence) : false),
+    [mode],
+  )
+
+  const open = React.useCallback(
+    async (evidenceId: string) => {
+      if (!mode || !userId) return
+      // Open the tab while the click still counts as the person's own action
+      // (popup blockers), then point it at the file once the link arrives.
+      const tab = window.open('', '_blank')
+      try {
+        const url = await getDataSource(mode).evidenceLink(userId, evidenceId, { credentials })
+        if (tab) {
+          tab.opener = null
+          tab.location.href = url
+        } else {
+          // Blocked: offer the link instead of leaving the page the person is on.
+          toast('Your browser blocked the new tab.', {
+            action: { label: 'Open file', onClick: () => window.open(url, '_blank', 'noopener') },
+          })
+        }
+      } catch (error) {
+        tab?.close()
+        toast.error(error instanceof Error ? error.message : 'This file could not be opened.')
+      }
+    },
+    [mode, userId, credentials],
+  )
+
+  return { upload, canOpen, open }
 }
 
 /** Restores the seeded demo state for everyone on this device. */

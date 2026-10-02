@@ -10,10 +10,10 @@ import { useHref, useRole } from '@/components/app/role-context'
 import { useBottomBar } from '@/components/app/shell/app-shell'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { EvidenceUploader, FormActions, MoneyInput, type DraftFile } from '@/components/viatik/forms'
+import { EvidenceUploader, FormActions, MoneyInput, pendingUploads, toEvidence, type DraftFile } from '@/components/viatik/forms'
 import { PageHeader, Panel } from '@/components/viatik/layout'
 import { PendingOperation } from '@/components/viatik/operation'
-import { useCommand, useViatikState } from '@/data/react'
+import { useCommand, useEvidenceFiles, useViatikState } from '@/data/react'
 import { categoryLabel } from '@/domain/labels'
 import type { Cents } from '@/domain/money'
 import type { PaymentDestination, SpendingCategory } from '@/domain/types'
@@ -27,6 +27,7 @@ export default function NewBillPage() {
   const href = useHref()
   const router = useRouter()
   const add = useCommand('addBill', { success: 'Bill added.' })
+  const evidenceFiles = useEvidenceFiles()
   useBottomBar()
 
   const destinations = state.destinations.filter((d) => d.agencyId === agencyId && d.status === 'approved')
@@ -53,7 +54,7 @@ export default function NewBillPage() {
   const document = files[0]
 
   const errors = {
-    file: document ? undefined : 'Upload the bill.',
+    file: document ? (pendingUploads(files) ?? undefined) : 'Upload the bill.',
     destination: destinationId ? undefined : 'Choose the vendor.',
     number: number.trim() ? undefined : 'Enter the bill number.',
     dueDate: !dueDate
@@ -91,7 +92,7 @@ export default function NewBillPage() {
       category,
       accountId,
       budgetId: budgetId === NO_BUDGET ? undefined : budgetId,
-      document,
+      document: toEvidence(document),
       notes: notes.trim() || undefined,
     })
     if (bill) router.push(href(`bills/${bill.id}`))
@@ -116,6 +117,7 @@ export default function NewBillPage() {
         <EvidenceUploader
           files={files}
           onChange={setFiles}
+          onUpload={evidenceFiles.upload}
           maxFiles={1}
           allowLinks={false}
           label="Drop the bill here or browse"

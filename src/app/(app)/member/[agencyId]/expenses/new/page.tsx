@@ -8,10 +8,10 @@ import { FormField, PillInput, SimpleSelect } from '@/components/app/form-contro
 import { useHref, useRole } from '@/components/app/role-context'
 import { useBottomBar } from '@/components/app/shell/app-shell'
 import { Button } from '@/components/ui/button'
-import { EvidenceUploader, FormActions, MoneyInput, type DraftFile } from '@/components/viatik/forms'
+import { EvidenceUploader, FormActions, MoneyInput, pendingUploads, toEvidence, type DraftFile } from '@/components/viatik/forms'
 import { PageHeader, Panel } from '@/components/viatik/layout'
 import { PendingOperation } from '@/components/viatik/operation'
-import { useCommand, useViatikState } from '@/data/react'
+import { useCommand, useEvidenceFiles, useViatikState } from '@/data/react'
 import { categoryLabel } from '@/domain/labels'
 import { formatUsd, type Cents } from '@/domain/money'
 import { memberBudgets } from '@/domain/queries'
@@ -26,6 +26,7 @@ export default function NewExpensePage() {
   const href = useHref()
   const router = useRouter()
   const add = useCommand('addExpense', { success: 'Expense added.' })
+  const evidenceFiles = useEvidenceFiles()
   useBottomBar()
 
   const budgets = memberBudgets(state, agencyId, userId, now).filter((b) => b.budget.status === 'active')
@@ -59,6 +60,7 @@ export default function NewExpensePage() {
     amount: amount && amount > 0 ? undefined : 'Enter the amount.',
     date: spentAt && spentAt <= now ? undefined : 'Pick a date that is not in the future.',
     budget: budgetId ? undefined : 'Choose a budget.',
+    receipt: pendingUploads(files) ?? undefined,
   }
   const valid = !Object.values(errors).some(Boolean) && Boolean(category)
   const busy = add.phase !== 'idle' && add.phase !== 'failed' && add.phase !== 'completed'
@@ -74,7 +76,7 @@ export default function NewExpensePage() {
       amount,
       category,
       spentAt,
-      receipt: files[0],
+      receipt: files[0] ? toEvidence(files[0]) : undefined,
       paymentId: paymentId === NO_PAYMENT ? undefined : paymentId,
     })
     if (expense) router.push(href('expenses'))
@@ -104,11 +106,17 @@ export default function NewExpensePage() {
             <EvidenceUploader
               files={files}
               onChange={setFiles}
+              onUpload={evidenceFiles.upload}
               maxFiles={1}
               allowLinks={false}
               label="Drop the receipt here or browse"
-              hint="PDF or an image. Files stay private; only a fingerprint is recorded."
+              hint="PDF, PNG, JPG, WEBP or HEIC, up to 10 MB. It stays private; only its fingerprint is recorded."
             />
+            {shown('receipt') ? (
+              <p className="mt-3 text-xs text-destructive" role="alert">
+                {shown('receipt')}
+              </p>
+            ) : null}
           </Panel>
 
           <Panel title="What you paid for">

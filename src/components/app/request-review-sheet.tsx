@@ -5,6 +5,7 @@ import * as React from 'react'
 
 import { ButtonLink } from '@/components/app/button-link'
 import { receiptHref } from '@/components/app/nav'
+import { AttachmentNames } from '@/components/app/open-file'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
 import { usePermissions } from '@/components/app/role-context'
 import { Button } from '@/components/ui/button'
@@ -213,9 +214,7 @@ export function RequestReviewSheet({
               { label: 'Category', value: categoryLabel[request.category] },
               {
                 label: 'Attachments',
-                value: request.attachments.length
-                  ? request.attachments.map((a) => a.name).join(', ')
-                  : 'None',
+                value: <AttachmentNames items={request.attachments} />,
               },
             ]}
           />

@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 
 import { ButtonLink } from '@/components/app/button-link'
 import { roleHome } from '@/components/app/nav'
+import { OpenFileButton } from '@/components/app/open-file'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -18,13 +19,18 @@ import { useSession } from '@/lib/session'
 
 /** Private documents behind a receipt, including those linked when it was reconciled. */
 function evidenceFor(state: ViatikState, receipt: Receipt, reconciliation?: Reconciliation): Evidence[] {
+  // The same evidence can sit in two places (a request's attachment becomes its expense's receipt).
   const ids = new Set([...receipt.evidenceIds, ...(reconciliation?.evidenceIds ?? [])])
-  return [
+  const found = new Map<string, Evidence>()
+  for (const item of [
     ...state.milestones.flatMap((m) => m.evidence),
     ...state.bills.map((b) => b.document),
     ...state.expenses.flatMap((e) => (e.receipt ? [e.receipt] : [])),
     ...state.requests.flatMap((r) => r.attachments),
-  ].filter((e) => ids.has(e.id))
+  ]) {
+    if (ids.has(item.id) && !found.has(item.id)) found.set(item.id, item)
+  }
+  return [...found.values()]
 }
 
 /** A verifiable receipt on paper, outside the workspace shell so it prints cleanly. */
@@ -125,7 +131,9 @@ export default function ReceiptPage() {
         issuedAt={receipt.issuedAt}
         rows={rows}
         evidence={evidenceFor(state, receipt, reconciliation).map((e) => ({
-          name: e.name,
+          id: e.id,
+          name: e.kind === 'file' ? <OpenFileButton evidence={e} /> : e.name,
+          label: e.name,
           fingerprint: e.sha256,
         }))}
       />

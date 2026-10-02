@@ -1248,6 +1248,8 @@ export function addExpense(
 export function attachReceipt(tx: Tx, input: { expenseId: Id; receipt: EvidenceDraft }) {
   const expense = tx.find('expenses', input.expenseId, 'Expense')
   tx.authorize('upload_receipt', { agencyId: expense.agencyId, ownerUserId: expense.userId })
+  // A receipt, once attached, may already back a reconciliation: it is never replaced.
+  if (expense.receipt) throw new DomainError('invalid_state', 'This expense already has a receipt.')
   expense.receipt = evidenceFrom(input.receipt, tx.userId, tx.now)
   return expense
 }

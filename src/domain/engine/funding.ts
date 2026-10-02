@@ -1,4 +1,5 @@
-import { newId, pseudoSha256 } from '../ids'
+import { evidenceSetHash } from '../evidence'
+import { newId } from '../ids'
 import { cents, sum, type Cents } from '../money'
 import { activeOperationsAccount } from '../queries'
 import { agreementCapital, vaultBalance } from '../selectors'
@@ -475,7 +476,7 @@ export function submitMilestoneEvidence(
   milestone.submittedAt = tx.now
   milestone.submittedBy = tx.userId
   milestone.submissionNote = input.note.trim()
-  milestone.evidenceHash = `0x${pseudoSha256(milestone.evidence.map((e) => e.sha256).join(''))}`
+  milestone.evidenceHash = evidenceSetHash(milestone.evidence)
   milestone.decision = undefined
 
   const tranche = tx.find('tranches', milestone.trancheId, 'Tranche')

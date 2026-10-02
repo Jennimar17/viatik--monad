@@ -4,8 +4,8 @@ import type { ViatikState } from '@/domain/types'
 
 /**
  * Tables as they exist in Supabase. Changes are applied as Supabase
- * migrations (`create_users`, `create_world_state_and_operations`) and
- * mirrored here by hand.
+ * migrations (`create_users`, `create_world_state_and_operations`,
+ * `create_uploads`) and mirrored here by hand.
  */
 
 /** People who signed in with Privy; `id` is the product user id the domain engine uses. */
@@ -45,3 +45,21 @@ export const operations = pgTable(
   },
   (table) => [primaryKey({ columns: [table.userId, table.idempotencyKey] })],
 )
+
+/**
+ * An evidence file in the private `evidence` bucket. Pending while the browser
+ * uploads it; verified once the server has read it back and confirmed its
+ * SHA-256 and size. Commands only accept files verified for their uploader.
+ */
+export const uploads = pgTable('uploads', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull(),
+  sha256: text('sha256').notNull(),
+  path: text('path').notNull().unique(),
+  name: text('name').notNull(),
+  mimeType: text('mime_type').notNull(),
+  sizeBytes: integer('size_bytes').notNull(),
+  status: text('status').$type<'pending' | 'verified'>().notNull().default('pending'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  verifiedAt: timestamp('verified_at', { withTimezone: true }),
+})

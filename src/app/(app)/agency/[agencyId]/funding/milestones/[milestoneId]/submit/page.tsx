@@ -15,11 +15,11 @@ import { useBottomBar } from '@/components/app/shell/app-shell'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Amount } from '@/components/viatik/amount'
-import { EvidenceUploader, FormActions, type DraftFile } from '@/components/viatik/forms'
+import { EvidenceUploader, FormActions, pendingUploads, toEvidence, type DraftFile } from '@/components/viatik/forms'
 import { PageHeader, Panel } from '@/components/viatik/layout'
 import { PendingOperation } from '@/components/viatik/operation'
 import { StatusBadge } from '@/components/viatik/status'
-import { useCommand, useViatikState } from '@/data/react'
+import { useCommand, useEvidenceFiles, useViatikState } from '@/data/react'
 import { formatUsd } from '@/domain/money'
 import { milestoneStatus } from '@/domain/status'
 import { formatDate } from '@/lib/format'
@@ -31,6 +31,7 @@ export default function SubmitEvidencePage() {
   const href = useHref()
   const router = useRouter()
   const submit = useCommand('submitMilestoneEvidence', { silent: true })
+  const evidenceFiles = useEvidenceFiles()
   const accounts = state.accounts.filter((a) => a.agencyId === agencyId && a.status === 'active')
   const [files, setFiles] = React.useState<DraftFile[]>([])
   const [note, setNote] = React.useState('')
@@ -64,7 +65,9 @@ export default function SubmitEvidencePage() {
       ? 'Evidence can be submitted once the agreement is active.'
       : files.length === 0
         ? 'Add at least one file or link.'
-        : !accountId
+        : pendingUploads(files)
+          ? pendingUploads(files)
+          : !accountId
           ? 'Choose where the funds go.'
           : null
 
@@ -153,7 +156,7 @@ export default function SubmitEvidencePage() {
         title="Evidence"
         description="Files stay private in Viatik. Only a fingerprint of each file is kept in the verified record."
       >
-        <EvidenceUploader files={files} onChange={setFiles} maxFiles={20} />
+        <EvidenceUploader files={files} onChange={setFiles} onUpload={evidenceFiles.upload} maxFiles={20} />
       </Panel>
 
       <Panel>
@@ -208,12 +211,14 @@ export default function SubmitEvidencePage() {
         </Button>
         <Button
           size="pill-sm"
-          disabled={busy || underReview || !agreementActive || files.length === 0 || !accountId}
+          disabled={
+            busy || underReview || !agreementActive || files.length === 0 || Boolean(pendingUploads(files)) || !accountId
+          }
           onClick={async () => {
             if (!accountId || !agreementActive) return
             const result = await submit.run({
               milestoneId: milestone.id,
-              evidence: files,
+              evidence: files.map(toEvidence),
               note: note.trim(),
               destinationAccountId: accountId,
             })

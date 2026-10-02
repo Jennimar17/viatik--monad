@@ -6,6 +6,7 @@ import * as React from 'react'
 
 import { ButtonLink } from '@/components/app/button-link'
 import { receiptHref } from '@/components/app/nav'
+import { AttachmentNames } from '@/components/app/open-file'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
 import { useHref, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
@@ -179,8 +180,7 @@ export default function RequestDetailPage() {
             { label: 'Destination', value: recipient },
             {
               label: 'Attachments',
-              value:
-                request.attachments.length > 0 ? request.attachments.map((a) => a.name).join(', ') : 'None',
+              value: <AttachmentNames items={request.attachments} />,
             },
             ...(request.declinedReason ? [{ label: 'Reason', value: request.declinedReason }] : []),
           ]}

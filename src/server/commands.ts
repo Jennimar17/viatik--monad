@@ -16,6 +16,7 @@ import type { AppEnv } from './context'
 import { getDb } from './db/client'
 import { operations, users } from './db/schema'
 import { ApiError, ledgerStatus } from './errors'
+import { verifiedFiles } from './evidence'
 import { withWorld } from './repository'
 import { isCommandName, parseCommandInput } from './schemas'
 import { requireUser, withCaller } from './user'
@@ -57,6 +58,9 @@ export const commands = new Hono<AppEnv>().post(
       throw new ApiError(400, 'invalid_json', 'The request body must be JSON.')
     })
     const input = parseCommandInput(name, body)
+    // Outside the state lock: attached files must be this person's verified uploads
+    // (their type and size are taken from the upload, before the fingerprint below).
+    await verifiedFiles(user.id, input)
     const fingerprint = createHash('sha256')
       .update(`${name}:${canonical(input)}`)
       .digest('hex')

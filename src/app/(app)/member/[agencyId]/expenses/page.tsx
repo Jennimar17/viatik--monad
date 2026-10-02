@@ -12,10 +12,10 @@ import { ApprovalSheet } from '@/components/viatik/approval-sheet'
 import { DataTable } from '@/components/viatik/data-table'
 import { EmptyState } from '@/components/viatik/feedback'
 import { KpiTile } from '@/components/viatik/finance'
-import { EvidenceUploader, type DraftFile } from '@/components/viatik/forms'
+import { EvidenceUploader, pendingUploads, toEvidence, type DraftFile } from '@/components/viatik/forms'
 import { HairlineGrid, PageHeader } from '@/components/viatik/layout'
 import { StatusBadge } from '@/components/viatik/status'
-import { useCommand, useViatikState } from '@/data/react'
+import { useCommand, useEvidenceFiles, useViatikState } from '@/data/react'
 import { categoryLabel } from '@/domain/labels'
 import { sum } from '@/domain/money'
 import { budgetName } from '@/domain/queries'
@@ -32,6 +32,7 @@ export default function ExpensesPage() {
   const { scopeId: agencyId } = useRole()
   const href = useHref()
   const attach = useCommand('attachReceipt')
+  const evidenceFiles = useEvidenceFiles()
   // The expense being completed is fixed when its sheet opens; the sheet reads the live record.
   const [uploadingId, setUploadingId] = React.useState<string | null>(null)
   const [files, setFiles] = React.useState<DraftFile[]>([])
@@ -211,22 +212,23 @@ export default function ExpensesPage() {
           policy: 'The file stays private; only its fingerprint goes into the verified record.',
         }}
         confirmLabel="Attach receipt"
-        disabled={files.length === 0}
+        disabled={files.length === 0 || Boolean(pendingUploads(files))}
         phase={attach.phase}
         error={attach.error}
         onConfirm={() => {
           const receipt = files[0]
-          if (uploading && receipt) return attach.run({ expenseId: uploading.id, receipt })
+          if (uploading && receipt) return attach.run({ expenseId: uploading.id, receipt: toEvidence(receipt) })
         }}
         success={{ title: 'Receipt attached', body: 'The expense is complete.' }}
       >
         <EvidenceUploader
           files={files}
           onChange={setFiles}
+          onUpload={evidenceFiles.upload}
           maxFiles={1}
           allowLinks={false}
           label="Drop the receipt here or browse"
-          hint="PDF or an image. Files stay private; only a fingerprint is recorded."
+          hint="PDF, PNG, JPG, WEBP or HEIC, up to 10 MB. It stays private; only its fingerprint is recorded."
         />
       </ApprovalSheet>
     </div>

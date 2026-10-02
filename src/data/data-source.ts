@@ -1,6 +1,6 @@
 import type { CommandInput, CommandName, CommandResult } from '@/domain/engine'
 import type { InvitationPreview, VerifiedProfile } from '@/domain/identity'
-import type { ViatikState } from '@/domain/types'
+import type { Evidence, ViatikState } from '@/domain/types'
 import type { LedgerStatus } from '@/ledger/types'
 
 import type { ApiCredentials } from './api'
@@ -33,6 +33,11 @@ export type DispatchOptions = {
   credentials?: CredentialsProvider
 }
 
+/** A file stored privately and verified, ready to be attached to a command. */
+export type UploadedFile = { kind: 'file'; name: string; mimeType: string; sizeBytes: number; sha256: string }
+
+export type EvidenceOptions = { credentials?: CredentialsProvider }
+
 export type { InvitationPreview }
 
 /**
@@ -51,6 +56,12 @@ export interface DataSource {
     input: CommandInput<N>,
     options?: DispatchOptions,
   ): Promise<CommandResult<N>>
+  /** Stores a file privately and returns how a command refers to it (its fingerprint). */
+  uploadEvidence(file: File, options?: EvidenceOptions): Promise<UploadedFile>
+  /** A short-lived link to open a stored file the person can see. */
+  evidenceLink(userId: string, evidenceId: string, options?: EvidenceOptions): Promise<string>
+  /** Whether a file has a copy that can be opened here (example files and, in the demo, files from other tabs do not). */
+  canOpenEvidence(evidence: Evidence): boolean
   reset?(): Promise<void>
 }
 

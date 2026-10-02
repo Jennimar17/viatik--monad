@@ -4,6 +4,7 @@ import type {
   Actor,
   AllowanceHolder,
   Bill,
+  Evidence,
   FundingAgreement,
   Id,
   PaymentRecipient,
@@ -31,6 +32,21 @@ export const accountName = (state: ViatikState, id: Id | undefined) =>
   state.accounts.find((a) => a.id === id)?.name ?? 'Account'
 export const destinationName = (state: ViatikState, id: Id | undefined) =>
   state.destinations.find((d) => d.id === id)?.name ?? 'Payment destination'
+
+/** A piece of evidence by id, wherever it is attached (milestones, bills, expenses, requests). */
+export function findEvidence(state: ViatikState, evidenceId: Id): Evidence | undefined {
+  for (const milestone of state.milestones) {
+    const found = milestone.evidence.find((e) => e.id === evidenceId)
+    if (found) return found
+  }
+  for (const bill of state.bills) if (bill.document.id === evidenceId) return bill.document
+  for (const expense of state.expenses) if (expense.receipt?.id === evidenceId) return expense.receipt
+  for (const request of state.requests) {
+    const found = request.attachments.find((e) => e.id === evidenceId)
+    if (found) return found
+  }
+  return undefined
+}
 
 /** The account released funding and returned money land in by default: the Agency's active Operations account. */
 export function activeOperationsAccount(state: ViatikState, agencyId: Id) {

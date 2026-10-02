@@ -9,6 +9,7 @@ import { commands } from './commands'
 import { requestId, type AppEnv } from './context'
 import { getDb } from './db/client'
 import { toErrorResponse } from './errors'
+import { evidence } from './evidence'
 import { session } from './session'
 import { invitations, state } from './state'
 
@@ -41,6 +42,7 @@ export const app = new Hono<AppEnv>()
   .route('/v1/state', state)
   .route('/v1/invitations', invitations)
   .route('/v1/commands', commands)
+  .route('/v1/evidence', evidence)
   .route('/v1/admin', admin)
 
 app.notFound((c) =>
