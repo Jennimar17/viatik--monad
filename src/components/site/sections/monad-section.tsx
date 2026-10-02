@@ -1,19 +1,23 @@
 import { cn } from '@/lib/utils'
 
+import { MonadLayersScene } from '@/components/site/illustrations/scenes'
 import { VerifiedDetailsPreview } from '@/components/site/previews/verified-details-preview'
 import { Container, Section, SectionIntro } from '@/components/site/chrome/section'
 import { monad } from '@/components/site/content/landing-content'
 
 export function MonadSection() {
   return (
-    <Section id="monad" aria-labelledby="monad-heading">
+    <Section id="monad" aria-labelledby="monad-heading" className="theme-light">
       <Container className="flex flex-col gap-14 lg:gap-16">
-        <SectionIntro
-          eyebrow={monad.eyebrow}
-          heading={<span id="monad-heading">{monad.heading}</span>}
-          body={monad.body}
-          className="max-w-3xl"
-        />
+        <div className="grid items-center gap-10 lg:grid-cols-12 lg:gap-12">
+          <SectionIntro
+            eyebrow={monad.eyebrow}
+            heading={<span id="monad-heading">{monad.heading}</span>}
+            body={monad.body}
+            className="lg:col-span-7 lg:max-w-none"
+          />
+          <MonadLayersScene className="mx-auto h-64 w-full max-w-sm sm:h-72 lg:col-span-4 lg:col-start-9 lg:h-80 lg:max-w-none" />
+        </div>
 
         <div className="grid gap-10 lg:grid-cols-12 lg:items-start lg:gap-12">
           <div className="lg:col-span-7">

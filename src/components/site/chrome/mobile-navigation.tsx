@@ -66,11 +66,11 @@ export function MobileNavigation() {
                 Open demo
               </a>
               <a
-                href="#waitlist"
+                href={siteConfig.routes.signIn}
                 onClick={() => setOpen(false)}
                 className={buttonVariants({ variant: 'secondary', size: 'pill' })}
               >
-                Get early access
+                Sign in
               </a>
             </div>
           </Container>

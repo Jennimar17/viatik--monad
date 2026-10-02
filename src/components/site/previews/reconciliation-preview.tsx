@@ -8,34 +8,10 @@ import {
   PreviewPanel,
   StatusChip,
 } from '@/components/site/previews/primitives'
-import { PointList } from '@/components/site/sections/funding-agreement-section'
-import { Container, Section, SectionIntro } from '@/components/site/chrome/section'
-import { reconciliation } from '@/components/site/content/landing-content'
 import { reconciliationDemo } from '@/components/site/content/demo-data'
 
-export function ReconciliationSection() {
-  return (
-    <Section aria-labelledby="reconciliation-heading">
-      <Container className="grid gap-12 lg:grid-cols-12 lg:items-start lg:gap-16">
-        <div className="lg:sticky lg:top-28 lg:order-2 lg:col-span-5 lg:col-start-8">
-          <div className="flex flex-col gap-10">
-            <SectionIntro
-              eyebrow={reconciliation.eyebrow}
-              heading={<span id="reconciliation-heading">{reconciliation.heading}</span>}
-              body={reconciliation.body}
-            />
-            <PointList points={reconciliation.points} />
-          </div>
-        </div>
-        <div className="lg:order-1 lg:col-span-7">
-          <ReconciliationPreview />
-        </div>
-      </Container>
-    </Section>
-  )
-}
-
-function ReconciliationPreview() {
+/** Bill, payment and evidence as one trail, ending in a reconciled record. */
+export function ReconciliationPreview() {
   const d = reconciliationDemo
   return (
     <div className="flex flex-col gap-3">

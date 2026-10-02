@@ -10,13 +10,14 @@ import {
 } from '@/components/site/previews/primitives'
 import { budgetPolicyDemo, type BudgetNode } from '@/components/site/content/demo-data'
 
+/** Lays out by its own width (container queries), so it fits full-width or in a column. */
 export function BudgetPolicyPreview() {
   const d = budgetPolicyDemo
   return (
-    <div className="flex flex-col gap-3">
-      <PreviewPanel className="grid lg:grid-cols-12">
+    <div className="@container flex flex-col gap-3">
+      <PreviewPanel className="grid @5xl:grid-cols-12">
         {/* Capital structure */}
-        <div className="flex flex-col gap-6 p-4 sm:p-6 lg:col-span-7 lg:border-r lg:border-border">
+        <div className="flex flex-col gap-6 p-4 sm:p-6 @5xl:col-span-7 @5xl:border-r @5xl:border-border">
           <div className="flex items-start justify-between gap-4">
             <div className="flex flex-col gap-1">
               <PreviewLabel>Capital structure</PreviewLabel>
@@ -25,19 +26,19 @@ export function BudgetPolicyPreview() {
             <StatusChip status={{ label: 'Investor controls applied', tone: 'accent' }} />
           </div>
 
-          <div className="flex flex-col lg:flex-row lg:items-center">
-            <Node node={d.chain[0]} className="lg:w-44" />
+          <div className="flex flex-col @2xl:flex-row @2xl:items-center">
+            <Node node={d.chain[0]} className="@2xl:w-44" />
             <Connector />
-            <Node node={d.chain[1]} className="lg:w-48" highlight />
+            <Node node={d.chain[1]} className="@2xl:w-48" highlight />
             <Connector />
             <ul
               aria-label="Budget destinations"
-              className="relative ml-3 flex flex-col gap-3 border-l border-border pl-5 lg:ml-0 lg:flex-1 lg:pl-6"
+              className="relative ml-3 flex flex-col gap-3 border-l border-border pl-5 @2xl:ml-0 @2xl:flex-1 @2xl:pl-6"
             >
               {d.destinations.map((node) => (
                 <li
                   key={node.name}
-                  className="relative before:absolute before:top-1/2 before:-left-5 before:h-px before:w-5 before:bg-border lg:before:-left-6 lg:before:w-6"
+                  className="relative before:absolute before:top-1/2 before:-left-5 before:h-px before:w-5 before:bg-border @2xl:before:-left-6 @2xl:before:w-6"
                 >
                   <Node node={node} />
                 </li>
@@ -47,7 +48,7 @@ export function BudgetPolicyPreview() {
         </div>
 
         {/* Policy */}
-        <div className="flex flex-col gap-6 border-t border-border p-4 sm:p-6 lg:col-span-5 lg:border-t-0">
+        <div className="flex flex-col gap-6 border-t border-border p-4 sm:p-6 @5xl:col-span-5 @5xl:border-t-0">
           <div className="flex flex-col gap-1">
             <PreviewLabel>Budget policy</PreviewLabel>
             <p className="text-sm font-medium text-foreground sm:text-base">Product Delivery budget</p>
@@ -119,5 +120,5 @@ function Node({
 }
 
 function Connector() {
-  return <span aria-hidden="true" className="ml-3 h-5 w-px shrink-0 bg-border lg:mx-0 lg:h-px lg:w-8" />
+  return <span aria-hidden="true" className="ml-3 h-5 w-px shrink-0 bg-border @2xl:mx-0 @2xl:h-px @2xl:w-8" />
 }
