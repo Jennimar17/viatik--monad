@@ -71,9 +71,10 @@ export default function MilestoneReviewPage() {
   const agencyLabel = agency?.name ?? 'the Agency'
   const capital = agreementCapital(state, agreement.id)
   const covered = capital.released + tranche.amount <= capital.funded
+  // The Agency picks the account when it submits evidence; until then there is none.
   const destination = tranche.destinationAccountId
     ? accountName(state, tranche.destinationAccountId)
-    : 'Operations'
+    : undefined
   // A decided milestone shows the criteria the Investor confirmed at the time.
   const checked = milestone.decision ? milestone.decision.checkedCriteria : draftChecked
   const allChecked = checked.length === milestone.acceptanceCriteria.length
@@ -91,7 +92,9 @@ export default function MilestoneReviewPage() {
       description={
         reviewable
           ? 'Check the criteria against the evidence, then decide.'
-          : 'This milestone has been decided.'
+          : milestone.decision
+            ? 'This milestone has been decided.'
+            : 'Waiting for the Agency to submit evidence.'
       }
     >
       <div className="flex flex-col gap-5">
@@ -99,7 +102,8 @@ export default function MilestoneReviewPage() {
           <span className="text-xs text-subtle">{tranche.name} · release amount</span>
           <Amount value={tranche.amount} size="xl" />
           <span className="text-sm text-muted-foreground">
-            To {agencyLabel} · {destination}
+            To {agencyLabel}
+            {destination ? ` · ${destination}` : ''}
           </span>
         </div>
 
@@ -278,7 +282,10 @@ export default function MilestoneReviewPage() {
                 { label: 'Released so far', value: <Amount value={capital.released} size="sm" /> },
                 { label: 'In the Funding Vault', value: <Amount value={capital.inFundingVault} size="sm" /> },
                 { label: 'Requested by', value: userName(state, tranche.requestedBy) },
-                { label: 'Destination account', value: destination },
+                {
+                  label: 'Destination account',
+                  value: destination ?? 'Chosen by the Agency when it submits evidence',
+                },
               ]}
             />
           </Panel>
@@ -309,10 +316,10 @@ export default function MilestoneReviewPage() {
         title="Release tranche"
         description={`${tranche.name} · ${milestone.title}`}
         summary={{
-          what: `The milestone is approved and ${tranche.name} moves from the Funding Vault to ${agencyLabel}’s ${destination} account.`,
+          what: `The milestone is approved and ${tranche.name} moves from the Funding Vault to ${agencyLabel}’s ${destination ?? 'Operations'} account.`,
           amount: tranche.amount,
           from: `${agencyLabel} Funding Vault`,
-          to: `${agencyLabel} · ${destination}`,
+          to: `${agencyLabel} · ${destination ?? 'Operations'}`,
           reversible:
             'Cannot be undone from Viatik. Once released, the capital is available for the Agency to operate.',
           policy:
@@ -324,7 +331,7 @@ export default function MilestoneReviewPage() {
         onConfirm={() => release.run({ trancheId: tranche.id, checkedCriteria: checked, note })}
         success={{
           title: 'Funding released',
-          body: `${formatUsd(tranche.amount, { withCode: true })} is now available in the ${agencyLabel} ${destination} account.`,
+          body: `${formatUsd(tranche.amount, { withCode: true })} is now available in the ${agencyLabel} ${destination ?? 'Operations'} account.`,
           actions: (
             <>
               <ButtonLink href={href(`funding/${agreement.id}`)} size="pill-sm">

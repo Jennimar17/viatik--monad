@@ -8,6 +8,7 @@ import * as React from 'react'
 import { ButtonLink } from '@/components/app/button-link'
 import { ChipSelect, FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
 import { HolderAvatar, holderFromKey, holderOptions } from '@/components/app/holders'
+import { AddDestinationButton, CreateOperationsAccount, EmptySourceHint } from '@/components/app/money-setup'
 import { useHref, useRole } from '@/components/app/role-context'
 import { useBottomBar } from '@/components/app/shell/app-shell'
 import { Button } from '@/components/ui/button'
@@ -232,21 +233,35 @@ export default function NewBudgetPage() {
           <div className="flex flex-col gap-6">
             <FormField
               label="Source account"
-              htmlFor="source"
+              htmlFor={accounts.length > 0 ? 'source' : undefined}
               error={errors.source}
-              hint={source ? `${formatUsd(available, { withCode: true })} available` : undefined}
+              hint={
+                !source ? undefined : available > 0 ? (
+                  `${formatUsd(available, { withCode: true })} available`
+                ) : (
+                  <EmptySourceHint name={source.name} fundingHref={href('funding')} />
+                )
+              }
             >
-              <SimpleSelect
-                id="source"
-                value={draft.sourceAccountId}
-                onValueChange={(value) => update({ sourceAccountId: value })}
-                invalid={Boolean(errors.source)}
-                options={accounts.map((a) => ({
-                  value: a.id,
-                  label: a.name,
-                  description: `${formatUsd(accountBalance(state, a.id), { withCode: true })} available`,
-                }))}
-              />
+              {accounts.length === 0 ? (
+                <CreateOperationsAccount
+                  agencyId={agencyId}
+                  description="A budget assigns money from an Agency account. Released funding lands in Operations."
+                  onCreated={(id) => update({ sourceAccountId: id })}
+                />
+              ) : (
+                <SimpleSelect
+                  id="source"
+                  value={draft.sourceAccountId}
+                  onValueChange={(value) => update({ sourceAccountId: value })}
+                  invalid={Boolean(errors.source)}
+                  options={accounts.map((a) => ({
+                    value: a.id,
+                    label: a.name,
+                    description: `${formatUsd(accountBalance(state, a.id), { withCode: true })} available`,
+                  }))}
+                />
+              )}
             </FormField>
             <div className="flex flex-col gap-3">
               <p className="text-sm font-medium">Template</p>
@@ -390,14 +405,34 @@ export default function NewBudgetPage() {
             </FormField>
             <FormField
               label="Allowed payment destinations"
-              hint="Leave empty to allow any approved destination of the Agency."
+              hint={
+                destinations.length === 0
+                  ? 'The Agency has no payment destinations yet. Payments can only go to approved destinations, so add the vendors and services this budget pays.'
+                  : 'Leave empty to allow any approved destination of the Agency.'
+              }
             >
-              <ChipSelect
-                ariaLabel="Allowed payment destinations"
-                value={draft.destinations}
-                onChange={(value) => update({ destinations: value })}
-                options={destinations.map((d) => ({ value: d.id, label: d.name }))}
-              />
+              <div className="flex flex-col gap-2">
+                {destinations.length > 0 ? (
+                  <ChipSelect
+                    ariaLabel="Allowed payment destinations"
+                    value={draft.destinations}
+                    onChange={(value) => update({ destinations: value })}
+                    options={destinations.map((d) => ({ value: d.id, label: d.name }))}
+                  />
+                ) : null}
+                <AddDestinationButton
+                  agencyId={agencyId}
+                  // A budget that already lists destinations also allows the one just added;
+                  // an empty list already means "any approved destination".
+                  onAdded={(destination) =>
+                    setDraft((prev) =>
+                      prev.destinations.length > 0 && !prev.destinations.includes(destination.id)
+                        ? { ...prev, destinations: [...prev.destinations, destination.id] }
+                        : prev,
+                    )
+                  }
+                />
+              </div>
             </FormField>
           </div>
         </Panel>

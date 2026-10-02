@@ -1,7 +1,8 @@
 import { newId } from '../ids'
 import { cents, sum, type Cents } from '../money'
 import { evaluatePolicy } from '../policy'
-import { governingAgreement } from '../queries'
+import { accountTemplate } from '../labels'
+import { activeOperationsAccount, governingAgreement } from '../queries'
 import {
   accountBalance,
   agentSpentToday,
@@ -80,6 +81,33 @@ export function createAccount(
     })
   }
   return account
+}
+
+/**
+ * The account released funding lands in by default. An Agency gets one when
+ * it accepts funding, so a new Agency can receive money without setting up
+ * accounts first. Opened by whoever accepts (an Agency Admin).
+ */
+export function ensureOperationsAccount(tx: Tx, agencyId: Id): Account {
+  return (
+    activeOperationsAccount(tx.state, agencyId) ??
+    createAccount(tx, {
+      agencyId,
+      template: 'operations',
+      name: accountTemplate.operations.label,
+      purpose: accountTemplate.operations.description,
+    })
+  )
+}
+
+/**
+ * Opens the Operations account from a form that needs one. If it already
+ * exists (another admin, another tab, or an agreement accepted meanwhile),
+ * the existing account is returned instead of a second one.
+ */
+export function openOperationsAccount(tx: Tx, input: { agencyId: Id }): Account {
+  tx.authorize('create_account', { agencyId: input.agencyId })
+  return ensureOperationsAccount(tx, input.agencyId)
 }
 
 export function transferFunds(
@@ -1088,6 +1116,12 @@ export function payBill(
   if (bill.status === 'paid' || bill.status === 'reconciled')
     throw new DomainError('invalid_state', 'This bill is already paid.')
   const destination = tx.find('destinations', bill.destinationId, 'Payment destination')
+  // Paying or rescheduling a scheduled bill replaces its scheduled payment;
+  // no money had moved for it yet.
+  const previous = bill.paymentId ? tx.state.payments.find((p) => p.id === bill.paymentId) : undefined
+  if (previous?.status === 'scheduled') {
+    tx.state.payments = tx.state.payments.filter((p) => p.id !== previous.id)
+  }
   const payment = sendPayment(tx, {
     agencyId: bill.agencyId,
     type: bill.category === 'contractors' ? 'contractor' : bill.category === 'cloud' ? 'vendor' : 'tool',
@@ -1269,9 +1303,7 @@ export function returnUnusedFunds(tx: Tx, input: { agencyId: Id; amount: Cents }
       `You can return up to ${usdText(cents(Math.max(0, received)))} received from this Agency.`,
     )
   }
-  const operations = tx.state.accounts.find(
-    (a) => a.agencyId === input.agencyId && a.template === 'operations',
-  )
+  const operations = activeOperationsAccount(tx.state, input.agencyId)
   if (!operations) throw new DomainError('not_found', 'The Agency has no operations account.')
   const portfolioId = tx.portfolioOfAgency(input.agencyId)
   const operationId = newId('ret')

@@ -79,6 +79,10 @@ export default function BillDetailPage() {
   const payingNow = when === 'now'
   const scheduledIso = fromDateInput(scheduledFor)
   const insufficient = available < bill.amount
+  // Whether any source could pay it; if none can, point to where money comes from.
+  const anyCovers =
+    accounts.some((a) => accountBalance(state, a.id) >= bill.amount) ||
+    budgets.some((b) => budgetUsage(state, b, now).available >= bill.amount)
   const scheduleError =
     !payingNow && scheduledIso && scheduledIso <= now ? 'Choose a date in the future.' : undefined
 
@@ -100,9 +104,10 @@ export default function BillDetailPage() {
           </>
         }
         actions={
-          bill.status === 'to_pay' ? (
+          bill.status === 'to_pay' || bill.status === 'scheduled' ? (
             <Button size="pill" onClick={() => setSheet('pay')}>
-              <Send data-icon="inline-start" /> Pay bill
+              <Send data-icon="inline-start" />{' '}
+              {bill.status === 'scheduled' ? 'Pay now or reschedule' : 'Pay bill'}
             </Button>
           ) : bill.status === 'paid' ? (
             <Button size="pill" onClick={() => setSheet('reconcile')}>
@@ -242,7 +247,8 @@ export default function BillDetailPage() {
             : 'Agency account payment, authorized by an Agency Admin.',
         }}
         confirmLabel={payingNow ? 'Pay bill' : 'Schedule payment'}
-        disabled={!accountId || (payingNow ? insufficient : !scheduledIso || Boolean(scheduleError))}
+        // A scheduled payment needs the money too: nothing pays it later if it is not there.
+        disabled={!accountId || insufficient || (!payingNow && (!scheduledIso || Boolean(scheduleError)))}
         phase={pay.phase}
         error={pay.error}
         onConfirm={() =>
@@ -270,11 +276,23 @@ export default function BillDetailPage() {
             label="Pay from budget"
             htmlFor="bill-budget"
             error={
-              payingNow && insufficient
+              insufficient && anyCovers
                 ? `Only ${formatUsd(available, { withCode: true })} available. Choose another source.`
                 : undefined
             }
-            hint={`${formatUsd(available, { withCode: true })} available`}
+            hint={
+              insufficient ? (
+                <>
+                  No account or budget holds {formatUsd(bill.amount, { withCode: true })} yet. Released funding
+                  lands in the Operations account first.{' '}
+                  <Link href={href('funding')} className="text-foreground underline-offset-4 hover:underline">
+                    Go to Funding
+                  </Link>
+                </>
+              ) : (
+                `${formatUsd(available, { withCode: true })} available`
+              )
+            }
           >
             <SimpleSelect
               id="bill-budget"

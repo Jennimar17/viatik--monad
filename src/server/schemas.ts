@@ -153,6 +153,7 @@ export const commandSchemas = {
     purpose: text(400),
     initialFunding: z.object({ fromAccountId: id, amount: cents }).optional(),
   }),
+  openOperationsAccount: z.object({ agencyId: id }),
   transferFunds: z.object({
     agencyId: id,
     fromAccountId: id,

@@ -28,8 +28,11 @@ export default function NewAccountPage() {
 
   const templates = accountTemplateOptions()
   const accounts = state.accounts.filter((a) => a.agencyId === agencyId && a.status === 'active')
-  const [template, setTemplate] = React.useState<AccountTemplate>('project')
-  const [name, setName] = React.useState(accountTemplate.project.label)
+  // An Agency's first account is the one released funding lands in.
+  const [template, setTemplate] = React.useState<AccountTemplate>(() =>
+    accounts.some((a) => a.template === 'operations') ? 'project' : 'operations',
+  )
+  const [name, setName] = React.useState(accountTemplate[template].label)
   const [purpose, setPurpose] = React.useState('')
   const [fromId, setFromId] = React.useState<string | null>(
     accounts.find((a) => a.template === 'operations')?.id ?? accounts[0]?.id ?? null,

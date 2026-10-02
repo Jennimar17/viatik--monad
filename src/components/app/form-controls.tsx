@@ -1,6 +1,6 @@
 'use client'
 
-import type * as React from 'react'
+import * as React from 'react'
 
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -9,13 +9,17 @@ import { cn } from '@/lib/utils'
 
 export type Option = { value: string; label: string; description?: string }
 
-/** Pill select that shows the chosen option's label. */
+/**
+ * Pill select that shows the chosen option's label. With nothing to choose it
+ * is disabled and says so (`empty`), instead of opening an empty list.
+ */
 export function SimpleSelect({
   id,
   value,
   onValueChange,
   options,
   placeholder = 'Choose…',
+  empty = 'Nothing to choose yet',
   invalid,
   className,
   disabled,
@@ -26,18 +30,22 @@ export function SimpleSelect({
   onValueChange: (value: string) => void
   options: Option[]
   placeholder?: string
+  /** Shown instead of the placeholder when there are no options. */
+  empty?: string
   invalid?: boolean
   className?: string
   disabled?: boolean
   /** Name for selects without a visible label, e.g. a toolbar filter. */
   'aria-label'?: string
 }) {
+  const none = options.length === 0
+  const prompt = none ? empty : placeholder
   return (
     <Select
       value={value}
       onValueChange={(next) => next !== null && onValueChange(String(next))}
       items={options}
-      disabled={disabled}
+      disabled={disabled || none}
     >
       <SelectTrigger
         id={id}
@@ -48,22 +56,40 @@ export function SimpleSelect({
           className,
         )}
       >
-        <SelectValue placeholder={placeholder} className="min-w-0 truncate">
-          {(selected: string | null) => options.find((o) => o.value === selected)?.label ?? placeholder}
+        <SelectValue placeholder={prompt} className="min-w-0 truncate">
+          {(selected: string | null) => options.find((o) => o.value === selected)?.label ?? prompt}
         </SelectValue>
       </SelectTrigger>
-      <SelectContent className="max-h-80 rounded-xl p-1">
-        {options.map((option) => (
-          <SelectItem key={option.value} value={option.value} className="rounded-lg py-2">
-            <span className="flex flex-col">
-              <span>{option.label}</span>
-              {option.description ? <span className="text-xs text-subtle">{option.description}</span> : null}
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
+      {none ? null : (
+        <SelectContent className="max-h-80 rounded-xl p-1">
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value} className="rounded-lg py-2">
+              <span className="flex flex-col">
+                <span>{option.label}</span>
+                {option.description ? (
+                  <span className="text-xs text-subtle">{option.description}</span>
+                ) : null}
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      )}
     </Select>
   )
+}
+
+/**
+ * A choice among things that can appear or disappear while the form is open
+ * (an account created inline, another tab's change): until the person picks
+ * one it follows `fallback`, and a pick that no longer exists is dropped.
+ */
+export function useChoice(
+  available: readonly string[],
+  fallback: string | null | undefined,
+): [string | null, (value: string) => void] {
+  const [picked, setPicked] = React.useState<string | null>(null)
+  const value = picked !== null && available.includes(picked) ? picked : (fallback ?? null)
+  return [value, setPicked]
 }
 
 /** Label, control and hint or error, stacked. */

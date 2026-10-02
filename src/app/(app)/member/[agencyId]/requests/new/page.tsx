@@ -116,9 +116,16 @@ function NewRequest() {
   // The form's action bar sits at the bottom until a result screen replaces it.
   useBottomBar(budgets.length > 0 && !result)
 
+  // Members cannot add destinations; when there are none, say who can.
+  const noDestinations =
+    'Your Agency Admin has not approved anywhere to pay from this budget yet. Ask them to add the vendor or service you need.'
   const errors = {
     budget: !budgetId ? 'Choose a budget.' : undefined,
-    destination: !destinationId ? 'Choose where the money goes.' : undefined,
+    destination: !destinationId
+      ? destinationOptions.length === 0
+        ? noDestinations
+        : 'Choose where the money goes.'
+      : undefined,
     amount: !amount ? 'Enter an amount.' : undefined,
     purpose: purpose.trim().length < 3 ? 'Say what this is for.' : undefined,
   }
@@ -307,7 +314,11 @@ function NewRequest() {
               label={type === 'reimbursement' ? 'Where you bought it' : 'Pay to'}
               htmlFor="destination"
               error={touched ? errors.destination : undefined}
-              hint="Only approved destinations for this budget are listed."
+              hint={
+                destinationOptions.length === 0
+                  ? noDestinations
+                  : 'Only approved destinations for this budget are listed.'
+              }
             >
               <SimpleSelect
                 id="destination"
@@ -316,6 +327,7 @@ function NewRequest() {
                 options={destinationOptions}
                 invalid={touched && Boolean(errors.destination)}
                 placeholder="Choose a vendor or service"
+                empty="No approved destinations yet"
               />
             </FormField>
           </div>

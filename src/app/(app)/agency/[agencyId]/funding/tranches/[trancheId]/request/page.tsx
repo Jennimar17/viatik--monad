@@ -5,7 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import * as React from 'react'
 
 import { ButtonLink } from '@/components/app/button-link'
-import { FormField, SimpleSelect } from '@/components/app/form-controls'
+import { FormField, SimpleSelect, useChoice } from '@/components/app/form-controls'
+import { CreateOperationsAccount } from '@/components/app/money-setup'
 import { useHref, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
 import { useBottomBar } from '@/components/app/shell/app-shell'
@@ -30,8 +31,9 @@ export default function TrancheRequestPage() {
   const router = useRouter()
   const request = useCommand('requestTranche', { silent: true })
   const accounts = state.accounts.filter((a) => a.agencyId === agencyId && a.status === 'active')
-  const [accountId, setAccountId] = React.useState<string | null>(
-    accounts.find((a) => a.template === 'operations')?.id ?? accounts[0]?.id ?? null,
+  const [accountId, setAccountId] = useChoice(
+    accounts.map((a) => a.id),
+    accounts.find((a) => a.template === 'operations')?.id ?? accounts[0]?.id,
   )
   const [note, setNote] = React.useState('')
   const [done, setDone] = React.useState(false)
@@ -50,7 +52,8 @@ export default function TrancheRequestPage() {
 
   const investor = state.portfolios.find((p) => p.id === agreement.portfolioId)?.name ?? 'The Investor'
   const busy = request.phase !== 'idle' && request.phase !== 'failed' && request.phase !== 'completed'
-  const requestable = tranche.status === 'available' || tranche.status === 'planned'
+  const trancheOpen = tranche.status === 'available' || tranche.status === 'planned'
+  const requestable = agreement.status === 'active' && trancheOpen
 
   if (done) {
     return (
@@ -81,8 +84,9 @@ export default function TrancheRequestPage() {
 
       {requestable ? null : (
         <div className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm">
-          This tranche cannot be requested right now: it is{' '}
-          {trancheStatus[tranche.status].label.toLowerCase()}.
+          {trancheOpen
+            ? `This tranche can be requested once ${agreement.title} is active.`
+            : `This tranche cannot be requested right now: it is ${trancheStatus[tranche.status].label.toLowerCase()}.`}
         </div>
       )}
 
@@ -109,15 +113,23 @@ export default function TrancheRequestPage() {
         <div className="flex flex-col gap-5">
           <FormField
             label="Destination account"
-            htmlFor="account"
+            htmlFor={accounts.length > 0 ? 'account' : undefined}
             hint={`${formatUsd(tranche.amount, { withCode: true })} lands here when released.`}
           >
-            <SimpleSelect
-              id="account"
-              value={accountId}
-              onValueChange={setAccountId}
-              options={accounts.map((a) => ({ value: a.id, label: a.name, description: a.purpose }))}
-            />
+            {accounts.length === 0 ? (
+              <CreateOperationsAccount
+                agencyId={agencyId}
+                description="Released funding lands in an Agency account. Create the Operations account to receive it."
+                onCreated={setAccountId}
+              />
+            ) : (
+              <SimpleSelect
+                id="account"
+                value={accountId}
+                onValueChange={setAccountId}
+                options={accounts.map((a) => ({ value: a.id, label: a.name, description: a.purpose }))}
+              />
+            )}
           </FormField>
           <FormField label="Note for the Investor" htmlFor="note" optional>
             <Textarea

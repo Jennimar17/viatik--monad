@@ -32,6 +32,11 @@ export const accountName = (state: ViatikState, id: Id | undefined) =>
 export const destinationName = (state: ViatikState, id: Id | undefined) =>
   state.destinations.find((d) => d.id === id)?.name ?? 'Payment destination'
 
+/** The account released funding and returned money land in by default: the Agency's active Operations account. */
+export function activeOperationsAccount(state: ViatikState, agencyId: Id) {
+  return state.accounts.find((a) => a.agencyId === agencyId && a.template === 'operations' && a.status === 'active')
+}
+
 export function actorName(state: ViatikState, actor: Actor): string {
   if (actor.kind === 'user') return userName(state, actor.userId)
   if (actor.kind === 'ai_agent') return state.agents.find((a) => a.id === actor.agentId)?.name ?? 'Automation'

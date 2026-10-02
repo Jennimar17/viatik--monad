@@ -6,13 +6,13 @@ import * as React from 'react'
 import { toast } from 'sonner'
 
 import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
+import { AddDestinationSheet, destinationKindLabel } from '@/components/app/money-setup'
 import { PageTabs, type PageTab } from '@/components/app/page-tabs'
 import { PasskeysPanel } from '@/components/app/passkeys-panel'
 import { SponsorshipCheck } from '@/components/app/sponsorship-check'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { ApprovalSheet } from '@/components/viatik/approval-sheet'
 import { EmptyState } from '@/components/viatik/feedback'
 import { KeyValueList, PageHeader, Panel } from '@/components/viatik/layout'
 import { CopyButton } from '@/components/viatik/operation'
@@ -25,7 +25,6 @@ import { formatUsd } from '@/domain/money'
 import { roleLabel } from '@/domain/permissions'
 import { activeAgreement, userName } from '@/domain/queries'
 import { agreementStatus } from '@/domain/status'
-import type { PaymentDestination, SpendingCategory } from '@/domain/types'
 import { networkInfo } from '@/domain/verification'
 import { publicEnv } from '@/lib/env'
 import { formatDate, pluralize, shortHash } from '@/lib/format'
@@ -39,12 +38,6 @@ const LOCALES = [
   { value: 'fr-FR', label: 'French formatting · 1 234,56' },
   { value: 'es-ES', label: 'Spanish formatting · 1.234,56' },
 ]
-
-const destinationKindLabel: Record<PaymentDestination['kind'], string> = {
-  vendor: 'Vendor',
-  service: 'Service',
-  contractor: 'Contractor',
-}
 
 /** Per-device choices that have no server side yet: notification switches, passkey, developer mode. */
 type Preferences = {
@@ -611,113 +604,5 @@ export function SettingsPage({
       ) : null}
       {children}
     </div>
-  )
-}
-
-const KIND_OPTIONS = (Object.keys(destinationKindLabel) as PaymentDestination['kind'][]).map((kind) => ({
-  value: kind,
-  label: destinationKindLabel[kind],
-}))
-
-const CATEGORY_OPTIONS = (Object.keys(categoryLabel) as SpendingCategory[]).map((category) => ({
-  value: category,
-  label: categoryLabel[category],
-}))
-
-function AddDestinationSheet({
-  open,
-  onOpenChange,
-  agencyId,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  agencyId: string
-}) {
-  const add = useCommand('addDestination')
-  const [name, setName] = React.useState('')
-  const [kind, setKind] = React.useState<PaymentDestination['kind']>('vendor')
-  const [category, setCategory] = React.useState<SpendingCategory>('software')
-  const [settlement, setSettlement] = React.useState('')
-  const [website, setWebsite] = React.useState('')
-  const trimmed = name.trim()
-
-  return (
-    <ApprovalSheet
-      open={open}
-      onOpenChange={onOpenChange}
-      onClosed={() => {
-        setName('')
-        setKind('vendor')
-        setCategory('software')
-        setSettlement('')
-        setWebsite('')
-        add.reset()
-      }}
-      title="Add payment destination"
-      summary={{
-        what: `${trimmed || 'This destination'} becomes an approved place the Agency can pay. Budgets can still restrict who pays it.`,
-        reversible: 'You can leave it out of any budget’s allowed destinations.',
-        policy: 'Payments can only go to approved destinations; settlement enforces it, not only the app.',
-      }}
-      confirmLabel="Add destination"
-      disabled={trimmed.length < 2 || settlement.trim().length < 3}
-      phase={add.phase}
-      error={add.error}
-      onConfirm={() =>
-        add.run({
-          agencyId,
-          name: trimmed,
-          kind,
-          category,
-          settlementLabel: settlement.trim(),
-          website: website.trim() || undefined,
-        })
-      }
-      success={{ title: 'Destination added', body: `${trimmed} can now be paid from budgets that allow it.` }}
-    >
-      <div className="flex flex-col gap-4">
-        <FormField label="Name" htmlFor="dest-name">
-          <PillInput id="dest-name" value={name} onChange={(e) => setName(e.target.value)} />
-        </FormField>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <FormField label="Type" htmlFor="dest-kind">
-            <SimpleSelect
-              id="dest-kind"
-              value={kind}
-              onValueChange={(value) => setKind(value as PaymentDestination['kind'])}
-              options={KIND_OPTIONS}
-            />
-          </FormField>
-          <FormField label="Category" htmlFor="dest-category">
-            <SimpleSelect
-              id="dest-category"
-              value={category}
-              onValueChange={(value) => setCategory(value as SpendingCategory)}
-              options={CATEGORY_OPTIONS}
-            />
-          </FormField>
-        </div>
-        <FormField
-          label="Settlement method"
-          htmlFor="dest-settlement"
-          hint="A generic label, e.g. “USDC account •• 9f3a” or “Card on file •• 1107”."
-        >
-          <PillInput
-            id="dest-settlement"
-            value={settlement}
-            onChange={(e) => setSettlement(e.target.value)}
-          />
-        </FormField>
-        <FormField label="Website" htmlFor="dest-website" optional>
-          <PillInput
-            id="dest-website"
-            type="url"
-            value={website}
-            onChange={(e) => setWebsite(e.target.value)}
-            placeholder="https://"
-          />
-        </FormField>
-      </div>
-    </ApprovalSheet>
   )
 }

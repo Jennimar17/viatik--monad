@@ -234,7 +234,7 @@ export default function AgencyFundingPage() {
         onClosed={accept.reset}
         title="Accept agreement"
         summary={{
-          what: `You accept ${agreement.title} and its conditions: tranches, milestones, spending policy, and return conditions.`,
+          what: `You accept ${agreement.title} and its conditions: tranches, milestones, spending policy, and return conditions. If the Agency has no Operations account yet, Viatik opens one to receive released funding.`,
           amount: agreement.committed,
           reversible: 'The Investor can pause the agreement; changes to its terms need an amendment.',
           policy:
@@ -246,7 +246,11 @@ export default function AgencyFundingPage() {
         onConfirm={() => accept.run({ agreementId: agreement.id })}
         success={{
           title: 'Agreement accepted',
-          body: `${investor} was notified. You can request the first tranche now.`,
+          body: `${investor} was notified. Released funding lands in your Operations account. ${
+            agreement.releaseModel === 'milestone'
+              ? 'Submit evidence for the first milestone to request its tranche.'
+              : 'You can request the first tranche now.'
+          }`,
         }}
       />
       {receipts.drawer}

@@ -6,8 +6,9 @@ import { useParams, useRouter } from 'next/navigation'
 import * as React from 'react'
 
 import { ButtonLink } from '@/components/app/button-link'
-import { FormField, SimpleSelect } from '@/components/app/form-controls'
+import { FormField, SimpleSelect, useChoice } from '@/components/app/form-controls'
 import { EvidenceList } from '@/components/app/funding-parts'
+import { CreateOperationsAccount } from '@/components/app/money-setup'
 import { useHref, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
 import { useBottomBar } from '@/components/app/shell/app-shell'
@@ -33,8 +34,9 @@ export default function SubmitEvidencePage() {
   const accounts = state.accounts.filter((a) => a.agencyId === agencyId && a.status === 'active')
   const [files, setFiles] = React.useState<DraftFile[]>([])
   const [note, setNote] = React.useState('')
-  const [accountId, setAccountId] = React.useState<string | null>(
-    accounts.find((a) => a.template === 'operations')?.id ?? accounts[0]?.id ?? null,
+  const [accountId, setAccountId] = useChoice(
+    accounts.map((a) => a.id),
+    accounts.find((a) => a.template === 'operations')?.id ?? accounts[0]?.id,
   )
   const [done, setDone] = React.useState(false)
   useBottomBar(!done)
@@ -54,6 +56,17 @@ export default function SubmitEvidencePage() {
   const investor = state.portfolios.find((p) => p.id === agreement.portfolioId)?.name ?? 'The Investor'
   const busy = submit.phase !== 'idle' && submit.phase !== 'failed' && submit.phase !== 'completed'
   const underReview = milestone.status === 'ready_for_review' || milestone.status === 'approved'
+  const agreementActive = agreement.status === 'active'
+  // Why "Submit evidence" is off, said next to it instead of a silent disabled button.
+  const missing = underReview
+    ? null
+    : !agreementActive
+      ? 'Evidence can be submitted once the agreement is active.'
+      : files.length === 0
+        ? 'Add at least one file or link.'
+        : !accountId
+          ? 'Choose where the funds go.'
+          : null
 
   if (done) {
     return (
@@ -93,6 +106,14 @@ export default function SubmitEvidencePage() {
           {milestone.decision.note ? (
             <p className="mt-1 text-pretty text-muted-foreground">{milestone.decision.note}</p>
           ) : null}
+        </div>
+      ) : null}
+
+      {!underReview && !agreementActive ? (
+        <div className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm">
+          {agreement.status === 'pending_acceptance'
+            ? `Accept ${agreement.title} first. Evidence can be submitted once the agreement is active.`
+            : `${agreement.title} is not active, so evidence cannot be submitted right now.`}
         </div>
       ) : null}
 
@@ -151,15 +172,23 @@ export default function SubmitEvidencePage() {
           </FormField>
           <FormField
             label="Where should the funds go?"
-            htmlFor="destination"
+            htmlFor={accounts.length > 0 ? 'destination' : undefined}
             hint={`When released, ${tranche ? formatUsd(tranche.amount, { withCode: true }) : 'the tranche'} lands in this account.`}
           >
-            <SimpleSelect
-              id="destination"
-              value={accountId}
-              onValueChange={setAccountId}
-              options={accounts.map((a) => ({ value: a.id, label: a.name, description: a.purpose }))}
-            />
+            {accounts.length === 0 ? (
+              <CreateOperationsAccount
+                agencyId={agencyId}
+                description="Released funding lands in an Agency account. Create the Operations account to receive it."
+                onCreated={setAccountId}
+              />
+            ) : (
+              <SimpleSelect
+                id="destination"
+                value={accountId}
+                onValueChange={setAccountId}
+                options={accounts.map((a) => ({ value: a.id, label: a.name, description: a.purpose }))}
+              />
+            )}
           </FormField>
         </div>
       </Panel>
@@ -171,14 +200,17 @@ export default function SubmitEvidencePage() {
       ) : null}
 
       <FormActions>
+        {missing && !busy ? (
+          <p className="text-center text-xs text-subtle sm:mr-auto sm:pl-3 sm:text-left">{missing}</p>
+        ) : null}
         <Button variant="ghost" size="pill-sm" onClick={() => router.push(href('funding'))} disabled={busy}>
           Cancel
         </Button>
         <Button
           size="pill-sm"
-          disabled={busy || underReview || files.length === 0 || !accountId}
+          disabled={busy || underReview || !agreementActive || files.length === 0 || !accountId}
           onClick={async () => {
-            if (!accountId) return
+            if (!accountId || !agreementActive) return
             const result = await submit.run({
               milestoneId: milestone.id,
               evidence: files,

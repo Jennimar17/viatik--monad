@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation'
 import * as React from 'react'
 
 import { ButtonLink } from '@/components/app/button-link'
-import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
+import { FormField, PillInput, SimpleSelect, useChoice } from '@/components/app/form-controls'
+import { AddDestinationButton, CreateOperationsAccount, EmptySourceHint } from '@/components/app/money-setup'
 import { receiptHref } from '@/components/app/nav'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
 import { useHref, useRole } from '@/components/app/role-context'
@@ -56,8 +57,9 @@ export default function NewPaymentPage() {
 
   const [type, setType] = React.useState<PaymentType>('vendor')
   const [recipient, setRecipient] = React.useState<string | null>(null)
-  const [accountId, setAccountId] = React.useState<string | null>(
-    accounts.find((a) => a.template === 'operations')?.id ?? accounts[0]?.id ?? null,
+  const [accountId, setAccountId] = useChoice(
+    accounts.map((a) => a.id),
+    accounts.find((a) => a.template === 'operations')?.id ?? accounts[0]?.id,
   )
   const [budgetId, setBudgetId] = React.useState(NO_BUDGET)
   const [amount, setAmount] = React.useState<Cents | null>(null)
@@ -185,22 +187,28 @@ export default function NewPaymentPage() {
             htmlFor="recipient"
             error={touched ? errors.recipient : undefined}
           >
-            <SimpleSelect
-              id="recipient"
-              value={recipient}
-              onValueChange={setRecipient}
-              invalid={touched && Boolean(errors.recipient)}
-              options={
-                toMember
-                  ? people.map((m) => ({
-                      value: m.userId,
-                      label: userName(state, m.userId),
-                      description: roleLabel[m.role],
-                    }))
-                  : destinations.map((d) => ({ value: d.id, label: d.name, description: d.settlementLabel }))
-              }
-              placeholder={toMember ? 'Choose a person' : 'Choose a payment destination'}
-            />
+            <div className="flex flex-col gap-2">
+              <SimpleSelect
+                id="recipient"
+                value={recipient}
+                onValueChange={setRecipient}
+                invalid={touched && Boolean(errors.recipient)}
+                options={
+                  toMember
+                    ? people.map((m) => ({
+                        value: m.userId,
+                        label: userName(state, m.userId),
+                        description: roleLabel[m.role],
+                      }))
+                    : destinations.map((d) => ({ value: d.id, label: d.name, description: d.settlementLabel }))
+                }
+                placeholder={toMember ? 'Choose a person' : 'Choose a payment destination'}
+                empty={toMember ? 'No team members yet' : 'No payment destinations yet'}
+              />
+              {toMember ? null : (
+                <AddDestinationButton agencyId={agencyId} onAdded={(destination) => setRecipient(destination.id)} />
+              )}
+            </div>
           </FormField>
         </div>
       </Panel>
@@ -224,17 +232,34 @@ export default function NewPaymentPage() {
               />
             </FormField>
             {budget ? null : (
-              <FormField label="Account" htmlFor="account" error={touched ? errors.source : undefined}>
-                <SimpleSelect
-                  id="account"
-                  value={accountId}
-                  onValueChange={setAccountId}
-                  options={accounts.map((a) => ({
-                    value: a.id,
-                    label: a.name,
-                    description: `${formatUsd(accountBalance(state, a.id))} available`,
-                  }))}
-                />
+              <FormField
+                label="Account"
+                htmlFor={accounts.length > 0 ? 'account' : undefined}
+                error={touched ? errors.source : undefined}
+                hint={
+                  accountId && accountBalance(state, accountId) === 0 ? (
+                    <EmptySourceHint name={accountName(state, accountId)} fundingHref={href('funding')} />
+                  ) : undefined
+                }
+              >
+                {accounts.length === 0 ? (
+                  <CreateOperationsAccount
+                    agencyId={agencyId}
+                    description="Payments come out of an Agency account. Released funding lands there."
+                    onCreated={setAccountId}
+                  />
+                ) : (
+                  <SimpleSelect
+                    id="account"
+                    value={accountId}
+                    onValueChange={setAccountId}
+                    options={accounts.map((a) => ({
+                      value: a.id,
+                      label: a.name,
+                      description: `${formatUsd(accountBalance(state, a.id))} available`,
+                    }))}
+                  />
+                )}
               </FormField>
             )}
           </div>

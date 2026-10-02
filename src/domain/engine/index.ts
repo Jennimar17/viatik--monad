@@ -22,6 +22,7 @@ export const commands = {
   releaseTranche: funding.releaseTranche,
   requestMilestoneChanges: funding.requestMilestoneChanges,
   createAccount: operations.createAccount,
+  openOperationsAccount: operations.openOperationsAccount,
   transferFunds: operations.transferFunds,
   createBudget: operations.createBudget,
   allocateToBudget: operations.allocateToBudget,

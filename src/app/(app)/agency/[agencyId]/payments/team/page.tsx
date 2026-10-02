@@ -4,7 +4,9 @@ import Link from '@/components/viatik/link'
 import { useRouter } from 'next/navigation'
 import * as React from 'react'
 
-import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
+import { ButtonLink } from '@/components/app/button-link'
+import { FormField, PillInput, SimpleSelect, useChoice } from '@/components/app/form-controls'
+import { CreateOperationsAccount, EmptySourceHint } from '@/components/app/money-setup'
 import { useHref, useRole } from '@/components/app/role-context'
 import { useBottomBar } from '@/components/app/shell/app-shell'
 import { Button } from '@/components/ui/button'
@@ -50,8 +52,9 @@ export default function TeamPaymentsPage() {
   const [budgetId, setBudgetId] = React.useState<string>(
     () => budgets.find((b) => budgetUsage(state, b, now).available > 0)?.id ?? NO_BUDGET,
   )
-  const [accountId, setAccountId] = React.useState<string | null>(
-    accounts.find((a) => a.template === 'people')?.id ?? accounts[0]?.id ?? null,
+  const [accountId, setAccountId] = useChoice(
+    accounts.map((a) => a.id),
+    accounts.find((a) => a.template === 'people')?.id ?? accounts[0]?.id,
   )
   const [memo, setMemo] = React.useState(`${monthName.format(new Date(now))} team payment`)
   // Everyone paid before is preselected with their last amount.
@@ -83,9 +86,15 @@ export default function TeamPaymentsPage() {
   )
   const total = sum(selected, (r) => r.amount)
   const overLimit = budget ? selected.filter((r) => r.amount > budget.perOperationLimit) : []
-  const error =
-    total > available
-      ? `Only ${formatUsd(available, { withCode: true })} available. Lower the amounts or choose another source.`
+  // Another source only helps if one actually holds enough.
+  const anotherSourceCovers =
+    accounts.some((a) => a.id !== sourceAccountId && accountBalance(state, a.id) >= total) ||
+    budgets.some((b) => b.id !== budget?.id && budgetUsage(state, b, now).available >= total)
+  const error: React.ReactNode =
+    total > available && available === 0 && !anotherSourceCovers ? (
+      <EmptySourceHint name={accountName(state, sourceAccountId ?? undefined)} fundingHref={href('funding')} />
+    ) : total > available
+      ? `Only ${formatUsd(available, { withCode: true })} available. ${anotherSourceCovers ? 'Lower the amounts or choose another source.' : 'Lower the amounts.'}`
       : overLimit.length > 0 && budget
         ? `${pluralize(overLimit.length, 'payment')} above ${budget.name}’s ${formatUsd(budget.perOperationLimit, { withCode: true })} per-operation limit.`
         : undefined
@@ -99,6 +108,11 @@ export default function TeamPaymentsPage() {
         <EmptyState
           title="No Members to pay"
           description="Invite people to the Agency first. Team payments go to active Members."
+          action={
+            <ButtonLink href={href('team')} size="pill">
+              Go to Team
+            </ButtonLink>
+          }
         />
       </div>
     )
@@ -134,17 +148,25 @@ export default function TeamPaymentsPage() {
             />
           </FormField>
           {budget ? null : (
-            <FormField label="Account" htmlFor="account">
-              <SimpleSelect
-                id="account"
-                value={accountId}
-                onValueChange={setAccountId}
-                options={accounts.map((a) => ({
-                  value: a.id,
-                  label: a.name,
-                  description: `${formatUsd(accountBalance(state, a.id))} available`,
-                }))}
-              />
+            <FormField label="Account" htmlFor={accounts.length > 0 ? 'account' : undefined}>
+              {accounts.length === 0 ? (
+                <CreateOperationsAccount
+                  agencyId={agencyId}
+                  description="Team payments come out of an Agency account. Released funding lands there."
+                  onCreated={setAccountId}
+                />
+              ) : (
+                <SimpleSelect
+                  id="account"
+                  value={accountId}
+                  onValueChange={setAccountId}
+                  options={accounts.map((a) => ({
+                    value: a.id,
+                    label: a.name,
+                    description: `${formatUsd(accountBalance(state, a.id))} available`,
+                  }))}
+                />
+              )}
             </FormField>
           )}
           <FormField label="Memo" htmlFor="memo" className="sm:col-span-2">
