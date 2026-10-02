@@ -109,7 +109,8 @@ export default function NewBillPage() {
       >
         <EvidenceUploader
           files={files}
-          onChange={(next) => setFiles(next.slice(-1))}
+          onChange={setFiles}
+          maxFiles={1}
           allowLinks={false}
           label="Drop the bill here or browse"
         />

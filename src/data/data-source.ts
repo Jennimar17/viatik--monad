@@ -3,6 +3,8 @@ import type { InvitationPreview, VerifiedProfile } from '@/domain/identity'
 import type { ViatikState } from '@/domain/types'
 import type { LedgerStatus } from '@/ledger/types'
 
+import type { ApiCredentials } from './api'
+
 /** Human operation lifecycle shown while a command settles. */
 export type OperationPhase = LedgerStatus
 
@@ -15,15 +17,20 @@ export type SessionMode = 'demo' | 'account'
 /** What the server verified about a real account; used to create its profile the first time. */
 export type SessionProfile = VerifiedProfile
 
+/** Fresh Privy tokens for each request (they rotate); the demo needs none. */
+export type CredentialsProvider = () => Promise<ApiCredentials>
+
 export type LoadOptions = {
   /** A real account's verified profile; the person is added if the data does not know them yet. */
   profile?: SessionProfile | null
+  credentials?: CredentialsProvider
 }
 
 export type DispatchOptions = {
   onPhase?: (phase: OperationPhase) => void
   /** Retries with the same key never double-spend. Generated when omitted. */
   idempotencyKey?: string
+  credentials?: CredentialsProvider
 }
 
 export type { InvitationPreview }

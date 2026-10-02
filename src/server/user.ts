@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { createMiddleware } from 'hono/factory'
 
+import { EXPECTED_USER_HEADER } from '@/data/api-contract'
 import { withVerifiedPerson } from '@/domain/identity'
 import type { ViatikState } from '@/domain/types'
 
@@ -21,6 +22,14 @@ export const requireUser = createMiddleware<AppEnv>(async (c, next) => {
     .where(eq(users.privyId, c.get('privyUserId')))
     .limit(1)
   if (!user) throw new ApiError(401, 'unauthenticated', 'Sign in again to continue.')
+  const expected = c.req.header(EXPECTED_USER_HEADER)
+  if (expected && expected !== user.id) {
+    throw new ApiError(
+      409,
+      'session_changed',
+      'You switched accounts in another tab. Reload the page to continue.',
+    )
+  }
   c.set('user', user)
   await next()
 })

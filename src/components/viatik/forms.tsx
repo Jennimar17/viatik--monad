@@ -95,6 +95,8 @@ export type DraftFile = {
   sizeBytes?: number
 }
 
+const MAX_FILE_BYTES = 10 * 1024 * 1024
+
 /**
  * Evidence and receipt upload: drag and drop, browse, or add a link. Files
  * stay private in the product; only their fingerprints are recorded onchain.
@@ -106,6 +108,7 @@ export function EvidenceUploader({
   accept = 'application/pdf,image/*',
   label = 'Drop files here or browse',
   hint = 'PDF or images, up to 10 MB each. Files stay private — only a fingerprint is recorded.',
+  maxFiles = 10,
   className,
 }: {
   files: DraftFile[]
@@ -114,31 +117,57 @@ export function EvidenceUploader({
   accept?: string
   label?: string
   hint?: string
+  /** How many items the operation accepts (the server enforces the same cap). */
+  maxFiles?: number
   className?: string
 }) {
   const hintId = React.useId()
+  const errorId = React.useId()
   const [dragging, setDragging] = React.useState(false)
   const [link, setLink] = React.useState('')
+  const [problem, setProblem] = React.useState<string | null>(null)
+  const full = files.length >= maxFiles
+  const fullMessage =
+    maxFiles === 1 ? 'Only one file can be attached.' : `You can attach up to ${maxFiles} files.`
 
   const addFiles = (list: FileList | null) => {
     if (!list) return
-    const next = Array.from(list).map((file) => ({
+    const problems: string[] = []
+    const accepted = Array.from(list).filter((file) => {
+      if (file.size > MAX_FILE_BYTES) {
+        problems.push(`${file.name} is larger than 10 MB.`)
+        return false
+      }
+      // Drops bypass the picker's filter, so the type is checked here too.
+      if (file.type !== 'application/pdf' && !file.type.startsWith('image/')) {
+        problems.push(`${file.name} is not a PDF or an image.`)
+        return false
+      }
+      return true
+    })
+    const room = Math.max(0, maxFiles - files.length)
+    if (accepted.length > room) problems.push(fullMessage)
+    const next = accepted.slice(0, room).map((file) => ({
       kind: 'file' as const,
-      name: file.name,
+      name: file.name.slice(0, 300),
       mimeType: file.type,
       sizeBytes: file.size,
     }))
-    onChange([...files, ...next])
+    setProblem(problems[0] ?? null)
+    if (next.length > 0) onChange([...files, ...next])
   }
 
   return (
     <div className={cn('flex flex-col gap-3', className)}>
       {/* The label is the drop zone: clicking it opens the picker and the
           (visually hidden) file input keeps native keyboard and screen-reader support. */}
+      {/* When full it stays a drop target: a file dropped on it is refused
+          with a message instead of the browser opening it over the form. */}
       <label
         onDragOver={(event) => {
           event.preventDefault()
-          setDragging(true)
+          if (full) event.dataTransfer.dropEffect = 'none'
+          else setDragging(true)
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={(event) => {
@@ -149,22 +178,40 @@ export function EvidenceUploader({
         className={cn(
           'flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-border px-6 py-8 text-center transition-colors focus-within:ring-2 focus-within:ring-ring hover:border-foreground/40 hover:bg-muted/30',
           dragging && 'border-foreground/60 bg-muted/40',
+          full && 'cursor-not-allowed opacity-50 hover:border-border hover:bg-transparent',
         )}
       >
         <Upload className="size-5 text-subtle" aria-hidden="true" />
         <span className="block text-sm font-medium text-foreground">{label}</span>
         <span id={hintId} className="block max-w-sm text-xs text-pretty text-subtle">
-          {hint}
+          {full ? (maxFiles === 1 ? 'Remove the file to choose another.' : `Up to ${maxFiles} files.`) : hint}
         </span>
+        {/* Not `disabled` when full: that would drop keyboard focus right after
+            the last file is chosen. The picker just does not open. */}
         <input
           type="file"
-          multiple
+          multiple={maxFiles > 1}
           accept={accept}
-          aria-describedby={hintId}
+          aria-disabled={full || undefined}
+          aria-describedby={problem ? `${hintId} ${errorId}` : hintId}
           className="sr-only"
-          onChange={(event) => addFiles(event.target.files)}
+          onClick={(event) => {
+            if (!full) return
+            event.preventDefault()
+            setProblem(fullMessage)
+          }}
+          onChange={(event) => {
+            addFiles(event.target.files)
+            // Choosing the same file again after removing it must fire a change.
+            event.target.value = ''
+          }}
         />
       </label>
+      {problem ? (
+        <p id={errorId} role="alert" className="text-xs text-destructive">
+          {problem}
+        </p>
+      ) : null}
 
       {allowLinks ? (
         <div className="flex gap-2">
@@ -180,7 +227,7 @@ export function EvidenceUploader({
           </div>
           <button
             type="button"
-            disabled={!/^https?:\/\/\S+\.\S+/.test(link.trim()) || link.trim().length > 2000}
+            disabled={full || !/^https?:\/\/\S+\.\S+/.test(link.trim()) || link.trim().length > 2000}
             onClick={() => {
               const url = link.trim()
               // The shown name is the link without its scheme, kept to the 300 characters a name allows.
@@ -213,7 +260,10 @@ export function EvidenceUploader({
               <button
                 type="button"
                 aria-label={`Remove ${file.name}`}
-                onClick={() => onChange(files.filter((_, i) => i !== index))}
+                onClick={() => {
+                  setProblem(null)
+                  onChange(files.filter((_, i) => i !== index))
+                }}
                 className="inline-flex size-7 items-center justify-center rounded-full text-subtle hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
                 <X className="size-3.5" />

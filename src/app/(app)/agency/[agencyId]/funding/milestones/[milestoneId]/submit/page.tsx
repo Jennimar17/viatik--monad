@@ -132,7 +132,7 @@ export default function SubmitEvidencePage() {
         title="Evidence"
         description="Files stay private in Viatik. Only a fingerprint of each file is kept in the verified record."
       >
-        <EvidenceUploader files={files} onChange={setFiles} />
+        <EvidenceUploader files={files} onChange={setFiles} maxFiles={20} />
       </Panel>
 
       <Panel>

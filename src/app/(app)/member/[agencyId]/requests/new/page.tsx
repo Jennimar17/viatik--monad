@@ -375,6 +375,7 @@ function NewRequest() {
           files={files}
           onChange={setFiles}
           allowLinks={false}
+          maxFiles={10}
           label="Attach a quote, invoice, or receipt"
         />
       </Panel>

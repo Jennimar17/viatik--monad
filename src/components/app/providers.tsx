@@ -9,9 +9,15 @@ import { ViatikPrivyProvider } from '@/lib/privy'
 import { SessionProvider, useSession } from '@/lib/session'
 
 function SessionData({ children }: { children: React.ReactNode }) {
-  const { userId, mode, account } = useSession()
+  const { userId, mode, account, credentials, signOut } = useSession()
   return (
-    <ViatikProvider userId={userId ?? null} mode={mode} profile={account}>
+    <ViatikProvider
+      userId={userId ?? null}
+      mode={mode}
+      profile={account}
+      credentials={credentials}
+      onUnauthenticated={signOut}
+    >
       {children}
     </ViatikProvider>
   )

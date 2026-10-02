@@ -5,6 +5,7 @@ import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 
+import { canonical } from '@/data/canonical'
 import { planSettlement } from '@/data/settlement'
 import { runCommand, type CommandName } from '@/domain/engine'
 import type { Actor } from '@/domain/types'
@@ -20,18 +21,6 @@ import { isCommandName, parseCommandInput } from './schemas'
 import { requireUser, withCaller } from './user'
 
 const KEY_TTL_MS = 24 * 60 * 60 * 1000
-
-/** Same input, same text, whatever the key order: what a retry is compared by. */
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, v]) => v !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`
-  }
-  return JSON.stringify(value)
-}
 
 type Answer = { status: ContentfulStatusCode; body: unknown; replayed?: boolean; savedName?: string }
 

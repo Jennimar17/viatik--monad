@@ -103,7 +103,8 @@ export default function NewExpensePage() {
           <Panel title="Receipt" description="Optional now; you can attach it later from the list.">
             <EvidenceUploader
               files={files}
-              onChange={(next) => setFiles(next.slice(-1))}
+              onChange={setFiles}
+              maxFiles={1}
               allowLinks={false}
               label="Drop the receipt here or browse"
               hint="PDF or an image. Files stay private; only a fingerprint is recorded."

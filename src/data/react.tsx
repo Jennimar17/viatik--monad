@@ -11,12 +11,15 @@ import * as React from 'react'
 import { toast } from 'sonner'
 
 import type { CommandInput, CommandName, CommandResult } from '@/domain/engine'
+import { newId } from '@/domain/ids'
 import { subjectFor } from '@/domain/permissions'
 import type { Membership, User, ViatikState } from '@/domain/types'
 
+import { canonical } from './canonical'
 import {
   DataSourceError,
   getDataSource,
+  type CredentialsProvider,
   type OperationPhase,
   type SessionMode,
   type SessionProfile,
@@ -25,6 +28,7 @@ import {
 type ViatikContextValue = {
   state: ViatikState | undefined
   isLoading: boolean
+  /** Nothing could be loaded. A failed refresh keeps showing the last data and retries on its own. */
   isError: boolean
   refetch: () => void
   userId: string | null
@@ -34,6 +38,8 @@ type ViatikContextValue = {
   memberships: Membership[]
   /** Frozen per data load so derived numbers are stable during a render. */
   now: string
+  /** Tokens for the API; unused by the demo. */
+  credentials: CredentialsProvider
 }
 
 const ViatikContext = React.createContext<ViatikContextValue | null>(null)
@@ -49,29 +55,51 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>
 }
 
-/** Loads everything the signed-in user may see and shares it with every screen. */
+/**
+ * Loads everything the signed-in user may see and shares it with every screen.
+ * Shared server data is polled (an unchanged state costs a 304), so what
+ * other people do shows up without reloading; the demo data only changes
+ * on this device.
+ */
 export function ViatikProvider({
   userId,
   mode,
   profile,
+  credentials,
+  onUnauthenticated,
   children,
 }: {
   userId: string | null
   mode: SessionMode | null
   /** A real account's verified profile, so the data knows the person on their first visit. */
   profile: SessionProfile | null
+  credentials: CredentialsProvider
+  /** The server no longer accepts the session (expired or revoked). */
+  onUnauthenticated: () => void
   children: React.ReactNode
 }) {
+  const shared = mode !== null && getDataSource(mode).kind === 'api'
   const query = useQuery({
     queryKey: [...STATE_KEY, mode, userId],
-    queryFn: () => getDataSource(mode as SessionMode).load(userId as string, { profile }),
+    queryFn: () => getDataSource(mode as SessionMode).load(userId as string, { profile, credentials }),
     enabled: Boolean(userId && mode),
-    staleTime: 60_000,
+    staleTime: shared ? 5_000 : 60_000,
+    refetchInterval: shared ? 15_000 : false,
+    refetchOnWindowFocus: shared,
+    // A poll that changes nothing must not re-render every screen.
+    notifyOnChangeProps: ['data', 'isLoading', 'isLoadingError', 'error'],
   })
 
   const [mountedAt] = React.useState(() => new Date().toISOString())
   const now = query.dataUpdatedAt ? new Date(query.dataUpdatedAt).toISOString() : mountedAt
-  const { data: state, isLoading, isError, refetch } = query
+  // A refresh that fails (a blip while polling) must not replace the screen,
+  // and with it a form in progress, by an error.
+  const { data: state, isLoading, isLoadingError: isError, refetch } = query
+
+  const unauthenticated = query.error instanceof DataSourceError && query.error.code === 'unauthenticated'
+  React.useEffect(() => {
+    if (unauthenticated) onUnauthenticated()
+  }, [unauthenticated, onUnauthenticated])
 
   const value = React.useMemo<ViatikContextValue>(
     () => ({
@@ -84,8 +112,9 @@ export function ViatikProvider({
       user: state?.users.find((u) => u.id === userId),
       memberships: state?.memberships.filter((m) => m.userId === userId && m.status === 'active') ?? [],
       now,
+      credentials,
     }),
-    [state, isLoading, isError, refetch, userId, mode, now],
+    [state, isLoading, isError, refetch, userId, mode, now, credentials],
   )
 
   return <ViatikContext.Provider value={value}>{children}</ViatikContext.Provider>
@@ -120,16 +149,31 @@ export function useCommand<N extends CommandName>(
   name: N,
   options: { success?: string | ((result: CommandResult<N>) => string); silent?: boolean } = {},
 ) {
-  const { userId, mode } = useViatik()
+  const { userId, mode, credentials } = useViatik()
   const queryClient = useQueryClient()
   const [phase, setPhase] = React.useState<OperationPhase | 'idle'>('idle')
+  // A failed attempt may still have happened on the server (the answer got
+  // lost). Trying the same operation again reuses its key, so the server
+  // answers it again instead of applying it twice; different details or a
+  // finished operation get a new key.
+  const attempt = React.useRef<{ key: string; input: string } | null>(null)
 
   const mutation = useMutation({
     mutationFn: (input: CommandInput<N>) => {
       if (!userId || !mode) throw new DataSourceError('Sign in to continue.', 'unauthenticated')
-      return getDataSource(mode).dispatch(userId, name, input, { onPhase: setPhase })
+      const fingerprint = `${mode}:${userId}:${canonical(input)}`
+      if (attempt.current?.input !== fingerprint) attempt.current = { key: newId('op'), input: fingerprint }
+      return getDataSource(mode).dispatch(userId, name, input, {
+        onPhase: setPhase,
+        credentials,
+        idempotencyKey: attempt.current.key,
+      })
     },
+    // Offline, the request fails right away and says so, instead of waiting
+    // silently and sending every click once the connection is back.
+    networkMode: 'always',
     onSuccess: (result) => {
+      attempt.current = null
       if (!options.silent && options.success) {
         toast.success(typeof options.success === 'function' ? options.success(result) : options.success)
       }
@@ -154,6 +198,8 @@ export function useCommand<N extends CommandName>(
 
   const reset = React.useCallback(() => {
     resetMutation()
+    // The key survives: closing a sheet after an unclear failure and trying
+    // the same operation again must still be recognized as a retry.
     setPhase('idle')
   }, [resetMutation])
 

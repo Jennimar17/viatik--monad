@@ -43,7 +43,7 @@ All variables are optional in development. See `.env.example`.
 | Variable                     | Purpose                                         |
 | ---------------------------- | ----------------------------------------------- |
 | `NEXT_PUBLIC_SITE_URL`       | Public origin, used for metadata                |
-| `NEXT_PUBLIC_DATA_SOURCE`    | `mock` (default) or `api`                       |
+| `NEXT_PUBLIC_DATA_SOURCE`    | Real accounts on `mock` (default) or `api` data |
 | `NEXT_PUBLIC_DEMO_MODE`      | Enables the demo personas and reset (`true`)    |
 | `NEXT_PUBLIC_MONAD_NETWORK`  | `testnet` (10143, default) or `mainnet` (143)   |
 | `NEXT_PUBLIC_PRIVY_APP_ID`   | Privy app for sign-in and embedded accounts     |
@@ -53,3 +53,4 @@ All variables are optional in development. See `.env.example`.
 | `MONAD_RPC_URL`              | RPC endpoint for server-side reads and writes   |
 | `VIATIK_LEDGER_ADDRESS`      | Deployed ViatikLedger contract                  |
 | `DATABASE_URL`, `SUPABASE_*` | Offchain data                                   |
+| `ADMIN_SEED_TOKEN`           | Optional, enables restoring the seeded data     |
