@@ -26,11 +26,16 @@ export function RoleGate({ role, children }: { role: Role; children: React.React
   const { userId } = useSession()
   const { state, isLoading, isError, refetch, memberships } = useViatik()
 
+  // Signed out → sign-in. Signed in but in no workspace yet (a new account) → onboarding.
+  const homeless = Boolean(state) && memberships.length === 0
   React.useEffect(() => {
     if (userId === null) router.replace('/sign-in')
-  }, [userId, router])
+    else if (homeless) router.replace('/welcome')
+  }, [userId, homeless, router])
 
-  if (userId === undefined || userId === null || isLoading || (!state && !isError)) return <ShellSkeleton />
+  if (userId === undefined || userId === null || isLoading || (!state && !isError) || homeless) {
+    return <ShellSkeleton />
+  }
   if (isError || !state) {
     return (
       <main className="mx-auto max-w-lg px-4 py-24">

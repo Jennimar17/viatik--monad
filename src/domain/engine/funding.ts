@@ -10,11 +10,61 @@ import type {
   Id,
   ISODate,
   Milestone,
+  Portfolio,
   ReleaseModel,
   SpendingPolicy,
   Tranche,
 } from '../types'
 import { DomainError, requirePositive, requireText, usdText, type Tx } from './core'
+
+// ─── Portfolios ──────────────────────────────────────────────────────────────
+
+export type CreatePortfolioInput = { name: string; organization: string; timeZone: string }
+
+/**
+ * A person with no workspace yet starts their own portfolio and becomes its
+ * Investor. The portfolio comes with its vault, where capital is deposited.
+ */
+export function createPortfolio(tx: Tx, input: CreatePortfolioInput): Portfolio {
+  const userId = tx.userId
+  if (!tx.state.users.some((u) => u.id === userId)) {
+    throw new DomainError('not_found', 'We could not find your profile. Sign in again to continue.')
+  }
+  const portfolio: Portfolio = {
+    id: newId('pf'),
+    name: requireText(input.name, 'Portfolio name', 80),
+    organization: requireText(input.organization, 'Organization', 80),
+    baseCurrency: 'USD',
+    timeZone: input.timeZone || 'UTC',
+    createdAt: tx.now,
+  }
+  tx.state.portfolios.push(portfolio)
+  tx.state.vaults.push({
+    id: newId('vault'),
+    kind: 'portfolio',
+    portfolioId: portfolio.id,
+    name: `${portfolio.name} Vault`,
+    asset: 'USDC',
+    available: true,
+  })
+  tx.state.memberships.push({
+    id: newId('mem'),
+    userId,
+    role: 'investor',
+    scope: { kind: 'portfolio', portfolioId: portfolio.id },
+    status: 'active',
+    createdAt: tx.now,
+  })
+  tx.activity(
+    'portfolio_created',
+    `Created ${portfolio.name}`,
+    { kind: 'portfolio', id: portfolio.id },
+    {
+      portfolioId: portfolio.id,
+    },
+  )
+  return portfolio
+}
 
 // ─── Agencies ────────────────────────────────────────────────────────────────
 

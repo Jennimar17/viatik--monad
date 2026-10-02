@@ -5,13 +5,18 @@ import type { Route } from 'next'
 import { useRouter, useSearchParams } from 'next/navigation'
 import * as React from 'react'
 
+import { roleHome } from '@/components/app/nav'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { PersonAvatar, roleIcons } from '@/components/viatik/people'
+import { Skeleton } from '@/components/ui/skeleton'
+import { OrgAvatar, PersonAvatar, roleIcons } from '@/components/viatik/people'
 import { ViatikLogo } from '@/components/viatik/viatik-logo'
+import { useViatik } from '@/data/react'
 import { DEMO_PERSONAS, type DemoPersonaKey } from '@/domain/fixtures'
 import { roleDescription, roleLabel } from '@/domain/permissions'
-import { useSession } from '@/lib/session'
+import type { Membership, ViatikState } from '@/domain/types'
+import { publicEnv } from '@/lib/env'
+import { useSession, type SignInMethod } from '@/lib/session'
 
 /** `?as=` values used by the landing's "Explore the … view" links. */
 const DEEP_LINKS: Record<string, DemoPersonaKey> = {
@@ -31,6 +36,16 @@ function GoogleMark() {
   )
 }
 
+const choiceClass =
+  'group flex items-center gap-3 rounded-xl border border-border bg-card p-3.5 text-left transition-colors outline-none hover:border-foreground/30 hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring'
+
+function workspaceName(state: ViatikState, membership: Membership) {
+  const scope = membership.scope
+  return scope.kind === 'portfolio'
+    ? (state.portfolios.find((p) => p.id === scope.portfolioId)?.name ?? 'Portfolio')
+    : (state.agencies.find((a) => a.id === scope.agencyId)?.name ?? 'Agency')
+}
+
 export default function SignInPage() {
   return (
     <React.Suspense>
@@ -42,9 +57,15 @@ export default function SignInPage() {
 function SignIn() {
   const router = useRouter()
   const params = useSearchParams()
-  const { userId, mode, enterDemo } = useSession()
+  const { userId, mode, account, accountsEnabled, accountsReady, error, retry, enterDemo, signIn, signOut } =
+    useSession()
+  const { state, memberships } = useViatik()
   const [chooseDemo, setChooseDemo] = React.useState(false)
+  // Set when the person uses a real sign-in button on this page, so the
+  // workspace opens by itself once the account resolves.
+  const [signingIn, setSigningIn] = React.useState(false)
   const personasRef = React.useRef<HTMLDivElement>(null)
+  const showDemo = publicEnv.NEXT_PUBLIC_DEMO_MODE || !accountsEnabled
 
   const enterAs = React.useCallback(
     (key: DemoPersonaKey) => {
@@ -59,15 +80,32 @@ function SignIn() {
   // Deep links from viatik.xyz ("Explore the Investor view").
   React.useEffect(() => {
     const persona = DEEP_LINKS[params.get('as') ?? '']
-    if (persona) enterAs(persona)
-  }, [params, enterAs])
+    if (persona && showDemo) enterAs(persona)
+  }, [params, enterAs, showDemo])
 
-  // In the demo, every sign-in method leads to choosing a person.
+  // After a real sign-in: one workspace opens directly; none goes to onboarding.
+  const signedIn = mode === 'account' && Boolean(userId) && Boolean(state)
+  const only = memberships.length === 1 ? memberships[0] : undefined
+  React.useEffect(() => {
+    if (!signingIn || !signedIn) return
+    if (memberships.length === 0) router.replace('/welcome')
+    else if (only) router.replace(roleHome(only))
+  }, [signingIn, signedIn, memberships.length, only, router])
+
+  // Without a Privy app, every sign-in method leads to choosing a demo person.
   const simulate = () => {
     setChooseDemo(true)
     personasRef.current?.querySelector('button')?.focus()
   }
 
+  const start = (method: SignInMethod) => {
+    if (!accountsEnabled) return simulate()
+    setSigningIn(true)
+    signIn(method)
+  }
+
+  // Privy is restoring a session or the server is resolving the account.
+  const checking = accountsEnabled && (!accountsReady || userId === undefined)
   const current = mode === 'demo' ? DEMO_PERSONAS.find((p) => p.userId === userId) : undefined
 
   return (
@@ -104,73 +142,159 @@ function SignIn() {
             </p>
           </div>
 
-          {current ? (
-            <Button size="pill" className="w-full justify-center" onClick={() => enterAs(current.key)}>
-              Continue as {current.name} <ArrowRight data-icon="inline-end" />
-            </Button>
-          ) : null}
+          {mode === 'account' && userId ? (
+            <div className="flex flex-col gap-3" aria-live="polite">
+              <p className="text-sm text-muted-foreground">
+                Signed in as{' '}
+                <span className="text-foreground">{account?.email ?? account?.name ?? 'your account'}</span>
+              </p>
+              {!state ? (
+                <Skeleton className="h-16 rounded-xl" />
+              ) : memberships.length === 0 ? (
+                <Button size="pill" className="w-full justify-center" onClick={() => router.push('/welcome')}>
+                  Set up your workspace <ArrowRight data-icon="inline-end" />
+                </Button>
+              ) : (
+                <div className="flex flex-col gap-2" role="group" aria-label="Your workspaces">
+                  {memberships.map((membership) => {
+                    const name = workspaceName(state, membership)
+                    const Icon = roleIcons[membership.role]
+                    return (
+                      <button
+                        key={membership.id}
+                        type="button"
+                        onClick={() => router.push(roleHome(membership))}
+                        className={choiceClass}
+                      >
+                        <OrgAvatar name={name} size="md" />
+                        <span className="flex min-w-0 flex-1 flex-col gap-1">
+                          <span className="truncate text-sm font-medium">{name}</span>
+                          <span className="box-tag w-fit">
+                            <Icon className="size-2.5" aria-hidden="true" /> {roleLabel[membership.role]}
+                          </span>
+                        </span>
+                        <ArrowRight
+                          className="size-4 text-subtle transition-transform group-hover:translate-x-0.5"
+                          aria-hidden="true"
+                        />
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              <Button
+                variant="ghost"
+                size="pill-sm"
+                className="w-fit"
+                onClick={async () => {
+                  setSigningIn(false)
+                  await signOut()
+                }}
+              >
+                Use another account
+              </Button>
+            </div>
+          ) : (
+            <>
+              {current ? (
+                <Button size="pill" className="w-full justify-center" onClick={() => enterAs(current.key)}>
+                  Continue as {current.name} <ArrowRight data-icon="inline-end" />
+                </Button>
+              ) : null}
 
-          <div className="flex flex-col gap-2.5">
-            <Button
-              size="pill"
-              variant={current ? 'outline' : 'default'}
-              className="w-full justify-center"
-              onClick={simulate}
-            >
-              <Mail data-icon="inline-start" /> Continue with email
-            </Button>
-            <Button size="pill" variant="outline" className="w-full justify-center" onClick={simulate}>
-              <GoogleMark /> Continue with Google
-            </Button>
-            <Button size="pill" variant="outline" className="w-full justify-center" onClick={simulate}>
-              <Fingerprint data-icon="inline-start" /> Use a passkey
-            </Button>
-            <p className="pt-1 text-center text-sm text-subtle">
-              Your financial account is created automatically. No wallet extension required.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Separator className="flex-1" />
-            <span className="text-xs tracking-[0.1em] text-subtle uppercase">Demo</span>
-            <Separator className="flex-1" />
-          </div>
-
-          <div ref={personasRef} className="flex flex-col gap-2" id="demo-personas">
-            <p className="text-sm text-muted-foreground" aria-live="polite">
-              {chooseDemo
-                ? 'Sign-in is simulated in this demo. Choose who you want to be:'
-                : 'Explore Viatik as one of the people in the demo story:'}
-            </p>
-            {DEMO_PERSONAS.map((persona) => {
-              const Icon = roleIcons[persona.role]
-              return (
-                <button
-                  key={persona.key}
-                  type="button"
-                  onClick={() => enterAs(persona.key)}
-                  className="group flex items-center gap-3 rounded-xl border border-border bg-card p-3.5 text-left transition-colors outline-none hover:border-foreground/30 hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring"
+              <div className="flex flex-col gap-2.5">
+                <Button
+                  size="pill"
+                  variant={current ? 'outline' : 'default'}
+                  className="w-full justify-center"
+                  disabled={checking}
+                  onClick={() => start('email')}
                 >
-                  <PersonAvatar name={persona.name} size="md" />
-                  <span className="flex min-w-0 flex-1 flex-col gap-1">
-                    <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                      {persona.name}
-                      <span className="box-tag">
-                        <Icon className="size-2.5" aria-hidden="true" /> {roleLabel[persona.role]}
+                  <Mail data-icon="inline-start" /> Continue with email
+                </Button>
+                <Button
+                  size="pill"
+                  variant="outline"
+                  className="w-full justify-center"
+                  disabled={checking}
+                  onClick={() => start('google')}
+                >
+                  <GoogleMark /> Continue with Google
+                </Button>
+                <Button
+                  size="pill"
+                  variant="outline"
+                  className="w-full justify-center"
+                  disabled={checking}
+                  onClick={() => start('passkey')}
+                >
+                  <Fingerprint data-icon="inline-start" /> Use a passkey
+                </Button>
+                {error ? (
+                  <div
+                    className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/40 px-3.5 py-2.5"
+                    role="alert"
+                  >
+                    <p className="text-sm text-danger">{error}</p>
+                    <Button variant="outline" size="pill-sm" onClick={retry}>
+                      Try again
+                    </Button>
+                  </div>
+                ) : null}
+                <p className="pt-1 text-center text-sm text-subtle" aria-live="polite">
+                  {checking && accountsReady
+                    ? 'Opening your account…'
+                    : 'Your financial account is created automatically. No wallet extension required.'}
+                </p>
+              </div>
+            </>
+          )}
+
+          {showDemo ? (
+            <>
+              <div className="flex items-center gap-3">
+                <Separator className="flex-1" />
+                <span className="text-xs tracking-[0.1em] text-subtle uppercase">Or try the demo</span>
+                <Separator className="flex-1" />
+              </div>
+
+              <div ref={personasRef} className="flex flex-col gap-2" id="demo-personas">
+                <p className="text-sm text-muted-foreground" aria-live="polite">
+                  {chooseDemo
+                    ? 'Sign-in is simulated in this demo. Choose who you want to be:'
+                    : 'Explore Viatik as one of the people in the demo story:'}
+                </p>
+                {DEMO_PERSONAS.map((persona) => {
+                  const Icon = roleIcons[persona.role]
+                  return (
+                    <button
+                      key={persona.key}
+                      type="button"
+                      onClick={() => enterAs(persona.key)}
+                      className={choiceClass}
+                    >
+                      <PersonAvatar name={persona.name} size="md" />
+                      <span className="flex min-w-0 flex-1 flex-col gap-1">
+                        <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                          {persona.name}
+                          <span className="box-tag">
+                            <Icon className="size-2.5" aria-hidden="true" /> {roleLabel[persona.role]}
+                          </span>
+                        </span>
+                        <span className="text-xs text-pretty text-muted-foreground">
+                          {persona.organization} · {roleDescription[persona.role]}
+                        </span>
                       </span>
-                    </span>
-                    <span className="text-xs text-pretty text-muted-foreground">
-                      {persona.organization} · {roleDescription[persona.role]}
-                    </span>
-                  </span>
-                  <ArrowRight
-                    className="size-4 text-subtle transition-transform group-hover:translate-x-0.5"
-                    aria-hidden="true"
-                  />
-                </button>
-              )
-            })}
-          </div>
+                      <ArrowRight
+                        className="size-4 text-subtle transition-transform group-hover:translate-x-0.5"
+                        aria-hidden="true"
+                      />
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          ) : null}
         </div>
       </section>
     </main>

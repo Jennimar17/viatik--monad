@@ -557,6 +557,7 @@ export type ActivityType =
   | 'agent_paused'
   | 'agent_resumed'
   | 'agency_created'
+  | 'portfolio_created'
 
 export type Activity = {
   id: Id

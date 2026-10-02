@@ -101,8 +101,17 @@ export class MockDataSource implements DataSource {
   async load(userId: string, options: LoadOptions = {}): Promise<ViatikState> {
     await wait(jitter(300, 900))
     const state = this.read()
-    if (options.profile && !state.users.some((u) => u.id === userId)) {
-      this.write(withNewPerson(state, userId, options.profile))
+    const profile = options.profile
+    const known = state.users.find((u) => u.id === userId)
+    if (profile && !known) {
+      this.write(withNewPerson(state, userId, profile))
+    } else if (profile?.email && known && known.email !== profile.email) {
+      // A demo person signed in with a real account: the verified email wins,
+      // as it does on the server, so invitations check the address they proved.
+      this.write({
+        ...state,
+        users: state.users.map((u) => (u.id === userId ? { ...u, email: profile.email as string } : u)),
+      })
     }
     return scopeStateForUser(this.read(), userId)
   }

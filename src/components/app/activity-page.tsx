@@ -56,6 +56,7 @@ const GROUP_OF: Record<ActivityType, Group> = {
   agent_paused: 'team',
   agent_resumed: 'team',
   agency_created: 'team',
+  portfolio_created: 'funding',
 }
 
 const GROUP_OPTIONS = [

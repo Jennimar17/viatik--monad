@@ -12,6 +12,11 @@ import { accountsEnabled } from './privy'
 
 export type SignInMethod = 'email' | 'google' | 'passkey'
 
+export type SignInOptions = {
+  /** Prefills the email step, e.g. with the address an invitation was sent to. */
+  email?: string
+}
+
 /** What the server verified about a real account. */
 export type AccountProfile = {
   email: string | null
@@ -37,7 +42,7 @@ type SessionContextValue = {
   /** Become one of the demo people. Takes priority over a real account on this device. */
   enterDemo: (userId: string) => void
   /** Opens Privy's sign-in, or switches back to the real account if it is already signed in. */
-  signIn: (method?: SignInMethod) => void
+  signIn: (method?: SignInMethod, options?: SignInOptions) => void
   signOut: () => Promise<void>
   /** Tokens for API requests; empty in the demo. */
   credentials: () => Promise<ApiCredentials>
@@ -210,7 +215,7 @@ function AccountSessionProvider({ children }: { children: React.ReactNode }) {
 
   const failed = session.isError
   const signIn = React.useCallback(
-    (method?: SignInMethod) => {
+    (method?: SignInMethod, options: SignInOptions = {}) => {
       if (authenticated) {
         // Already signed in to a real account: leave the demo person and use
         // it, asking the server again if it could not resolve the account.
@@ -218,7 +223,10 @@ function AccountSessionProvider({ children }: { children: React.ReactNode }) {
         if (failed) void refetch()
         return
       }
-      login(method ? { loginMethods: [method] } : undefined)
+      login({
+        ...(method ? { loginMethods: [method] } : {}),
+        ...(options.email ? { prefill: { type: 'email' as const, value: options.email } } : {}),
+      })
     },
     [authenticated, failed, login, refetch],
   )

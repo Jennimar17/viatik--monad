@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 
 import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
 import { PageTabs, type PageTab } from '@/components/app/page-tabs'
+import { SponsorshipCheck } from '@/components/app/sponsorship-check'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -27,6 +28,7 @@ import type { PaymentDestination, SpendingCategory } from '@/domain/types'
 import { networkInfo } from '@/domain/verification'
 import { publicEnv } from '@/lib/env'
 import { formatDate, pluralize, shortHash } from '@/lib/format'
+import { useSession } from '@/lib/session'
 import { timeZoneOptions } from '@/lib/time-zones'
 
 const LOCALES = [
@@ -107,6 +109,7 @@ export function SettingsPage({
   children?: React.ReactNode
 }) {
   const { state, user, userId } = useViatikState()
+  const { mode, account } = useSession()
   const { role, agencyId, portfolioId } = useRole()
   const href = useHref()
   const { can } = usePermissions()
@@ -121,7 +124,11 @@ export function SettingsPage({
   const agency = agencyId ? state.agencies.find((a) => a.id === agencyId) : undefined
   const portfolio = state.portfolios.find((p) => p.id === portfolioId)
   const network = networkInfo(publicEnv.NEXT_PUBLIC_MONAD_NETWORK)
-  const address = pseudoAddress(userId)
+  // A real account shows its embedded account (null for a moment after the
+  // first sign-in, while Privy creates it); the demo people show a stand-in.
+  const realAccount = mode === 'account'
+  const realAddress = realAccount ? (account?.address ?? null) : null
+  const address = realAccount ? realAddress : pseudoAddress(userId)
   const dirty =
     name.trim() !== (user?.name ?? '') ||
     jobTitle.trim() !== (user?.title ?? '') ||
@@ -549,12 +556,14 @@ export function SettingsPage({
                   { label: 'Network', value: `${network.name} · chain ${network.chainId}` },
                   { label: 'Settlement asset', value: 'USDC (6 decimals)' },
                   {
-                    label: 'Your smart account',
-                    value: (
+                    label: realAccount ? 'Your account' : 'Your account (demo)',
+                    value: address ? (
                       <span className="inline-flex items-center gap-1 font-mono text-xs">
                         {shortHash(address, 10, 6)}
                         <CopyButton value={address} label="Copy account address" />
                       </span>
+                    ) : (
+                      'Being created…'
                     ),
                   },
                   { label: 'Gas', value: 'Sponsored. You never need MON.' },
@@ -574,6 +583,9 @@ export function SettingsPage({
                   },
                 ]}
               />
+            ) : null}
+            {preferences.developer && realAddress ? (
+              <SponsorshipCheck address={realAddress} chainId={network.chainId} explorer={network.explorer} />
             ) : null}
           </div>
         </Panel>

@@ -10,6 +10,7 @@ import * as people from './people'
  * identical whichever side runs it.
  */
 export const commands = {
+  createPortfolio: funding.createPortfolio,
   createAgency: funding.createAgency,
   createAgreement: funding.createAgreement,
   acceptAgreement: funding.acceptAgreement,
@@ -76,5 +77,11 @@ export type {
   SendPaymentInput,
   AddBillInput,
 } from './operations'
-export type { CreateAgencyInput, CreateAgreementInput, TrancheDraft, EvidenceDraft } from './funding'
+export type {
+  CreateAgencyInput,
+  CreateAgreementInput,
+  CreatePortfolioInput,
+  TrancheDraft,
+  EvidenceDraft,
+} from './funding'
 export type { CreateAgentInput } from './people'

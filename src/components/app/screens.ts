@@ -299,7 +299,18 @@ export const SCREENS = {
 
 /** Screens outside the role workspaces. */
 export const SHARED_SCREENS = [
-  { path: '/sign-in', title: 'Sign in', summary: 'Demo personas and deep links.', status: 'ready' },
+  {
+    path: '/sign-in',
+    title: 'Sign in',
+    summary: 'Email, Google or passkey; demo personas and deep links.',
+    status: 'ready',
+  },
+  {
+    path: '/welcome',
+    title: 'Welcome',
+    summary: 'New account: create a portfolio or join with an invitation.',
+    status: 'ready',
+  },
   {
     path: '/invite/[code]',
     title: 'Accept invitation',

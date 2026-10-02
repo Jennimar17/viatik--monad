@@ -1,10 +1,15 @@
 import { newId } from '../ids'
 import type { Cents } from '../money'
-import type { AiAgent, Id, ISODate, Invitation, Role } from '../types'
+import type { AiAgent, Id, ISODate, Invitation, MembershipScope, Role } from '../types'
 import { DomainError, requirePositive, requireText, usdText, type Tx } from './core'
 import { assignAllowance } from './operations'
 
 // ─── Team ────────────────────────────────────────────────────────────────────
+
+const sameScope = (a: MembershipScope, b: MembershipScope) =>
+  a.kind === 'portfolio'
+    ? b.kind === 'portfolio' && a.portfolioId === b.portfolioId
+    : b.kind === 'agency' && a.agencyId === b.agencyId
 
 export function invite(
   tx: Tx,
@@ -56,8 +61,22 @@ export function acceptInvitation(tx: Tx, input: { code: string }) {
   if (invitation.status !== 'pending')
     throw new DomainError('invalid_state', 'This invitation was already used.')
   const userId = tx.userId
+  // Invitations belong to an email address. Someone already known must have
+  // signed in with that exact email; an account without an email (a passkey
+  // alone) cannot prove it and cannot accept.
+  const existing = tx.state.users.find((u) => u.id === userId)
+  if (existing && existing.email.trim().toLowerCase() !== invitation.email.trim().toLowerCase()) {
+    throw new DomainError(
+      'forbidden',
+      `This invitation is for ${invitation.email}. Sign in with that email to accept it.`,
+    )
+  }
+  const alreadyMember = tx.state.memberships.some(
+    (m) => m.userId === userId && m.status === 'active' && sameScope(m.scope, invitation.scope),
+  )
+  if (alreadyMember) throw new DomainError('invalid_state', 'You already belong to this workspace.')
   // First sign-in of an invited person: their profile comes from the invitation.
-  if (!tx.state.users.some((u) => u.id === userId)) {
+  if (!existing) {
     tx.state.users.push({
       id: userId,
       name: invitation.name,

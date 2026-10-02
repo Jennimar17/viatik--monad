@@ -3,6 +3,7 @@ import {
   BadgeCheck,
   Ban,
   Bot,
+  Briefcase,
   Building2,
   CircleCheck,
   FilePlus2,
@@ -55,6 +56,7 @@ const icons: Record<ActivityType, LucideIcon> = {
   agent_paused: PauseCircle,
   agent_resumed: PlayCircle,
   agency_created: Building2,
+  portfolio_created: Briefcase,
 }
 
 const DANGER: ReadonlySet<ActivityType> = new Set(['policy_rejected', 'payment_declined', 'agreement_frozen'])
