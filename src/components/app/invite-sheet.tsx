@@ -2,13 +2,12 @@
 
 import * as React from 'react'
 
-import { ButtonLink } from '@/components/app/button-link'
 import { FormField, PillInput } from '@/components/app/form-controls'
-import { inviteHref } from '@/components/app/nav'
+import { InvitationLink } from '@/components/app/invitation-link'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
-import { useCommand } from '@/data/react'
+import { useCommand, useViatikState } from '@/data/react'
 import { roleDescription, roleLabel } from '@/domain/permissions'
-import type { Role } from '@/domain/types'
+import type { Invitation, Role } from '@/domain/types'
 import { cn } from '@/lib/utils'
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -19,7 +18,11 @@ const rolePolicy: Record<Role, string> = {
   investor: 'Investors see the whole portfolio and decide on exceptions.',
 }
 
-/** Invite a person into an Agency (Admin or Member) or a portfolio (Investor). */
+/**
+ * Invite a person into an Agency (Admin or Member) or a portfolio (Investor).
+ * Viatik sends no email: the inviter copies the link or opens a prefilled
+ * email in their own mail app.
+ */
 export function InviteSheet({
   open,
   onOpenChange,
@@ -33,12 +36,13 @@ export function InviteSheet({
   roles: Role[]
   workspaceName: string
 }) {
+  const { user } = useViatikState()
   const invite = useCommand('invite')
   const defaultRole = roles[0] ?? 'member'
   const [name, setName] = React.useState('')
   const [email, setEmail] = React.useState('')
   const [role, setRole] = React.useState<Role>(defaultRole)
-  const [code, setCode] = React.useState<string | null>(null)
+  const [created, setCreated] = React.useState<Invitation | null>(null)
 
   const trimmed = name.trim()
   const valid = trimmed.length > 1 && EMAIL.test(email.trim())
@@ -51,30 +55,29 @@ export function InviteSheet({
         setName('')
         setEmail('')
         setRole(defaultRole)
-        setCode(null)
+        setCreated(null)
         invite.reset()
       }}
       title={`Invite to ${workspaceName}`}
       summary={{
-        what: `${trimmed || 'They'} will receive an invitation to join ${workspaceName} as ${roleLabel[role]}. Their account is set up when they first sign in.`,
+        what: `${trimmed || 'They'} gets a link to join ${workspaceName} as ${roleLabel[role]}. Their account is set up when they first sign in with ${email.trim() || 'their email'}.`,
         reversible: 'You can cancel the invitation or remove access later; removal is immediate.',
         policy: rolePolicy[role],
       }}
-      confirmLabel="Send invitation"
+      confirmLabel="Create invitation"
       disabled={!valid}
       phase={invite.phase}
       error={invite.error}
       onConfirm={async () => {
+        setCreated(null)
         const invitation = await invite.run({ name: trimmed, email: email.trim(), role, scope })
-        if (invitation) setCode(invitation.code)
+        if (invitation) setCreated(invitation)
       }}
       success={{
-        title: 'Invitation sent',
-        body: `${trimmed} was invited as ${roleLabel[role]}. The invitation stays pending until they join.`,
-        actions: code ? (
-          <ButtonLink href={inviteHref(code)} variant="outline" size="pill-sm">
-            Open invitation link
-          </ButtonLink>
+        title: 'Invitation ready',
+        body: `${created?.name ?? trimmed} can join ${workspaceName} as ${roleLabel[created?.role ?? role]}. It stays pending until they accept.`,
+        actions: created ? (
+          <InvitationLink invitation={created} workspace={workspaceName} inviter={user?.name} />
         ) : undefined,
       }}
     >
@@ -87,7 +90,11 @@ export function InviteSheet({
             autoComplete="off"
           />
         </FormField>
-        <FormField label="Work email" htmlFor="invite-email">
+        <FormField
+          label="Work email"
+          htmlFor="invite-email"
+          hint="The invitation only works when they sign in with this email."
+        >
           <PillInput
             id="invite-email"
             type="email"

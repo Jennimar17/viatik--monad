@@ -19,7 +19,13 @@ import { DomainError, requirePositive, requireText, usdText, type Tx } from './c
 
 // ─── Portfolios ──────────────────────────────────────────────────────────────
 
-export type CreatePortfolioInput = { name: string; organization: string; timeZone: string }
+export type CreatePortfolioInput = {
+  name: string
+  organization: string
+  timeZone: string
+  /** The creator's own name, when their sign-in did not provide one. */
+  ownerName?: string
+}
 
 /**
  * A person with no workspace yet starts their own portfolio and becomes its
@@ -27,9 +33,12 @@ export type CreatePortfolioInput = { name: string; organization: string; timeZon
  */
 export function createPortfolio(tx: Tx, input: CreatePortfolioInput): Portfolio {
   const userId = tx.userId
-  if (!tx.state.users.some((u) => u.id === userId)) {
+  const owner = tx.state.users.find((u) => u.id === userId)
+  if (!owner) {
     throw new DomainError('not_found', 'We could not find your profile. Sign in again to continue.')
   }
+  if (input.ownerName !== undefined) owner.name = requireText(input.ownerName, 'Your name', 80)
+  else if (!owner.name.trim()) throw new DomainError('validation', 'Enter your name.')
   const portfolio: Portfolio = {
     id: newId('pf'),
     name: requireText(input.name, 'Portfolio name', 80),
@@ -111,7 +120,7 @@ export function createAgency(tx: Tx, input: CreateAgencyInput): Agency {
   })
   tx.state.invitations.push({
     id: newId('inv'),
-    code: `${agency.id}-${Math.random().toString(36).slice(2, 8)}`,
+    code: newId('join').replace('join_', ''),
     email: requireText(input.admin.email, 'Admin email', 120),
     name: requireText(input.admin.name, 'Admin name', 80),
     role: 'agency_admin',

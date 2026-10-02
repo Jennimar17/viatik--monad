@@ -11,9 +11,11 @@ import { publicEnv } from './env'
 export const accountsEnabled = Boolean(publicEnv.NEXT_PUBLIC_PRIVY_APP_ID)
 
 /**
- * Privy's modal in Viatik's colors. Every person gets an embedded account on
- * their first sign-in, and the wallet screens stay hidden: people never see
- * gas, chains or confirmations; Viatik shows its own operation states.
+ * Privy's modal in Viatik's colors. The embedded account is created by the
+ * Viatik server on the first sign-in (`createOnLogin` is off: Privy's own
+ * creation step can stall forever when its wallet iframe is not ready), and
+ * the wallet screens stay hidden: people never see gas, chains or
+ * confirmations; Viatik shows its own operation states.
  */
 const config: PrivyClientConfig = {
   loginMethods: ['email', 'google', 'passkey'],
@@ -27,7 +29,7 @@ const config: PrivyClientConfig = {
     walletChainType: 'ethereum-only',
   },
   embeddedWallets: {
-    ethereum: { createOnLogin: 'all-users' },
+    ethereum: { createOnLogin: 'off' },
     showWalletUIs: false,
   },
   // Monad is not in Privy's default chain list, so it is declared here.

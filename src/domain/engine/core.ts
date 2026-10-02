@@ -99,7 +99,8 @@ export class Tx {
   }
 
   nameOf(userId: Id | undefined): string {
-    return this.state.users.find((u) => u.id === userId)?.name ?? 'Someone'
+    const user = this.state.users.find((u) => u.id === userId)
+    return user?.name.trim() || user?.email.split('@')[0] || 'Someone'
   }
 
   actorName(actor: Actor = this.ctx.actor): string {

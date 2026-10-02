@@ -91,6 +91,9 @@ export function acceptInvitation(tx: Tx, input: { code: string }) {
       locale: 'en-US',
       createdAt: tx.now,
     })
+  } else if (!existing.name.trim()) {
+    // A real account without a verified name takes the one its inviter wrote.
+    existing.name = invitation.name
   }
   invitation.status = 'accepted'
   tx.state.memberships.push({

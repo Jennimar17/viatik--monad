@@ -1,6 +1,6 @@
 'use client'
 
-import { useSendTransaction } from '@privy-io/react-auth'
+import { useSendTransaction, useWallets } from '@privy-io/react-auth'
 import { CircleCheck, ExternalLink } from 'lucide-react'
 import * as React from 'react'
 
@@ -48,7 +48,16 @@ export function SponsorshipCheck({
   explorer: string
 }) {
   const { sendTransaction } = useSendTransaction()
+  // Signing needs Privy's wallet iframe and this browser's Privy user to list
+  // the account the server created; `useWallets().ready` covers both.
+  const { ready: walletsReady, wallets } = useWallets()
   const [check, setCheck] = React.useState<Check>({ status: 'idle' })
+  const signable =
+    walletsReady &&
+    wallets.some(
+      (wallet) =>
+        wallet.walletClientType === 'privy' && wallet.address.toLowerCase() === address.toLowerCase(),
+    )
 
   const run = async () => {
     setCheck({ status: 'sending' })
@@ -56,7 +65,7 @@ export function SponsorshipCheck({
       const { hash } = await withTimeout(
         sendTransaction(
           { to: address, value: 0, chainId },
-          { sponsor: true, uiOptions: { showWalletUIs: false } },
+          { sponsor: true, address, uiOptions: { showWalletUIs: false } },
         ),
         TIMEOUT_MS,
       )
@@ -107,10 +116,12 @@ export function SponsorshipCheck({
         variant="outline"
         size="pill-sm"
         className="w-fit"
-        disabled={check.status === 'sending'}
+        disabled={check.status === 'sending' || !signable}
         onClick={() => void run()}
       >
-        {check.status === 'sending' ? (
+        {!signable ? (
+          'Preparing your account…'
+        ) : check.status === 'sending' ? (
           <>
             <Spinner data-icon="inline-start" /> Sending…
           </>

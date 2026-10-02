@@ -3,9 +3,8 @@
 import { MailPlus, UserPlus } from 'lucide-react'
 import * as React from 'react'
 
-import { ButtonLink } from '@/components/app/button-link'
+import { InvitationLink } from '@/components/app/invitation-link'
 import { InviteSheet } from '@/components/app/invite-sheet'
-import { inviteHref } from '@/components/app/nav'
 import { usePermissions, useRole } from '@/components/app/role-context'
 import { Button } from '@/components/ui/button'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
@@ -112,9 +111,12 @@ export default function InvestorTeamPage() {
                   </span>
                 </span>
                 <span className="flex flex-wrap items-center gap-2">
-                  <ButtonLink href={inviteHref(i.code)} variant="outline" size="pill-sm">
-                    Open invitation link
-                  </ButtonLink>
+                  <InvitationLink
+                    variant="actions"
+                    invitation={i}
+                    workspace={portfolio?.name ?? 'the portfolio'}
+                    inviter={userName(state, i.invitedBy)}
+                  />
                   {manage ? (
                     <Button
                       variant="ghost"

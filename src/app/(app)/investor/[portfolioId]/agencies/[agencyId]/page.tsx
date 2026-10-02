@@ -8,7 +8,7 @@ import * as React from 'react'
 import { ActivityList } from '@/components/app/activity'
 import { ButtonLink } from '@/components/app/button-link'
 import { AgreementProgress, MilestoneTimelineFor } from '@/components/app/funding-parts'
-import { inviteHref } from '@/components/app/nav'
+import { InvitationLink } from '@/components/app/invitation-link'
 import { PageTabs } from '@/components/app/page-tabs'
 import { PaymentsTable } from '@/components/app/payments-table'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
@@ -344,9 +344,13 @@ export default function InvestorAgencyDetailPage() {
                           </span>
                         </span>
                         <Tag>{roleLabel[i.role]}</Tag>
-                        <ButtonLink href={inviteHref(i.code)} variant="outline" size="pill-sm">
-                          Invitation link
-                        </ButtonLink>
+                        <InvitationLink
+                          variant="actions"
+                          invitation={i}
+                          workspace={agency.name}
+                          inviter={userName(state, i.invitedBy)}
+                          className="shrink-0"
+                        />
                       </li>
                     ))}
                   </ul>

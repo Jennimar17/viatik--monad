@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ErrorState } from '@/components/viatik/feedback'
 import { ViatikLogo } from '@/components/viatik/viatik-logo'
 import { useCommand, useViatik } from '@/data/react'
+import { nameFromEmail } from '@/lib/format'
 import { useSession } from '@/lib/session'
 import { timeZoneOptions } from '@/lib/time-zones'
 
@@ -42,6 +43,8 @@ export default function WelcomePage() {
   const { state, user, memberships, isError, refetch } = useViatik()
   const create = useCommand('createPortfolio', { silent: true })
 
+  // null until edited: the field shows a suggestion from the email.
+  const [ownerName, setOwnerName] = React.useState<string | null>(null)
   const [name, setName] = React.useState('')
   const [organization, setOrganization] = React.useState('')
   const [timeZone, setTimeZone] = React.useState(browserTimeZone)
@@ -73,7 +76,13 @@ export default function WelcomePage() {
     )
   }
 
+  const email = account?.email || user?.email || null
+  // Sign-in only gives a name with Google; everyone else types it here once.
+  const needsName = !user?.name.trim()
+  const yourName = ownerName ?? nameFromEmail(email)
+
   const errors = {
+    ownerName: needsName && yourName.trim().length < 2 ? 'Enter your name.' : undefined,
     name: name.trim().length < 2 ? 'Enter a name for the portfolio.' : undefined,
     organization: organization.trim().length < 2 ? 'Enter your organization.' : undefined,
   }
@@ -84,11 +93,12 @@ export default function WelcomePage() {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     setTouched(true)
-    if (errors.name || errors.organization) return
+    if (errors.ownerName || errors.name || errors.organization) return
     const portfolio = await create.run({
       name: name.trim(),
       organization: organization.trim(),
       timeZone,
+      ownerName: needsName ? yourName.trim() : undefined,
     })
     if (portfolio) router.replace(`/investor/${portfolio.id}/overview` as Route)
   }
@@ -99,9 +109,7 @@ export default function WelcomePage() {
     if (code) router.push(inviteHref(code))
   }
 
-  // A passkey-only account has no verified name or email: greet without inventing one.
-  const firstName = account && !account.name ? '' : (user?.name ?? account?.name ?? '').split(' ')[0]
-  const email = account?.email || user?.email || null
+  const firstName = user?.name.trim().split(' ')[0] ?? ''
 
   return (
     <main id="main" className="mx-auto flex min-h-svh max-w-3xl flex-col justify-center gap-8 px-4 py-12">
@@ -129,6 +137,23 @@ export default function WelcomePage() {
             </div>
           </div>
           <form className="flex flex-col gap-4" onSubmit={(event) => void submit(event)} noValidate>
+            {needsName ? (
+              <FormField
+                label="Your name"
+                htmlFor="owner-name"
+                error={shown('ownerName')}
+                hint="How your team sees you in Viatik."
+              >
+                <PillInput
+                  id="owner-name"
+                  value={yourName}
+                  onChange={(event) => setOwnerName(event.target.value)}
+                  autoComplete="name"
+                  maxLength={80}
+                  aria-invalid={Boolean(shown('ownerName')) || undefined}
+                />
+              </FormField>
+            ) : null}
             <FormField label="Portfolio name" htmlFor="portfolio-name" error={shown('name')}>
               <PillInput
                 id="portfolio-name"

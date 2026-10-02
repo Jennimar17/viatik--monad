@@ -17,8 +17,12 @@ import type {
  * so the API computes identical numbers.
  */
 
-export const userName = (state: ViatikState, id: Id | undefined) =>
-  state.users.find((u) => u.id === id)?.name ?? 'Former teammate'
+/** A person's name; someone who never gave one shows the start of their email. */
+export const userName = (state: ViatikState, id: Id | undefined) => {
+  const user = state.users.find((u) => u.id === id)
+  if (!user) return 'Former teammate'
+  return user.name.trim() || user.email.split('@')[0] || 'Someone'
+}
 export const agencyName = (state: ViatikState, id: Id | undefined) =>
   state.agencies.find((a) => a.id === id)?.name ?? 'Agency'
 export const budgetName = (state: ViatikState, id: Id | undefined) =>

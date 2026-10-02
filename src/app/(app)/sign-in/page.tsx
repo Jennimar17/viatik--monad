@@ -246,6 +246,11 @@ function SignIn() {
                     ? 'Opening your account…'
                     : 'Your financial account is created automatically. No wallet extension required.'}
                 </p>
+                {accountsEnabled ? (
+                  <p className="text-center text-xs text-subtle">
+                    Passkeys work for accounts that already added one in Settings.
+                  </p>
+                ) : null}
               </div>
             </>
           )}

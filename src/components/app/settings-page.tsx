@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 
 import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
 import { PageTabs, type PageTab } from '@/components/app/page-tabs'
+import { PasskeysPanel } from '@/components/app/passkeys-panel'
 import { SponsorshipCheck } from '@/components/app/sponsorship-check'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { Button } from '@/components/ui/button'
@@ -474,51 +475,55 @@ export function SettingsPage({
       label: 'Security',
       content: (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <Panel title="Sign-in methods">
-            <ul className="flex flex-col gap-3">
-              <li className="flex items-center gap-3 text-sm">
-                <KeyRound className="size-4 shrink-0 text-subtle" aria-hidden="true" /> Email one-time code
-                <StatusBadge status={{ label: 'On', tone: 'success' }} className="ml-auto" />
-              </li>
-              <li className="flex items-center gap-3 text-sm">
-                <Fingerprint className="size-4 shrink-0 text-subtle" aria-hidden="true" /> Passkey on this
-                device
-                <StatusBadge
-                  status={
-                    preferences.passkey
-                      ? { label: 'On', tone: 'success' }
-                      : { label: 'Not set up', tone: 'neutral' }
-                  }
-                  className="ml-auto"
-                />
-              </li>
-            </ul>
-            {preferences.passkey ? (
-              <Button
-                variant="ghost"
-                size="pill-sm"
-                className="mt-4 w-fit text-danger hover:text-danger"
-                onClick={() => {
-                  updatePreferences({ passkey: false })
-                  toast.success('Passkey removed from this device.')
-                }}
-              >
-                Remove passkey
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="pill-sm"
-                className="mt-4 w-fit"
-                onClick={() => {
-                  updatePreferences({ passkey: true })
-                  toast.success('Passkey added. You can sign in with this device.')
-                }}
-              >
-                <Plus data-icon="inline-start" /> Add a passkey
-              </Button>
-            )}
-          </Panel>
+          {mode === 'account' ? (
+            <PasskeysPanel />
+          ) : (
+            <Panel title="Sign-in methods">
+              <ul className="flex flex-col gap-3">
+                <li className="flex items-center gap-3 text-sm">
+                  <KeyRound className="size-4 shrink-0 text-subtle" aria-hidden="true" /> Email one-time code
+                  <StatusBadge status={{ label: 'On', tone: 'success' }} className="ml-auto" />
+                </li>
+                <li className="flex items-center gap-3 text-sm">
+                  <Fingerprint className="size-4 shrink-0 text-subtle" aria-hidden="true" /> Passkey on this
+                  device
+                  <StatusBadge
+                    status={
+                      preferences.passkey
+                        ? { label: 'On', tone: 'success' }
+                        : { label: 'Not set up', tone: 'neutral' }
+                    }
+                    className="ml-auto"
+                  />
+                </li>
+              </ul>
+              {preferences.passkey ? (
+                <Button
+                  variant="ghost"
+                  size="pill-sm"
+                  className="mt-4 w-fit text-danger hover:text-danger"
+                  onClick={() => {
+                    updatePreferences({ passkey: false })
+                    toast.success('Passkey removed from this device.')
+                  }}
+                >
+                  Remove passkey
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="pill-sm"
+                  className="mt-4 w-fit"
+                  onClick={() => {
+                    updatePreferences({ passkey: true })
+                    toast.success('Passkey added. You can sign in with this device.')
+                  }}
+                >
+                  <Plus data-icon="inline-start" /> Add a passkey
+                </Button>
+              )}
+            </Panel>
+          )}
           <Panel title="Active sessions">
             <ul className="flex flex-col gap-3 text-sm">
               <li className="flex items-center gap-3">

@@ -3,6 +3,7 @@
 import * as React from 'react'
 
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
+import { useViatik } from '@/data/react'
 import { publicEnv } from '@/lib/env'
 import { cn } from '@/lib/utils'
 
@@ -50,6 +51,7 @@ const TABLET = '(min-width: 768px) and (max-width: 1023px)'
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { role } = useRole()
+  const { mode } = useViatik()
   const [commandOpen, setCommandOpen] = React.useState(false)
   const [notificationsOpen, setNotificationsOpen] = React.useState(false)
   // Tablets get the icon rail by default; desktops get the full sidebar. The
@@ -66,7 +68,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) {
+      // Autofill extensions dispatch synthetic keydown events without a `key`.
+      if (event.key?.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault()
         setCommandOpen((open) => !open)
       }
@@ -104,7 +107,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </SidebarInset>
         {role === 'member' ? <MobileTabBar /> : null}
         <HeadFallback />
-        {publicEnv.NEXT_PUBLIC_DEMO_MODE ? <DemoPill /> : null}
+        {/* Switching people is a demo affordance; real accounts never see it. */}
+        {publicEnv.NEXT_PUBLIC_DEMO_MODE && mode === 'demo' ? <DemoPill /> : null}
         <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
         <NotificationsSheet open={notificationsOpen} onOpenChange={setNotificationsOpen} />
       </SidebarProvider>

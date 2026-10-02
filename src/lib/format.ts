@@ -95,3 +95,13 @@ export function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
+
+/** A starting point for someone's name from their email: "maya.chen+x@example.com" → "Maya Chen". */
+export function nameFromEmail(email: string | null | undefined): string {
+  const local = email?.split('@')[0]?.split('+')[0] ?? ''
+  return local
+    .split(/[._-]+/)
+    .filter((word) => /^[a-z]+$/i.test(word))
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+}

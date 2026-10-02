@@ -5,9 +5,8 @@ import { MailPlus, UserPlus, Users } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import * as React from 'react'
 
-import { ButtonLink } from '@/components/app/button-link'
+import { InvitationLink } from '@/components/app/invitation-link'
 import { InviteSheet } from '@/components/app/invite-sheet'
-import { inviteHref } from '@/components/app/nav'
 import { PageTabs } from '@/components/app/page-tabs'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { Button } from '@/components/ui/button'
@@ -252,9 +251,12 @@ export default function TeamPage() {
                         </span>
                       </span>
                       <span className="flex flex-wrap items-center gap-2">
-                        <ButtonLink href={inviteHref(i.code)} variant="outline" size="pill-sm">
-                          Open invitation link
-                        </ButtonLink>
+                        <InvitationLink
+                          variant="actions"
+                          invitation={i}
+                          workspace={agency?.name ?? 'the Agency'}
+                          inviter={userName(state, i.invitedBy)}
+                        />
                         {can('manage_team') ? (
                           <Button
                             variant="ghost"

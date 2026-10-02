@@ -1,6 +1,8 @@
 'use client'
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowLeft } from 'lucide-react'
+import type { Route } from 'next'
 import { useParams, useRouter } from 'next/navigation'
 import * as React from 'react'
 
@@ -37,7 +39,7 @@ export default function InvitePage() {
     signIn,
     signOut,
   } = useSession()
-  const { state } = useViatik()
+  const { state, memberships } = useViatik()
   const queryClient = useQueryClient()
   const [accepting, setAccepting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -124,6 +126,14 @@ export default function InvitePage() {
       setAccepting(false)
     }
   }
+
+  // A way out of the invitation: back to the workspace, onboarding or sign-in.
+  const home = memberships[0]
+  const exit: { href: Route; label: string } = home
+    ? { href: roleHome(home), label: 'Go to my workspace' }
+    : userId && state
+      ? { href: '/welcome', label: 'Go to my account' }
+      : { href: '/sign-in', label: 'Back to sign in' }
 
   let action: React.ReactNode
   if (!pending) {
@@ -224,6 +234,9 @@ export default function InvitePage() {
           Your financial account is created automatically. No wallet extension required.
         </p>
       </section>
+      <ButtonLink href={exit.href} variant="ghost" size="pill-sm" className="w-fit">
+        <ArrowLeft data-icon="inline-start" /> {exit.label}
+      </ButtonLink>
     </main>
   )
 }

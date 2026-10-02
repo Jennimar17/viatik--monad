@@ -1,6 +1,6 @@
 'use client'
 
-import { useIdentityToken, useLogin, usePrivy, type User as PrivyUser } from '@privy-io/react-auth'
+import { useIdentityToken, useLogin, usePrivy, useUser, type User as PrivyUser } from '@privy-io/react-auth'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as React from 'react'
 
@@ -144,6 +144,7 @@ function AccountSessionProvider({ children }: { children: React.ReactNode }) {
   const demoUserId = useDemoUser()
   const queryClient = useQueryClient()
   const { ready, authenticated, user, logout, getAccessToken } = usePrivy()
+  const { refreshUser } = useUser()
   const { identityToken } = useIdentityToken()
   const { login } = useLogin({
     // Also runs on every page load for a restored session (wasAlreadyAuthenticated);
@@ -168,15 +169,54 @@ function AccountSessionProvider({ children }: { children: React.ReactNode }) {
     staleTime: 'static',
     retry: (failures, error) => !isUnauthenticated(error) && failures < 2,
   })
-  const { data, refetch } = session
+  const { data, refetch, dataUpdatedAt, errorUpdatedAt } = session
 
-  // Privy creates the embedded account right after the first sign-in, so the
-  // address appears a moment after the session resolved: ask again to record
-  // it. A failed refetch keeps the current session, so nobody is signed out.
-  // Depends on primitives only: an answer that still lacks the address does not ask again.
+  // The server creates the embedded account while resolving the session.
+  // `wallet` is what this browser's Privy user knows; `recordedAddress` what
+  // the server answered. Effects depend on primitives only, so an answer that
+  // repeats the same values never asks again.
   const wallet = embeddedAddress(user)
   const resolved = Boolean(data)
   const recordedAddress = data?.address ?? null
+
+  // Created on the server: refresh this browser's Privy user so signing
+  // (sponsored settlement) can see the account. Up to three attempts per
+  // address, a few seconds apart; each finished attempt re-runs the check.
+  const [refreshRound, setRefreshRound] = React.useState(0)
+  const refreshAttempts = React.useRef({ address: null as string | null, count: 0 })
+  React.useEffect(() => {
+    if (!recordedAddress || wallet?.toLowerCase() === recordedAddress.toLowerCase()) return
+    const attempts = refreshAttempts.current
+    if (attempts.address !== recordedAddress) {
+      attempts.address = recordedAddress
+      attempts.count = 0
+    }
+    if (attempts.count >= 3) return
+    attempts.count += 1
+    const timer = setTimeout(
+      () => void refreshUser().finally(() => setRefreshRound((round) => round + 1)),
+      attempts.count === 1 ? 0 : 3000,
+    )
+    return () => clearTimeout(timer)
+  }, [recordedAddress, wallet, refreshUser, refreshRound])
+
+  // The account could not be created yet (Privy briefly unavailable): ask the
+  // server again a few seconds apart, three times per person, also after a
+  // failed attempt.
+  const creationAttempts = React.useRef({ privyId: null as string | null, count: 0 })
+  React.useEffect(() => {
+    if (!resolved || recordedAddress) return
+    if (creationAttempts.current.privyId !== privyId) creationAttempts.current = { privyId, count: 0 }
+    if (creationAttempts.current.count >= 3) return
+    const timer = setTimeout(() => {
+      creationAttempts.current.count += 1
+      void refetch()
+    }, 4000)
+    return () => clearTimeout(timer)
+  }, [resolved, recordedAddress, privyId, dataUpdatedAt, errorUpdatedAt, refetch])
+
+  // An account this browser knows but the server has not recorded: ask again.
+  // A failed refetch keeps the current session, so nobody is signed out.
   React.useEffect(() => {
     if (wallet && resolved && recordedAddress?.toLowerCase() !== wallet.toLowerCase()) void refetch()
   }, [wallet, resolved, recordedAddress, refetch])

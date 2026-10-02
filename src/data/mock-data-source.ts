@@ -25,7 +25,8 @@ import { planSettlement } from './settlement'
 /**
  * A real account the demo data has never seen (anyone but Elena, Maya and
  * Alex). They start with no memberships: they create a portfolio or accept an
- * invitation. Their profile comes from what the server verified.
+ * invitation. Their profile comes from what the server verified; without a
+ * verified name it stays empty until onboarding or the invitation fills it.
  */
 function withNewPerson(state: ViatikState, userId: string, profile: SessionProfile): ViatikState {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -35,7 +36,7 @@ function withNewPerson(state: ViatikState, userId: string, profile: SessionProfi
       ...state.users,
       {
         id: userId,
-        name: profile.name ?? profile.email ?? 'New member',
+        name: profile.name ?? '',
         email: profile.email ?? '',
         title: '',
         timeZone,
@@ -105,13 +106,18 @@ export class MockDataSource implements DataSource {
     const known = state.users.find((u) => u.id === userId)
     if (profile && !known) {
       this.write(withNewPerson(state, userId, profile))
-    } else if (profile?.email && known && known.email !== profile.email) {
-      // A demo person signed in with a real account: the verified email wins,
-      // as it does on the server, so invitations check the address they proved.
-      this.write({
-        ...state,
-        users: state.users.map((u) => (u.id === userId ? { ...u, email: profile.email as string } : u)),
-      })
+    } else if (profile && known) {
+      // What the server verified wins, as it does in the database: the email
+      // (so invitations check the address the person proved) and a Google name
+      // for someone who has none yet. A name typed in Settings is kept.
+      const email = profile.email && known.email !== profile.email ? profile.email : known.email
+      const name = !known.name.trim() && profile.name ? profile.name : known.name
+      if (email !== known.email || name !== known.name) {
+        this.write({
+          ...state,
+          users: state.users.map((u) => (u.id === userId ? { ...u, email, name } : u)),
+        })
+      }
     }
     return scopeStateForUser(this.read(), userId)
   }

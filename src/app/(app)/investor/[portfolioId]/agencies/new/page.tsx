@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import * as React from 'react'
 
 import { ButtonLink } from '@/components/app/button-link'
+import { InvitationLink } from '@/components/app/invitation-link'
 import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
 import { useHref, useRole } from '@/components/app/role-context'
 import { useBottomBar } from '@/components/app/shell/app-shell'
@@ -14,7 +15,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { FormActions } from '@/components/viatik/forms'
 import { PageHeader, Panel } from '@/components/viatik/layout'
 import { PendingOperation } from '@/components/viatik/operation'
-import { useCommand } from '@/data/react'
+import { useCommand, useViatikState } from '@/data/react'
 import { agencyTypeLabel } from '@/domain/labels'
 import type { AgencyType } from '@/domain/types'
 import { timeZoneOptions } from '@/lib/time-zones'
@@ -30,6 +31,7 @@ export default function NewAgencyPage() {
   const { portfolioId } = useRole()
   const href = useHref()
   const router = useRouter()
+  const { state, user } = useViatikState()
   const create = useCommand('createAgency', { silent: true })
   const [name, setName] = React.useState('')
   const [type, setType] = React.useState<AgencyType>('startup')
@@ -67,6 +69,16 @@ export default function NewAgencyPage() {
     if (agency) setCreatedId(agency.id)
   }
 
+  const adminInvitation = createdId
+    ? state.invitations.find(
+        (i) =>
+          i.status === 'pending' &&
+          i.role === 'agency_admin' &&
+          i.scope.kind === 'agency' &&
+          i.scope.agencyId === createdId,
+      )
+    : undefined
+
   if (createdId) {
     return (
       <div className="mx-auto flex max-w-xl flex-col gap-6 py-10">
@@ -75,9 +87,17 @@ export default function NewAgencyPage() {
           <h1 className="font-display text-3xl font-medium tracking-tight">{name.trim()} created</h1>
         </div>
         <p className="text-pretty text-muted-foreground">
-          {adminName.trim()} was invited to become the Agency Admin. Next, define how capital should be
-          released with a funding agreement.
+          {adminName.trim()} is invited to become the Agency Admin. Send them the link below, then define how
+          capital should be released with a funding agreement.
         </p>
+        {adminInvitation ? (
+          <section className="surface flex flex-col gap-3 rounded-2xl p-5" aria-labelledby="admin-invite">
+            <h2 id="admin-invite" className="text-base font-medium">
+              Invite {adminInvitation.name}
+            </h2>
+            <InvitationLink invitation={adminInvitation} workspace={name.trim()} inviter={user?.name} />
+          </section>
+        ) : null}
         <div className="flex flex-wrap gap-2">
           <ButtonLink href={href(`funding/new?agency=${createdId}`)} size="pill">
             Create funding agreement
