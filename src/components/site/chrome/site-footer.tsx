@@ -24,8 +24,24 @@ export function SiteFooter() {
         <section
           id="get-started"
           aria-labelledby="cta-heading"
-          className="relative grid gap-8 overflow-hidden rounded-3xl border border-border bg-card/60 p-7 sm:p-10 lg:grid-cols-12 lg:items-center lg:gap-10 lg:p-12"
+          className="grain relative grid gap-8 overflow-hidden rounded-3xl border border-border bg-card/60 p-7 sm:p-10 lg:grid-cols-12 lg:items-center lg:gap-10 lg:p-12"
         >
+          {/* A faint version of the use-case panels' light, under the card's grain. */}
+          <span
+            aria-hidden="true"
+            className="glow-orb top-[-70%] left-[-8%] aspect-square w-[46%]"
+            style={{ background: 'var(--iri-lilac)', opacity: 0.15 }}
+          />
+          <span
+            aria-hidden="true"
+            className="glow-orb right-[-6%] bottom-[-80%] aspect-square w-[40%]"
+            style={{ background: 'var(--iri-mint)', opacity: 0.12 }}
+          />
+          <span
+            aria-hidden="true"
+            className="glow-orb top-[-40%] right-[22%] aspect-square w-[30%]"
+            style={{ background: 'var(--iri-periwinkle)', opacity: 0.1 }}
+          />
           <span
             aria-hidden="true"
             className="absolute inset-x-10 top-0 h-px"
@@ -34,7 +50,7 @@ export function SiteFooter() {
                 'linear-gradient(90deg, transparent, var(--iri-lilac), var(--iri-mint), transparent)',
             }}
           />
-          <div className="flex flex-col gap-3 lg:col-span-7">
+          <div className="relative z-[2] flex flex-col gap-3 lg:col-span-7">
             <Eyebrow>{closing.eyebrow}</Eyebrow>
             <h2
               id="cta-heading"
@@ -44,7 +60,7 @@ export function SiteFooter() {
             </h2>
             <p className="max-w-lg text-base text-pretty text-muted-foreground md:text-lg">{closing.body}</p>
           </div>
-          <div className="flex lg:col-span-5 lg:justify-end">
+          <div className="relative z-[2] flex lg:col-span-5 lg:justify-end">
             <a href={siteConfig.routes.demo} className={buttonVariants({ size: 'pill' })}>
               {closing.primary}
               <ArrowRightIcon data-icon="inline-end" aria-hidden="true" />
@@ -56,10 +72,6 @@ export function SiteFooter() {
           <div className="flex flex-col items-start gap-5 lg:col-span-4">
             <ViatikLogo />
             <p className="max-w-xs text-base text-pretty text-muted-foreground">{siteConfig.statement}</p>
-            <p className="flex max-w-xs items-start gap-2.5 rounded-xl border border-border bg-card/40 px-3.5 py-2.5 text-xs text-subtle">
-              <ViatikMark className="mt-px size-4" />
-              {footer.hackathon}
-            </p>
             <ul aria-label="Social profiles" className="flex gap-2">
               {socials.map((social) => (
                 <li key={social.network}>

@@ -28,17 +28,25 @@ export function GlassFigure({
   )
 }
 
-/** A blurred pool of colour that the glass above it refracts. */
+/** How much wider an orb spreads than its nominal size, around the same centre. */
+const ORB_SPREAD = 1.9
+
+/**
+ * A pool of colour that the glass above it refracts. It spreads well past its
+ * nominal size so the pools overlap and wash across the whole panel.
+ */
 function Orb({ colour, x, y, size }: { colour: string; x: number; y: number; size: number }) {
+  const spread = size * ORB_SPREAD
+  const shift = (spread - size) / 2
   return (
     <span
       className="glow-orb"
       style={{
         background: `var(${colour})`,
-        left: `${x}%`,
-        top: `${y}%`,
-        width: `${size}%`,
-        height: `${size}%`,
+        left: `${x - shift}%`,
+        top: `${y - shift}%`,
+        width: `${spread}%`,
+        height: `${spread}%`,
       }}
     />
   )

@@ -49,12 +49,15 @@
     backdrop-filter: blur(14px) saturate(1.4);
   }
 
-  /* A blurred pool of iridescent light behind glass. */
+  /*
+   * A wide, soft haze of iridescent light behind glass. The blur is large
+   * enough that the pools read as colour rather than as circles.
+   */
   .glow-orb {
     position: absolute;
     border-radius: 9999px;
-    opacity: 0.85;
-    filter: blur(22px);
+    opacity: 0.45;
+    filter: blur(70px);
     pointer-events: none;
   }
 

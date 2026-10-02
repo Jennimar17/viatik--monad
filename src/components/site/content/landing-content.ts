@@ -371,5 +371,4 @@ export const closing = {
 export const footer = {
   copyright: '© 2026 Viatik. All rights reserved.',
   builtOn: 'Built on Monad',
-  hackathon: 'Built for Monad Metropolis · Consumer Products & Payments',
 }
