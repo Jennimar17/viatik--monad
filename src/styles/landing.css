@@ -1,8 +1,8 @@
 /*
  * Landing-only layer: the iridescent illustration palette, surfaces for
- * isometric scenes, the frame that hosts real product components, and the
- * motion used by the hero, the capital stack, Monad's block stream and the
- * closing.
+ * isometric scenes and photographs, the frame that hosts real product
+ * components, and the motion used by the hero, the capital stack and
+ * Monad's pace.
  *
  * The iridescent palette is derived from the brand tokens in tokens.css, not
  * added beside them. Each colour keeps a brand hue in OKLCH and only lifts its
@@ -42,55 +42,9 @@
     background-position: -1px -1px;
   }
 
-  /* Plan lines only, fading out from the centre; for layering over other fills. */
-  .blueprint-lines {
-    background-image:
-      linear-gradient(color-mix(in srgb, var(--brand-mist) 7%, transparent) 1px, transparent 1px),
-      linear-gradient(90deg, color-mix(in srgb, var(--brand-mist) 7%, transparent) 1px, transparent 1px);
-    background-size: 32px 32px;
-    mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 20%, transparent 75%);
-  }
-
   /* A stronger film grain for illustrated surfaces (pairs with `.grain`). */
   .grain-strong::after {
     opacity: 0.42;
-  }
-
-  /* Soft pools of iridescent light behind a dark surface. */
-  .aurora {
-    position: relative;
-    isolation: isolate;
-    overflow: hidden;
-  }
-  .aurora::before {
-    content: '';
-    position: absolute;
-    inset: -25%;
-    z-index: -1;
-    pointer-events: none;
-    background:
-      radial-gradient(
-        30% 36% at 22% 28%,
-        color-mix(in srgb, var(--iri-lilac) 55%, transparent),
-        transparent 70%
-      ),
-      radial-gradient(
-        26% 32% at 80% 22%,
-        color-mix(in srgb, var(--iri-mint) 32%, transparent),
-        transparent 70%
-      ),
-      radial-gradient(
-        34% 38% at 64% 84%,
-        color-mix(in srgb, var(--iri-periwinkle) 42%, transparent),
-        transparent 70%
-      ),
-      radial-gradient(
-        24% 28% at 12% 88%,
-        color-mix(in srgb, var(--iri-rose) 34%, transparent),
-        transparent 70%
-      );
-    filter: blur(36px);
-    animation: aurora-drift 26s ease-in-out infinite alternate;
   }
 
   /*
@@ -118,6 +72,26 @@
     box-shadow:
       0 40px 90px -40px rgb(0 0 0 / 0.6),
       inset 0 1px 0 color-mix(in srgb, var(--brand-mist) 10%, transparent);
+  }
+
+  /* Product frame on glass, for frames that sit over a photograph. */
+  .product-frame-glass {
+    border-color: color-mix(in srgb, var(--brand-mist) 21%, transparent);
+    background: color-mix(in srgb, var(--brand-plum) 72%, transparent);
+    backdrop-filter: blur(20px);
+  }
+
+  /* Photographs dimmed and toned towards the brand (pairs with `.grain`). */
+  .photo-dim img {
+    filter: saturate(0.75) brightness(0.86);
+  }
+  .photo-dim::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: color-mix(in srgb, var(--brand-plum) 30%, transparent);
+    pointer-events: none;
   }
 
   /* Iridescent fill for the closing wordmark. */
@@ -151,21 +125,21 @@
     animation: capital-drop 3.2s cubic-bezier(0.5, 0, 0.75, 0) infinite;
   }
 
-  /* Monad block stream. */
-  .block-tile {
-    transition:
-      transform 360ms cubic-bezier(0.2, 0.7, 0.2, 1),
-      opacity 360ms ease;
+  /*
+   * Monad's pace: a payment crosses the line in 0.8 s (the first 26.7% of a
+   * 3 s loop), the "Final" mark lights up, holds, and the loop starts again.
+   */
+  .pace-fill {
+    transform-origin: left center;
+    animation: pace-fill 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+  .pace-dot {
+    animation: pace-dot 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+  .pace-final {
+    animation: pace-final 3s ease infinite;
   }
 
-  @keyframes aurora-drift {
-    from {
-      transform: translate3d(-2%, -1%, 0) scale(1);
-    }
-    to {
-      transform: translate3d(2%, 2%, 0) scale(1.06);
-    }
-  }
   @keyframes capital-drop {
     0% {
       opacity: 0;
@@ -182,15 +156,66 @@
       transform: translateY(var(--drop, 120px));
     }
   }
+  @keyframes pace-fill {
+    0% {
+      transform: scaleX(0);
+      opacity: 1;
+    }
+    26.7%,
+    88% {
+      transform: scaleX(1);
+      opacity: 1;
+    }
+    100% {
+      transform: scaleX(1);
+      opacity: 0;
+    }
+  }
+  @keyframes pace-dot {
+    0% {
+      left: 0%;
+      opacity: 0;
+    }
+    4% {
+      opacity: 1;
+    }
+    26.7%,
+    88% {
+      left: 100%;
+      opacity: 1;
+    }
+    100% {
+      left: 100%;
+      opacity: 0;
+    }
+  }
+  @keyframes pace-final {
+    0%,
+    24% {
+      opacity: 0.4;
+    }
+    30%,
+    88% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0.4;
+    }
+  }
 
   @media (prefers-reduced-motion: reduce) {
-    .aurora::before,
     .hero-step,
-    .capital-drop {
+    .capital-drop,
+    .pace-fill,
+    .pace-dot,
+    .pace-final {
       animation: none;
     }
     .capital-drop {
       opacity: 0;
+    }
+    .pace-dot {
+      left: 100%;
     }
   }
 }

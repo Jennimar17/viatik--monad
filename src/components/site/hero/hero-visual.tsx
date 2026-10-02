@@ -1,8 +1,8 @@
+import Image from 'next/image'
 import type { CSSProperties, ReactNode } from 'react'
 import { CheckIcon, ShieldCheckIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-import { HeroFlowScene } from '@/components/site/illustrations/scenes'
 import { Amount } from '@/components/viatik/amount'
 import { FundingProgress } from '@/components/viatik/finance'
 import { StatusBadge } from '@/components/viatik/status'
@@ -11,28 +11,35 @@ import { formatUsd } from '@/domain/money'
 import { capital, story, tranches } from '@/components/site/content/product-demo'
 
 /**
- * The hero's graphic: an isometric field of tranches under iridescent light,
- * with three real product surfaces read top to bottom as one flow (milestone
- * approved, capital released, payment verified). Cards never overlap; dashed
- * connectors carry the eye from one step to the next.
+ * The hero's visual: the brand landscape with the same grain and shade as the
+ * sign-in page, and three real product surfaces on glass read top to bottom
+ * as one flow (milestone approved, capital released, payment verified). Cards
+ * never overlap; dashed connectors carry the eye from one step to the next.
  */
 export function HeroVisual({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        'aurora grain relative isolate flex min-h-[32rem] flex-col justify-center overflow-hidden rounded-3xl border border-mist/15 bg-brand',
+        'grain relative isolate flex min-h-[32rem] flex-col justify-center overflow-hidden rounded-3xl border border-mist/15 bg-brand',
         className,
       )}
     >
-      <div className="blueprint-lines absolute inset-0" aria-hidden="true" />
-      <HeroFlowScene className="absolute right-[-4%] bottom-[-10%] w-[64%] opacity-95" />
+      <Image
+        src="/images/alpine-landscape.jpg"
+        alt=""
+        fill
+        preload
+        sizes="(min-width: 1280px) 580px, (min-width: 1024px) 46vw, 100vw"
+        className="object-cover object-[60%_center]"
+      />
+      <div className="hero-scene-shade absolute inset-0" aria-hidden="true" />
 
       <ol
         aria-label="Capital moving from an approved milestone to a verified payment"
         className="relative z-[2] flex flex-col px-4 py-8 sm:px-8 sm:py-10"
       >
         <Step index={0} className="ml-auto w-full max-w-xs">
-          <div className="theme-dark product-frame flex items-center gap-3 rounded-2xl p-3.5 pr-4">
+          <div className="theme-dark product-frame product-frame-glass flex items-center gap-3 rounded-2xl p-3.5 pr-4">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-success-soft text-success">
               <CheckIcon className="size-4" aria-hidden="true" />
             </span>
@@ -45,7 +52,7 @@ export function HeroVisual({ className }: { className?: string }) {
         </Step>
 
         <Step index={1} connector="ml-[72%]">
-          <div className="theme-dark product-frame flex flex-col gap-5 p-5 sm:p-6">
+          <div className="theme-dark product-frame product-frame-glass flex flex-col gap-5 p-5 sm:p-6">
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2.5">
                 <ViatikMark className="size-8" />
@@ -70,7 +77,7 @@ export function HeroVisual({ className }: { className?: string }) {
         </Step>
 
         <Step index={2} connector="ml-[24%]" className="w-full max-w-sm">
-          <div className="theme-dark product-frame flex items-center gap-3 rounded-2xl p-3.5 pr-4">
+          <div className="theme-dark product-frame product-frame-glass flex items-center gap-3 rounded-2xl p-3.5 pr-4">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-mist/10 text-mist">
               <ShieldCheckIcon className="size-4" aria-hidden="true" />
             </span>

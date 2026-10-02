@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils'
 
 import { Container, Section, SectionIntro } from '@/components/site/chrome/section'
 import { MonadLayersScene } from '@/components/site/illustrations/scenes'
-import { MonadSpeed } from '@/components/site/sections/monad-speed'
+import { MonadPace } from '@/components/site/sections/monad-pace'
 import { KeyValueList } from '@/components/viatik/layout'
 import { StatusBadge } from '@/components/viatik/status'
 import { monad } from '@/components/site/content/landing-content'
@@ -23,7 +23,7 @@ export function MonadSection() {
         </div>
 
         <div className="grid gap-4 lg:grid-cols-12 lg:gap-6">
-          <MonadSpeed className="lg:col-span-7" />
+          <MonadPace className="lg:col-span-7" />
           <VerifiedRecord className="lg:col-span-5" />
         </div>
       </Container>

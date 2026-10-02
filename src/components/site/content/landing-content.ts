@@ -270,15 +270,16 @@ export const monad = {
   eyebrow: 'Built on Monad',
   heading: 'Blockchain where it matters. Financial software everywhere else.',
   body: 'Viatik uses Monad for settlement, programmable controls, and verifiable receipts while keeping wallets, gas, contract calls, and network operations behind the product experience.',
-  speed: {
-    title: 'Block by block',
-    caption: 'Simulated at 400 ms per block',
-    tranche: 'Tranche release · 25,000.00 USDC',
+  pace: {
+    title: 'From payment to final',
+    body: 'A tranche release is settled and final in under a second.',
+    from: 'Payment sent',
+    to: 'Final',
+    duration: '0.8 s',
     stats: [
+      { value: '0.8 s', label: 'Final, for every payment' },
       { value: '10,000', label: 'Transactions per second' },
-      { value: '0.4 s', label: 'Block time' },
-      { value: '0.8 s', label: 'Finality' },
-      { value: 'EVM', label: 'Bytecode compatible' },
+      { value: 'EVM', label: 'Works with Ethereum tools' },
     ],
     note: 'Network figures as published by Monad.',
   },
