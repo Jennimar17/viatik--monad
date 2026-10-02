@@ -1,0 +1,137 @@
+/*
+ * Illustration layer for the landing: isometric scenes and the role prisms.
+ *
+ * The iridescent palette is derived from the brand tokens in tokens.css, not
+ * added beside them. Each colour keeps a brand hue in OKLCH and only lifts its
+ * chroma, so the gradients read as the brand catching light:
+ *   lilac       stone hue (312.5), chroma ×3.2
+ *   rose        stone hue +28, chroma ×3
+ *   mint        sage hue (146.6), chroma ×2.6
+ *   periwinkle  mist hue (286.2), chroma 0.08
+ *   pearl       mist
+ *   haze / dusk / deep  plum hue (314.9), lightness raised
+ * These colours decorate illustrations only. Interface states keep using the
+ * desaturated status tokens.
+ */
+
+:root {
+  --iri-lilac: #c09bd6;
+  --iri-rose: #d89dc3;
+  --iri-mint: #a4dda8;
+  --iri-periwinkle: #b9b7f0;
+  --iri-pearl: var(--brand-mist);
+  --iri-paper: var(--brand-paper);
+  --iri-haze: #836a8f;
+  --iri-dusk: #543f5d;
+  --iri-deep: #3c1f49;
+  --iri-night: var(--brand-plum);
+  --iri-edge: color-mix(in srgb, var(--brand-mist) 38%, transparent);
+}
+
+@layer components {
+  /* Thin plan lines behind isometric scenes. */
+  .blueprint-grid {
+    background-color: var(--brand-plum);
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--brand-mist) 6%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--brand-mist) 6%, transparent) 1px, transparent 1px);
+    background-size: 32px 32px;
+    background-position: -1px -1px;
+  }
+
+  /* A stronger film grain for illustrated surfaces (pairs with `.grain`). */
+  .grain-strong::after {
+    opacity: 0.42;
+  }
+
+  /*
+   * Extruded prism: the element is the front face, `::before` the top face and
+   * `::after` the right face. Content and grain live on a child, because the
+   * pseudo-elements are taken.
+   */
+  .prism {
+    --depth: 10px;
+    position: relative;
+    isolation: isolate;
+    margin-top: var(--depth);
+    margin-right: var(--depth);
+  }
+  .prism::before,
+  .prism::after {
+    content: '';
+    position: absolute;
+    pointer-events: none;
+  }
+  .prism::before {
+    left: 0;
+    top: calc(var(--depth) * -1);
+    width: calc(100% + var(--depth));
+    height: var(--depth);
+    background: var(--prism-top);
+    clip-path: polygon(0 100%, calc(100% - var(--depth)) 100%, 100% 0, var(--depth) 0);
+  }
+  .prism::after {
+    top: calc(var(--depth) * -1);
+    right: calc(var(--depth) * -1);
+    bottom: 0;
+    width: var(--depth);
+    background: var(--prism-side);
+    clip-path: polygon(0 var(--depth), 100% 0, 100% calc(100% - var(--depth)), 0 100%);
+  }
+  @media (min-width: 1024px) {
+    .prism {
+      --depth: 16px;
+    }
+  }
+
+  .prism-face {
+    background: var(--prism-front);
+  }
+  .prism[data-open] .prism-face {
+    background:
+      radial-gradient(
+        120% 55% at 25% 115%,
+        color-mix(in srgb, var(--prism-glow) 34%, transparent),
+        transparent 70%
+      ),
+      var(--v-surface);
+  }
+
+  .prism-tone-1 {
+    --prism-front: linear-gradient(180deg, var(--iri-periwinkle), var(--iri-lilac) 55%, var(--iri-rose));
+    --prism-top: linear-gradient(90deg, var(--iri-pearl), var(--iri-periwinkle));
+    --prism-side: linear-gradient(180deg, var(--iri-lilac), var(--iri-deep));
+    --prism-glow: var(--iri-lilac);
+  }
+  .prism-tone-2 {
+    --prism-front: linear-gradient(180deg, var(--iri-rose), var(--iri-pearl) 50%, var(--iri-mint));
+    --prism-top: linear-gradient(90deg, var(--iri-rose), var(--iri-lilac));
+    --prism-side: linear-gradient(180deg, var(--iri-haze), var(--iri-deep));
+    --prism-glow: var(--iri-rose);
+  }
+  .prism-tone-3 {
+    --prism-front: linear-gradient(180deg, var(--iri-mint), var(--iri-pearl) 55%, var(--iri-lilac));
+    --prism-top: linear-gradient(90deg, var(--iri-mint), var(--iri-pearl));
+    --prism-side: linear-gradient(180deg, var(--iri-mint), var(--iri-dusk));
+    --prism-glow: var(--iri-mint);
+  }
+  .prism-tone-4 {
+    --prism-front: linear-gradient(180deg, var(--iri-pearl), var(--iri-rose) 55%, var(--iri-lilac));
+    --prism-top: linear-gradient(90deg, var(--iri-pearl), var(--iri-rose));
+    --prism-side: linear-gradient(180deg, var(--iri-rose), var(--iri-deep));
+    --prism-glow: var(--iri-periwinkle);
+  }
+
+  .scene-lift {
+    transition: transform 850ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .group:hover .scene-lift {
+    transform: scale(1.035) translateY(-4px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .group:hover .scene-lift {
+      transform: none;
+    }
+  }
+}
