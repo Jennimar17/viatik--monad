@@ -1,9 +1,12 @@
 import { cn } from '@/lib/utils'
 
-import { MonadLayersScene } from '@/components/site/illustrations/scenes'
-import { VerifiedDetailsPreview } from '@/components/site/previews/verified-details-preview'
 import { Container, Section, SectionIntro } from '@/components/site/chrome/section'
+import { MonadLayersScene } from '@/components/site/illustrations/scenes'
+import { MonadSpeed } from '@/components/site/sections/monad-speed'
+import { KeyValueList } from '@/components/viatik/layout'
+import { StatusBadge } from '@/components/viatik/status'
 import { monad } from '@/components/site/content/landing-content'
+import { verifiedRelease } from '@/components/site/content/product-demo'
 
 export function MonadSection() {
   return (
@@ -19,85 +22,35 @@ export function MonadSection() {
           <MonadLayersScene className="mx-auto h-64 w-full max-w-sm sm:h-72 lg:col-span-4 lg:col-start-9 lg:h-80 lg:max-w-none" />
         </div>
 
-        <div className="grid gap-10 lg:grid-cols-12 lg:items-start lg:gap-12">
-          <div className="lg:col-span-7">
-            <LayerGrid />
-          </div>
-          <div className="lg:col-span-5">
-            <VerifiedDetailsPreview />
-          </div>
+        <div className="grid gap-4 lg:grid-cols-12 lg:gap-6">
+          <MonadSpeed className="lg:col-span-7" />
+          <VerifiedRecord className="lg:col-span-5" />
         </div>
       </Container>
     </Section>
   )
 }
 
-/**
- * Two aligned layers read as paired rows: what the user sees on the left,
- * what Viatik coordinates for that step on the right.
- */
-function LayerGrid() {
-  const pairs = monad.userLayer.items.map(
-    (item, index) => [item, monad.systemLayer.items[index] ?? ''] as const,
-  )
-
+/** The one place network details appear: the record behind a tranche release. */
+function VerifiedRecord({ className }: { className?: string }) {
   return (
-    <div className="flex flex-col gap-3">
-      <div
-        aria-label="What users see, paired with what Viatik coordinates"
-        role="group"
-        className="grain grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border"
-      >
-        <LayerCell layer="user" header>
-          {monad.userLayer.title}
-        </LayerCell>
-        <LayerCell layer="system" header>
-          {monad.systemLayer.title}
-        </LayerCell>
-        {pairs.map(([user, system]) => (
-          <LayerPair key={user} user={user} system={system} />
-        ))}
+    <div className={cn('theme-dark product-frame flex flex-col gap-5 p-5 sm:p-7', className)}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-0.5">
+          <p className="text-xs text-subtle">{monad.verified.label}</p>
+          <p className="text-base font-medium text-foreground">{verifiedRelease.operation}</p>
+        </div>
+        <StatusBadge status={verifiedRelease.status} />
       </div>
-      <p className="text-xs text-subtle">
-        Users work in the left column. Viatik coordinates the right column without exposing it.
+      <KeyValueList
+        items={verifiedRelease.rows.map((row) => ({
+          label: row.label,
+          value: row.mono ? <code className="font-mono text-xs">{row.value}</code> : row.value,
+        }))}
+      />
+      <p className="mt-auto border-t border-border pt-4 text-xs text-pretty text-subtle">
+        {monad.verified.note}
       </p>
-    </div>
-  )
-}
-
-function LayerPair({ user, system }: { user: string; system: string }) {
-  return (
-    <>
-      <LayerCell layer="user">{user}</LayerCell>
-      <LayerCell layer="system">{system}</LayerCell>
-    </>
-  )
-}
-
-function LayerCell({
-  layer,
-  header = false,
-  children,
-}: {
-  layer: 'user' | 'system'
-  header?: boolean
-  children: string
-}) {
-  return (
-    <div
-      className={cn(
-        'flex min-h-14 items-center gap-2.5 px-4 py-3 text-sm sm:px-5',
-        layer === 'user' ? 'bg-card text-foreground' : 'bg-background text-muted-foreground',
-        header && 'text-xs font-medium tracking-[0.06em] text-subtle uppercase',
-      )}
-    >
-      {!header ? (
-        <span
-          aria-hidden="true"
-          className={cn('size-1.5 shrink-0', layer === 'user' ? 'bg-violet' : 'border border-subtle')}
-        />
-      ) : null}
-      <span className="text-pretty">{children}</span>
     </div>
   )
 }

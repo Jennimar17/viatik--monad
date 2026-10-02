@@ -13,10 +13,6 @@ export const siteConfig = {
   ogDescription:
     'Viatik connects funding agreements, capital releases, budgets, payments, and evidence in one verifiable flow.',
   statement: 'Programmable funding infrastructure for modern teams.',
-  // Configuration placeholder for the fictional "View in explorer" control in
-  // the Verified details preview. Leave null to render it as a disabled demo
-  // control instead of linking to a fabricated transaction.
-  explorerUrl: null as string | null,
   routes: {
     demo: '/sign-in',
     signIn: '/sign-in',
@@ -29,9 +25,8 @@ export type NavItem = { label: string; href: `#${string}` | Route; external?: bo
 
 /**
  * A page that is planned but not built yet. It is listed so the information
- * architecture is visible, and rendered as plain text marked "Soon". When the
- * page ships, replace `planned` with `href` and typed routes will check it.
- * docs/site-roadmap.md describes each one.
+ * architecture is visible, and rendered like a link that cannot be followed.
+ * When the page ships, replace `planned` with `href`; typed routes check it.
  */
 export type PlannedItem = { label: string; planned: string }
 
@@ -101,4 +96,14 @@ export const footerNav: { heading: string; items: FooterItem[] }[] = [
       { label: 'Terms', href: '/terms' },
     ],
   },
+]
+
+export type SocialNetwork = 'x' | 'discord' | 'github' | 'telegram'
+
+/** Social profiles, not live yet: shown in the footer without links. */
+export const socials: { network: SocialNetwork; label: string }[] = [
+  { network: 'x', label: 'X' },
+  { network: 'discord', label: 'Discord' },
+  { network: 'github', label: 'GitHub' },
+  { network: 'telegram', label: 'Telegram' },
 ]

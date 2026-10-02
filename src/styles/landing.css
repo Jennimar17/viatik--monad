@@ -1,0 +1,196 @@
+/*
+ * Landing-only layer: the iridescent illustration palette, surfaces for
+ * isometric scenes, the frame that hosts real product components, and the
+ * motion used by the hero, the capital stack, Monad's block stream and the
+ * closing.
+ *
+ * The iridescent palette is derived from the brand tokens in tokens.css, not
+ * added beside them. Each colour keeps a brand hue in OKLCH and only lifts its
+ * chroma, so the gradients read as the brand catching light:
+ *   lilac       stone hue (312.5), chroma ×3.2
+ *   rose        stone hue +28, chroma ×3
+ *   mint        sage hue (146.6), chroma ×2.6
+ *   periwinkle  mist hue (286.2), chroma 0.08
+ *   pearl       mist
+ *   haze / dusk / deep  plum hue (314.9), lightness raised
+ * These colours decorate illustrations only. Interface states keep using the
+ * status tokens.
+ */
+
+:root {
+  --iri-lilac: #c09bd6;
+  --iri-rose: #d89dc3;
+  --iri-mint: #a4dda8;
+  --iri-periwinkle: #b9b7f0;
+  --iri-pearl: var(--brand-mist);
+  --iri-paper: var(--brand-paper);
+  --iri-haze: #836a8f;
+  --iri-dusk: #543f5d;
+  --iri-deep: #3c1f49;
+  --iri-night: var(--brand-plum);
+  --iri-edge: color-mix(in srgb, var(--brand-mist) 38%, transparent);
+}
+
+@layer components {
+  /* Thin plan lines behind isometric scenes. */
+  .blueprint-grid {
+    background-color: var(--brand-plum);
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--brand-mist) 6%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--brand-mist) 6%, transparent) 1px, transparent 1px);
+    background-size: 32px 32px;
+    background-position: -1px -1px;
+  }
+
+  /* Plan lines only, fading out from the centre; for layering over other fills. */
+  .blueprint-lines {
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--brand-mist) 7%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--brand-mist) 7%, transparent) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 20%, transparent 75%);
+  }
+
+  /* A stronger film grain for illustrated surfaces (pairs with `.grain`). */
+  .grain-strong::after {
+    opacity: 0.42;
+  }
+
+  /* Soft pools of iridescent light behind a dark surface. */
+  .aurora {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+  }
+  .aurora::before {
+    content: '';
+    position: absolute;
+    inset: -25%;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        30% 36% at 22% 28%,
+        color-mix(in srgb, var(--iri-lilac) 55%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        26% 32% at 80% 22%,
+        color-mix(in srgb, var(--iri-mint) 32%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        34% 38% at 64% 84%,
+        color-mix(in srgb, var(--iri-periwinkle) 42%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        24% 28% at 12% 88%,
+        color-mix(in srgb, var(--iri-rose) 34%, transparent),
+        transparent 70%
+      );
+    filter: blur(36px);
+    animation: aurora-drift 26s ease-in-out infinite alternate;
+  }
+
+  /*
+   * Hosts real product components on the landing. The product's denser
+   * caption, monospace face and status hues are switched on here only, so the
+   * components look exactly as they do in the app (see dashboard.css, where
+   * the same variables switch for the whole document under `.app-theme`).
+   * Pair with `theme-dark`.
+   */
+  .product-frame {
+    --v-text-xs: 0.75rem;
+    --v-font-mono: var(--font-jetbrains), ui-monospace, 'SFMono-Regular', Menlo, monospace;
+    --v-warning: #e5c48f;
+    --v-danger: #eda3a8;
+    border: 1px solid color-mix(in srgb, var(--brand-mist) 14%, transparent);
+    border-radius: 1.25rem;
+    background:
+      radial-gradient(
+        36rem 18rem at 0% 0%,
+        color-mix(in srgb, var(--brand-stone) 12%, transparent),
+        transparent 70%
+      ),
+      var(--brand-plum);
+    color: var(--v-text);
+    box-shadow:
+      0 40px 90px -40px rgb(0 0 0 / 0.6),
+      inset 0 1px 0 color-mix(in srgb, var(--brand-mist) 10%, transparent);
+  }
+
+  /* Iridescent fill for the closing wordmark. */
+  .wordmark-iri {
+    background-image: linear-gradient(
+      100deg,
+      var(--iri-periwinkle),
+      var(--iri-lilac) 28%,
+      var(--iri-rose) 48%,
+      var(--iri-pearl) 64%,
+      var(--iri-mint) 86%
+    );
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Hero steps arrive one after another (delays are set inline). */
+  .hero-step {
+    animation: editorial-arrive 1s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+
+  .scene-fade {
+    transition: opacity 600ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+
+  /* Capital stack: the selected layer lifts; capital drips down its edge. */
+  .stack-layer {
+    transition: transform 700ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .capital-drop {
+    animation: capital-drop 3.2s cubic-bezier(0.5, 0, 0.75, 0) infinite;
+  }
+
+  /* Monad block stream. */
+  .block-tile {
+    transition:
+      transform 360ms cubic-bezier(0.2, 0.7, 0.2, 1),
+      opacity 360ms ease;
+  }
+
+  @keyframes aurora-drift {
+    from {
+      transform: translate3d(-2%, -1%, 0) scale(1);
+    }
+    to {
+      transform: translate3d(2%, 2%, 0) scale(1.06);
+    }
+  }
+  @keyframes capital-drop {
+    0% {
+      opacity: 0;
+      transform: translateY(0);
+    }
+    12% {
+      opacity: 1;
+    }
+    88% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(var(--drop, 120px));
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .aurora::before,
+    .hero-step,
+    .capital-drop {
+      animation: none;
+    }
+    .capital-drop {
+      opacity: 0;
+    }
+  }
+}

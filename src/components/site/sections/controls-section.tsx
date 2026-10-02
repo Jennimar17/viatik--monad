@@ -1,21 +1,29 @@
 'use client'
 
-import type { ComponentType } from 'react'
 import { Tabs } from '@base-ui/react/tabs'
+import { ShieldCheckIcon } from 'lucide-react'
 
-import { Badge } from '@/components/ui/badge'
 import { Container, Eyebrow, Lede, PointList, Section } from '@/components/site/chrome/section'
-import { BudgetPolicyPreview } from '@/components/site/previews/budget-policy-preview'
-import { FundingAgreementPreview } from '@/components/site/previews/funding-agreement-preview'
-import { ReconciliationPreview } from '@/components/site/previews/reconciliation-preview'
-import { ViatikLogo } from '@/components/viatik/viatik-logo'
+import { Amount } from '@/components/viatik/amount'
+import { BudgetCard, CapitalTrail, FundingProgress, MilestoneTimeline } from '@/components/viatik/finance'
+import { KeyValueList } from '@/components/viatik/layout'
+import { PolicySummary, PolicyVerdict } from '@/components/viatik/policy'
+import { StatusBadge } from '@/components/viatik/status'
+import { ViatikMark } from '@/components/viatik/viatik-logo'
 import { controls, type ControlTab } from '@/components/site/content/landing-content'
-
-const previews: Record<ControlTab['id'], ComponentType> = {
-  agreements: FundingAgreementPreview,
-  budgets: BudgetPolicyPreview,
-  reconciliation: ReconciliationPreview,
-}
+import {
+  agreementTerms,
+  approvedPayment,
+  budget,
+  budgetRules,
+  capital,
+  milestones,
+  receipt,
+  reviewPayment,
+  story,
+  trail,
+  tranches,
+} from '@/components/site/content/product-demo'
 
 /**
  * Agreements, budgets, reconciliation and the security model in one place:
@@ -58,35 +66,32 @@ export function ControlsSection() {
             ))}
           </Tabs.List>
 
-          {controls.tabs.map((tab) => {
-            const Preview = previews[tab.id]
-            return (
-              <Tabs.Panel
-                key={tab.id}
-                value={tab.id}
-                className="grid animate-in gap-10 duration-300 fade-in-0 outline-none slide-in-from-bottom-1 lg:grid-cols-12 lg:gap-12"
-              >
-                <div className="flex flex-col gap-6 lg:col-span-4">
-                  <h3 className="font-display text-2xl font-medium text-balance text-foreground md:text-3xl">
-                    {tab.heading}
-                  </h3>
-                  <p className="text-lg text-pretty text-muted-foreground">{tab.body}</p>
-                  <PointList points={tab.points} />
+          {controls.tabs.map((tab) => (
+            <Tabs.Panel
+              key={tab.id}
+              value={tab.id}
+              className="grid animate-in gap-10 duration-300 fade-in-0 outline-none slide-in-from-bottom-1 lg:grid-cols-12 lg:gap-12"
+            >
+              <div className="flex flex-col gap-6 lg:col-span-4">
+                <h3 className="font-display text-2xl font-medium text-balance text-foreground md:text-3xl">
+                  {tab.heading}
+                </h3>
+                <p className="text-lg text-pretty text-muted-foreground">{tab.body}</p>
+                <PointList points={tab.points} />
+              </div>
+              <div className="theme-dark product-frame @container min-w-0 overflow-hidden lg:col-span-8">
+                <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-xs text-subtle">
+                  <ViatikMark className="size-5" />
+                  <span>{story.agency}</span>
+                  <span aria-hidden="true">/</span>
+                  <span className="text-foreground">{tab.crumb}</span>
                 </div>
-                <div className="product-stage grain min-w-0 p-3 sm:p-5 lg:col-span-8">
-                  <div className="theme-light overflow-hidden rounded-xl bg-background text-foreground">
-                    <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
-                      <ViatikLogo href="" tone="dark" />
-                      <Badge variant="outline">Product preview</Badge>
-                    </div>
-                    <div className="p-3 sm:p-4">
-                      <Preview />
-                    </div>
-                  </div>
+                <div className="p-3 sm:p-5">
+                  <ControlPanel id={tab.id} />
                 </div>
-              </Tabs.Panel>
-            )
-          })}
+              </div>
+            </Tabs.Panel>
+          ))}
         </Tabs.Root>
 
         <div
@@ -113,4 +118,70 @@ export function ControlsSection() {
       </Container>
     </Section>
   )
+}
+
+/** The real product surfaces behind each control, fed with the demo's story. */
+function ControlPanel({ id }: { id: ControlTab['id'] }) {
+  switch (id) {
+    case 'agreements':
+      return (
+        <div className="grid gap-3 @2xl:grid-cols-2">
+          <div className="surface flex flex-col gap-5 rounded-xl p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-col gap-0.5">
+                <p className="text-sm font-medium text-foreground">{story.agreement}</p>
+                <p className="text-xs text-subtle">Funding agreement</p>
+              </div>
+              <StatusBadge status={{ label: 'Active', tone: 'success' }} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <p className="text-xs text-subtle">Commitment</p>
+              <Amount value={capital.committed} size="lg" />
+            </div>
+            <FundingProgress segments={tranches} />
+            <KeyValueList dense items={agreementTerms} />
+          </div>
+          <div className="surface flex flex-col gap-4 rounded-xl p-5">
+            <p className="text-sm font-medium text-foreground">Milestones</p>
+            <MilestoneTimeline items={milestones} />
+          </div>
+        </div>
+      )
+    case 'budgets':
+      return (
+        <div className="grid gap-3 @2xl:grid-cols-2">
+          <div className="flex flex-col gap-3">
+            <BudgetCard {...budget} />
+            <div className="surface rounded-xl p-5">
+              <PolicySummary lines={budgetRules} />
+            </div>
+          </div>
+          <div className="flex flex-col gap-3">
+            <PolicyVerdict decision={approvedPayment} perspective="reviewer" />
+            <PolicyVerdict decision={reviewPayment} perspective="reviewer" showChecks={false} />
+          </div>
+        </div>
+      )
+    case 'reconciliation':
+      return (
+        <div className="flex flex-col gap-3">
+          <CapitalTrail steps={trail} />
+          <div className="surface grid gap-5 rounded-xl p-5 @2xl:grid-cols-[1fr_1.2fr]">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium text-foreground">Payment receipt</p>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-success/40 bg-success-soft px-2.5 py-0.5 text-xs font-medium text-success">
+                  <ShieldCheckIcon className="size-3.5" aria-hidden="true" /> Verified
+                </span>
+              </div>
+              <Amount value={receipt.amount} size="lg" />
+              <p className="text-xs text-subtle">
+                {receipt.number} · {receipt.description}
+              </p>
+            </div>
+            <KeyValueList dense items={receipt.rows} />
+          </div>
+        </div>
+      )
+  }
 }

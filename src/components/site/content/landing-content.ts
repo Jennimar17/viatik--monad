@@ -74,82 +74,84 @@ export const howItWorks = {
   ] satisfies FlowStage[],
 }
 
-export type RolePillar = {
-  id: string
+export type RoleId = 'investor' | 'agency-admin' | 'member' | 'ai-agent'
+
+export type RoleLayer = {
+  id: RoleId
   number: string
   label: string
-  lede: string
+  heading: string
+  body: string
   bestFitFor: string
   features: string[]
-  stat: { label: string; value: string; note: string }
   cta: { label: string; role: DemoRole }
 }
 
 export const roles = {
   eyebrow: 'Product',
-  heading: 'One flow. Four ways in.',
-  body: 'Investors set the boundaries, Agencies run the capital, Members spend within it, and AI Agents work on a budget.',
+  heading: 'One flow. Four layers of control.',
+  body: 'Capital moves down the stack: Investors set the boundaries, Agencies run the capital, Members spend within it, and AI Agents work on a budget.',
   items: [
     {
       id: 'investor',
       number: '01',
       label: 'Investor',
-      lede: 'Deploy capital without losing the trail. Release milestone-based tranches and review exceptions across every Agency from one portfolio.',
+      heading: 'Deploy capital without losing the trail',
+      body: 'Release milestone-based tranches and review exceptions across every Agency from one portfolio.',
       bestFitFor: 'Funds, angels, grant programs, and studios backing several teams at once.',
       features: [
         'Funding agreements with milestones',
         'Releases tied to reviewed evidence',
         'One capital trail per Agency',
       ],
-      stat: { label: 'Capital released', value: '$50,000', note: 'of $100,000 committed' },
       cta: { label: 'Explore the Investor view', role: 'investor' },
     },
     {
       id: 'agency-admin',
       number: '02',
       label: 'Agency Admin',
-      lede: 'Turn released capital into accounts, budgets, and payments without breaking the rules the Investor set.',
+      heading: 'Turn released capital into operations',
+      body: 'Create accounts, budgets, and payments without breaking the rules the Investor set.',
       bestFitFor: 'Studios, agencies, and startups operating funded work for someone else.',
       features: [
         'Accounts and budgets per project',
         'Team payments and vendor bills',
         'Reconciliation with evidence attached',
       ],
-      stat: { label: 'Latest release', value: '$25,000', note: 'Tranche 2 of 4 · Prototype delivered' },
       cta: { label: 'Explore the Agency view', role: 'agency-admin' },
     },
     {
       id: 'member',
       number: '03',
       label: 'Member',
-      lede: 'Know what you can spend before you spend it. Request funds, pay approved services, and upload receipts without handling wallets or gas.',
+      heading: 'Know what you can spend before you spend it',
+      body: 'Request funds, pay approved services, and upload receipts without handling wallets or gas.',
       bestFitFor: 'Contributors, contractors, and team leads spending on behalf of an Agency.',
       features: [
         'A clear allowance with its rules',
         'Funding requests in plain language',
         'A receipt on every payment',
       ],
-      stat: { label: 'Available to spend', value: '$380', note: 'of $500 this month' },
       cta: { label: 'Explore the Member view', role: 'member' },
     },
     {
       id: 'ai-agent',
       number: '04',
       label: 'AI Agents',
-      lede: 'Give automation a budget, not unlimited access. Every automated payment follows provider rules and leaves a decision record.',
+      heading: 'Give automation a budget, not unlimited access',
+      body: 'Every automated payment follows provider rules and leaves a decision record.',
       bestFitFor: 'Teams paying for APIs, data, and compute through agents.',
       features: ['Per-operation and daily limits', 'Approved providers only', 'Emergency pause and expiry'],
-      stat: { label: 'Daily limit', value: '$50', note: 'Up to $5 per operation' },
       cta: { label: 'See it in the Agency view', role: 'agency-admin' },
     },
-  ] satisfies RolePillar[],
+  ] satisfies RoleLayer[],
 }
 
 export type UseCase = {
   id: UseCaseSceneId
   title: string
   caption: string
-  body?: string
+  body: string
   role: DemoRole
 }
 
@@ -157,7 +159,6 @@ export const useCases = {
   eyebrow: 'Use cases',
   heading: 'Built for whoever funds the work',
   body: 'The same flow fits any arrangement where one side provides capital and the other operates it.',
-  featuredLabel: 'Featured',
   items: [
     {
       id: 'studios',
@@ -166,21 +167,42 @@ export const useCases = {
       body: 'Back several teams at once and release each tranche when its milestone is proven.',
       role: 'investor',
     },
-    { id: 'grants', title: 'Grant programs', caption: 'Evidence-gated releases', role: 'investor' },
-    { id: 'ecosystems', title: 'Ecosystem funds', caption: 'Settled on Monad', role: 'investor' },
+    {
+      id: 'grants',
+      title: 'Grant programs',
+      caption: 'Evidence-gated releases',
+      body: 'Pay grantees as deliverables land, with the evidence attached to every release.',
+      role: 'investor',
+    },
+    {
+      id: 'ecosystems',
+      title: 'Ecosystem funds',
+      caption: 'Settled on Monad',
+      body: 'Fund builders with programmable controls and receipts anyone can verify.',
+      role: 'investor',
+    },
     {
       id: 'agencies',
       title: 'Agencies & studios',
       caption: 'Budgets and vendor bills',
+      body: 'Turn a client commitment into budgets for people, tools, and vendors.',
       role: 'agency-admin',
     },
-    { id: 'teams', title: 'Distributed teams', caption: 'Allowances, not shared wallets', role: 'member' },
+    {
+      id: 'teams',
+      title: 'Distributed teams',
+      caption: 'Allowances, not shared wallets',
+      body: 'Give every contributor a clear allowance instead of a shared card or wallet.',
+      role: 'member',
+    },
   ] satisfies UseCase[],
 }
 
 export type ControlTab = {
   id: 'agreements' | 'budgets' | 'reconciliation'
   tab: string
+  /** Where the panel would live in the app, shown in the frame's breadcrumb. */
+  crumb: string
   heading: string
   body: string
   points: string[]
@@ -194,6 +216,7 @@ export const controls = {
     {
       id: 'agreements',
       tab: 'Funding agreements',
+      crumb: 'Funding',
       heading: 'Funding conditions travel with the capital',
       body: 'Set the commitment, schedule, milestones, evidence requirements, and approval thresholds for each Agency.',
       points: [
@@ -205,6 +228,7 @@ export const controls = {
     {
       id: 'budgets',
       tab: 'Budgets & policies',
+      crumb: 'Budgets',
       heading: 'Budgets with the rules attached',
       body: 'Released funding becomes accounts and budgets for people, tools, vendors, and controlled automation.',
       points: [
@@ -216,6 +240,7 @@ export const controls = {
     {
       id: 'reconciliation',
       tab: 'Reconciliation',
+      crumb: 'Bills & receipts',
       heading: 'A payment is complete when the record is',
       body: 'Bills, payments, receipts, and supporting evidence stay linked in a single reconciliation trail.',
       points: ['Suggested payment matches', 'Required receipt reminders', 'Optional verification on Monad'],
@@ -245,22 +270,22 @@ export const monad = {
   eyebrow: 'Built on Monad',
   heading: 'Blockchain where it matters. Financial software everywhere else.',
   body: 'Viatik uses Monad for settlement, programmable controls, and verifiable receipts while keeping wallets, gas, contract calls, and network operations behind the product experience.',
-  userLayer: {
-    title: 'What users see',
-    items: ['Sign in', 'Funding agreement', 'Available balance', 'Budget', 'Payment', 'Receipt'],
-  },
-  systemLayer: {
-    title: 'What Viatik coordinates',
-    items: [
-      'Embedded accounts',
-      'Sponsored operations',
-      'Policy enforcement',
-      'Onchain settlement',
-      'Evidence hashes',
-      'Verifiable events',
+  speed: {
+    title: 'Block by block',
+    caption: 'Simulated at 400 ms per block',
+    tranche: 'Tranche release · 25,000.00 USDC',
+    stats: [
+      { value: '10,000', label: 'Transactions per second' },
+      { value: '0.4 s', label: 'Block time' },
+      { value: '0.8 s', label: 'Finality' },
+      { value: 'EVM', label: 'Bytecode compatible' },
     ],
+    note: 'Network figures as published by Monad.',
   },
-  note: 'Demo data shown.',
+  verified: {
+    label: 'Verified details',
+    note: 'Anyone can check this record onchain. Private documents never leave Viatik.',
+  },
 }
 
 export const faq = {
@@ -304,11 +329,12 @@ export const faq = {
   ],
 }
 
-export const finalCta = {
+export const closing = {
+  eyebrow: 'Get started',
   heading: 'Put capital to work without losing the trail',
   body: 'Open the demo and follow one tranche from commitment to completed payment, from each side of the agreement.',
   primary: 'Open the demo',
-  rolesLabel: 'Or start as',
+  rolesLabel: 'or start as',
   roles: [
     { role: 'investor', label: 'Investor' },
     { role: 'agency-admin', label: 'Agency Admin' },
@@ -320,5 +346,4 @@ export const footer = {
   copyright: '© 2026 Viatik. All rights reserved.',
   builtOn: 'Built on Monad',
   hackathon: 'Built for Monad Metropolis · Consumer Products & Payments',
-  planned: 'Soon',
 }

@@ -1,7 +1,7 @@
 import { ArrowDownRightIcon, ArrowRightIcon, ShieldCheckIcon } from 'lucide-react'
 
 import { buttonVariants } from '@/components/ui/button'
-import { HeroCapitalFlow } from '@/components/site/hero/hero-capital-flow'
+import { HeroVisual } from '@/components/site/hero/hero-visual'
 import { Container, Eyebrow } from '@/components/site/chrome/section'
 import { hero } from '@/components/site/content/landing-content'
 import { siteConfig } from '@/components/site/content/site'
@@ -47,7 +47,7 @@ export function HeroSection() {
         </div>
 
         <div className="min-w-0 lg:col-span-6">
-          <HeroCapitalFlow />
+          <HeroVisual />
         </div>
       </Container>
       <Container>

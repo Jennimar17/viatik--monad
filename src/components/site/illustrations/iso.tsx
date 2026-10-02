@@ -31,7 +31,7 @@ export type IsoBoxSpec = {
   float?: 'slow' | 'fast'
 }
 
-function project([x, y, z]: Point): [number, number] {
+export function project([x, y, z]: Point): [number, number] {
   return [(x - y) * COS, (x + y) * SIN - z]
 }
 
@@ -68,7 +68,7 @@ function corners({ x, y, z = 0, w, d, h }: IsoBoxSpec) {
   }
 }
 
-function IsoBox({ spec }: { spec: IsoBoxSpec }) {
+export function IsoBox({ spec }: { spec: IsoBoxSpec }) {
   const tone = spec.tone ?? 'iri'
   const face = corners(spec)
   const { x, y, z = 0, w, d, h } = spec
@@ -91,7 +91,7 @@ function IsoBox({ spec }: { spec: IsoBoxSpec }) {
 }
 
 /** Fits a padded viewBox around every corner of every box. */
-function viewBoxFor(boxes: IsoBoxSpec[], pad: number) {
+export function viewBoxFor(boxes: IsoBoxSpec[], pad: number) {
   let minX = Infinity
   let minY = Infinity
   let maxX = -Infinity

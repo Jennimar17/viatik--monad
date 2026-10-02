@@ -158,3 +158,20 @@ const layers: IsoBoxSpec[] = [
 export function MonadLayersScene({ className }: SceneProps) {
   return <IsoScene boxes={layers} className={className} pad={10} />
 }
+
+// Hero: tranches rising as steps, capital lifting off towards the payment.
+
+const heroFlow: IsoBoxSpec[] = [
+  { x: 100, y: -60, z: 150, w: 14, d: 14, h: 14, tone: 'pearl', float: 'slow' },
+  { x: 0, y: 0, z: -12, w: 196, d: 132, h: 12, tone: 'plum' },
+  { x: 14, y: 18, w: 38, d: 96, h: 18, tone: 'lilac' },
+  { x: 58, y: 18, w: 38, d: 96, h: 40, tone: 'iri' },
+  { x: 102, y: 18, w: 38, d: 96, h: 62, tone: 'glass' },
+  { x: 146, y: 18, w: 38, d: 96, h: 84, tone: 'glass' },
+  { x: 70, y: -16, z: 70, w: 14, d: 14, h: 14, tone: 'mint', float: 'fast' },
+  { x: 112, y: -34, z: 118, w: 11, d: 11, h: 11, tone: 'rose', float: 'slow' },
+]
+
+export function HeroFlowScene({ className }: SceneProps) {
+  return <IsoScene boxes={heroFlow} className={className} pad={10} />
+}
