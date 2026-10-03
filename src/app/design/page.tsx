@@ -619,7 +619,14 @@ export default function DesignPage() {
             { label: 'Policy applied', value: 'Within the per-operation limit' },
             { label: 'Receipt hash', value: '0x4e6a8c0b2d…d2f4a6c', mono: true },
           ]}
-          evidence={[{ id: 'ev_sample', name: 'vertex-invoice-0917.pdf', label: 'vertex-invoice-0917.pdf', fingerprint: '9f2c41ab77e0d5c3b8a1' }]}
+          evidence={[
+            {
+              id: 'ev_sample',
+              name: 'vertex-invoice-0917.pdf',
+              label: 'vertex-invoice-0917.pdf',
+              fingerprint: '9f2c41ab77e0d5c3b8a1',
+            },
+          ]}
         />
       </Section>
 

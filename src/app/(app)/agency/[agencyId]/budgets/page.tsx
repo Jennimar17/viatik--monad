@@ -10,7 +10,7 @@ import { BudgetCard, KpiTile } from '@/components/viatik/finance'
 import { HairlineGrid, PageHeader } from '@/components/viatik/layout'
 import { useViatikState } from '@/data/react'
 import { budgetPeriodLabel } from '@/domain/labels'
-import { formatUsd, sum } from '@/domain/money'
+import { formatUsd, sum, type Cents } from '@/domain/money'
 import { accountName, holderName } from '@/domain/queries'
 import { budgetUsage } from '@/domain/selectors'
 import { budgetStatus } from '@/domain/status'
@@ -80,7 +80,8 @@ export default function BudgetsPage() {
                     source={accountName(state, budget.sourceAccountId)}
                     period={budgetPeriodLabel[budget.period]}
                     status={budgetStatus[budget.status]}
-                    allocated={usage.balance}
+                    // The card subtracts spending itself; the balance already has it taken out.
+                    allocated={(usage.balance + usage.spentThisPeriod) as Cents}
                     spent={usage.spentThisPeriod}
                     reserved={usage.reserved}
                     assignees={holders.map((h) => ({

@@ -1,6 +1,6 @@
 import type { CommandInput, CommandName, CommandResult } from '@/domain/engine'
 import { agreementCapital, accountBalance, budgetAvailable } from '@/domain/selectors'
-import type { Actor, Id, PaymentRequest, ViatikState } from '@/domain/types'
+import type { Actor, Id, PaymentRequest, PolicyRuleId, ViatikState } from '@/domain/types'
 import type { LedgerAdapter, LedgerResult } from '@/ledger/types'
 
 /**
@@ -30,11 +30,25 @@ type PlanArgs<N extends CommandName> = {
 const actorId = (actor: Actor): Id =>
   actor.kind === 'user' ? actor.userId : actor.kind === 'ai_agent' ? actor.agentId : 'system'
 
-/** Payments created by the command, each captured on the ledger. */
+/**
+ * Payments the command completed, each captured on the ledger. A scheduled
+ * payment moves no money yet, so it is settled when it runs, not when it is created.
+ */
 function newPayments(before: ViatikState, after: ViatikState) {
   const known = new Set(before.payments.map((p) => p.id))
-  return after.payments.filter((p) => !known.has(p.id))
+  return after.payments.filter((p) => !known.has(p.id) && p.status === 'completed')
 }
+
+/**
+ * Budget rules the settlement contract enforces itself. A request rejected
+ * for any other rule is never sent to the ledger, where it would place a hold.
+ */
+const LEDGER_RULES: ReadonlySet<PolicyRuleId> = new Set([
+  'budget_active',
+  'destination_allowed',
+  'per_operation_limit',
+  'budget_available',
+])
 
 function captureAll(args: PlanArgs<CommandName>, base: { idempotencyKey: string; actorId: Id }) {
   return async (ledger: LedgerAdapter): Promise<LedgerResult | null> => {
@@ -190,6 +204,22 @@ export function planSettlement<N extends CommandName>(args: PlanArgs<N>): Settle
       ) as typeof budget.perOperationLimit
       const destinationId = request.destination.destinationId
       const capture = captureAll(generic, base)
+      const rejectedBy = request.status === 'rejected' ? request.decision.reason?.rule : undefined
+      if (request.status === 'rejected' && (!rejectedBy || !LEDGER_RULES.has(rejectedBy))) {
+        // Kept in the history and answered as a failure, like a contract rejection.
+        return {
+          keepOnFailure: true,
+          settle: async () => ({
+            status: 'failed',
+            operationId: idempotencyKey,
+            error: {
+              code: 'policy_rejected',
+              message: request.decision.reason?.message ?? 'This request is outside the budget rules.',
+              retryable: false,
+            },
+          }),
+        }
+      }
       return {
         // The contract has the final word: a request the policy rejected is
         // submitted anyway so the ledger records the rejection.

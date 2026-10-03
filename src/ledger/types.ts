@@ -22,6 +22,8 @@ export type LedgerErrorCode =
   | 'network_unavailable'
   | 'sponsorship_unavailable'
   | 'not_configured'
+  /** A budget rule the contract does not check rejected it; nothing was sent to the ledger. */
+  | 'policy_rejected'
   | 'unknown'
 
 export type LedgerError = { code: LedgerErrorCode; message: string; retryable: boolean }

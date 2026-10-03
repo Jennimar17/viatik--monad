@@ -29,8 +29,8 @@ const copy = {
   member: {
     title: 'As a Member you spend within the limits assigned to you.',
     points: [
-      'Requests inside your limits are approved automatically.',
-      'Anything above your limits goes to your Agency Admin.',
+      'Requests within your auto-approval limit are approved automatically.',
+      'Above that limit, your Agency Admin decides; outside your limits, requests are not allowed.',
       'Upload receipts so every expense is reconciled.',
     ],
   },

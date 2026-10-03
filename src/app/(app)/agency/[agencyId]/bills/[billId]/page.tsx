@@ -289,8 +289,8 @@ export default function BillDetailPage() {
             hint={
               insufficient ? (
                 <>
-                  No account or budget holds {formatUsd(bill.amount, { withCode: true })} yet. Released funding
-                  lands in the Operations account first.{' '}
+                  No account or budget holds {formatUsd(bill.amount, { withCode: true })} yet. Released
+                  funding lands in the Operations account first.{' '}
                   <Link href={href('funding')} className="text-foreground underline-offset-4 hover:underline">
                     Go to Funding
                   </Link>

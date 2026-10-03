@@ -296,7 +296,8 @@ export default function BudgetDetailPage() {
             ) : (
               <div className="flex flex-col items-start gap-2">
                 <p className="text-sm text-pretty text-muted-foreground">
-                  The Agency has no payment destinations yet. Nobody can pay from this budget until you add one.
+                  The Agency has no payment destinations yet. Nobody can pay from this budget until you add
+                  one.
                 </p>
                 {can('send_payment') ? <AddDestinationButton agencyId={budget.agencyId} /> : null}
               </div>

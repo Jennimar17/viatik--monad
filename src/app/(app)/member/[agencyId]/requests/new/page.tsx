@@ -190,10 +190,8 @@ function NewRequest() {
             <p className="flex items-start gap-2.5 rounded-xl border border-border bg-card px-4 py-3 text-sm text-pretty text-muted-foreground">
               <ShieldX className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden="true" />
               <span>
-                <span className="font-medium text-foreground">
-                  The settlement contract rejected it as well.
-                </span>{' '}
-                Budget rules are enforced at settlement, not only in the app
+                <span className="font-medium text-foreground">Settlement refused it too.</span> Budget rules
+                are enforced when money moves, not only in the app
                 {command.error ? `: ${command.error}` : '.'}
               </span>
             </p>

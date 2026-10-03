@@ -184,7 +184,9 @@ export function EvidenceUploader({
   const update = (key: string, patch: (file: DraftFile) => DraftFile) => {
     if (!alive.current) return
     // A file removed meanwhile is not brought back.
-    onChange((list) => (list.some((f) => f.key === key) ? list.map((f) => (f.key === key ? patch(f) : f)) : list))
+    onChange((list) =>
+      list.some((f) => f.key === key) ? list.map((f) => (f.key === key ? patch(f) : f)) : list,
+    )
   }
   const startUpload = (key: string, file: File) => {
     if (!onUpload) return
@@ -255,7 +257,9 @@ export function EvidenceUploader({
   const remove = (removed: DraftFile) => {
     if (removed.key) sources.current.delete(removed.key)
     setProblem(null)
-    onChange((list) => list.filter((f) => f !== removed && (removed.key === undefined || f.key !== removed.key)))
+    onChange((list) =>
+      list.filter((f) => f !== removed && (removed.key === undefined || f.key !== removed.key)),
+    )
   }
 
   return (
@@ -344,7 +348,10 @@ export function EvidenceUploader({
       ) : null}
 
       {files.length > 0 ? (
-        <ul className="flex flex-col divide-y divide-border rounded-xl border border-border" aria-live="polite">
+        <ul
+          className="flex flex-col divide-y divide-border rounded-xl border border-border"
+          aria-live="polite"
+        >
           {files.map((file, index) => (
             <li key={file.key ?? `${file.name}-${index}`} className="flex flex-col gap-1 px-4 py-2.5">
               <div className="flex items-center gap-3">

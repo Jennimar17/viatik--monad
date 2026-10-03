@@ -21,7 +21,10 @@ function storage() {
     throw new ApiError(503, 'not_configured', 'File uploads are not available right now.')
   }
   const base = `${env.SUPABASE_URL.replace(/\/$/, '')}/storage/v1`
-  const auth = { authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, apikey: env.SUPABASE_SERVICE_ROLE_KEY }
+  const auth = {
+    authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+    apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+  }
   return { base, auth }
 }
 

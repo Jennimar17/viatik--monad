@@ -62,9 +62,8 @@ type Draft = {
   allowances: { key: string; holder: AllowanceDraft['holder']; periodLimit: Cents | null }[]
 }
 
-/** The demo walks through the Product Delivery budget, so the draft starts there. */
-function initialDraft(sourceAccountId: string | null): Draft {
-  const demo = publicEnv.NEXT_PUBLIC_DEMO_MODE
+/** The demo story walks through the Product Delivery budget, so its draft starts there. */
+function initialDraft(sourceAccountId: string | null, demo: boolean): Draft {
   return {
     sourceAccountId,
     template: 'project',
@@ -83,11 +82,13 @@ function initialDraft(sourceAccountId: string | null): Draft {
 }
 
 export default function NewBudgetPage() {
-  const { state, now } = useViatikState()
+  const { state, now, mode } = useViatikState()
   const { scopeId: agencyId } = useRole()
   const href = useHref()
   const router = useRouter()
   const create = useCommand('createBudget')
+  // Only the demo people get the story's prefilled budget; real accounts start blank.
+  const demoStory = publicEnv.NEXT_PUBLIC_DEMO_MODE && mode === 'demo'
   const [step, setStep] = React.useState(0)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [createdId, setCreatedId] = React.useState<string | null>(null)
@@ -97,7 +98,7 @@ export default function NewBudgetPage() {
   const destinations = state.destinations.filter((d) => d.agencyId === agencyId && d.status === 'approved')
 
   const [draft, setDraft] = React.useState<Draft>(() =>
-    initialDraft(accounts.find((a) => a.template === 'operations')?.id ?? null),
+    initialDraft(accounts.find((a) => a.template === 'operations')?.id ?? null, demoStory),
   )
   const update = (patch: Partial<Draft>) => setDraft((prev) => ({ ...prev, ...patch }))
   const source = accounts.find((a) => a.id === draft.sourceAccountId)

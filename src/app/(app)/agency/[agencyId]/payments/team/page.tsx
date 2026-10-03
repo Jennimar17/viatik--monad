@@ -92,12 +92,15 @@ export default function TeamPaymentsPage() {
     budgets.some((b) => b.id !== budget?.id && budgetUsage(state, b, now).available >= total)
   const error: React.ReactNode =
     total > available && available === 0 && !anotherSourceCovers ? (
-      <EmptySourceHint name={accountName(state, sourceAccountId ?? undefined)} fundingHref={href('funding')} />
-    ) : total > available
-      ? `Only ${formatUsd(available, { withCode: true })} available. ${anotherSourceCovers ? 'Lower the amounts or choose another source.' : 'Lower the amounts.'}`
-      : overLimit.length > 0 && budget
-        ? `${pluralize(overLimit.length, 'payment')} above ${budget.name}’s ${formatUsd(budget.perOperationLimit, { withCode: true })} per-operation limit.`
-        : undefined
+      <EmptySourceHint
+        name={accountName(state, sourceAccountId ?? undefined)}
+        fundingHref={href('funding')}
+      />
+    ) : total > available ? (
+      `Only ${formatUsd(available, { withCode: true })} available. ${anotherSourceCovers ? 'Lower the amounts or choose another source.' : 'Lower the amounts.'}`
+    ) : overLimit.length > 0 && budget ? (
+      `${pluralize(overLimit.length, 'payment')} above ${budget.name}’s ${formatUsd(budget.perOperationLimit, { withCode: true })} per-operation limit.`
+    ) : undefined
   const updateRow = (userId: string, patch: Partial<Row>) =>
     setRows((prev) => prev.map((r) => (r.userId === userId ? { ...r, ...patch } : r)))
 

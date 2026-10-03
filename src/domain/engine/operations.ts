@@ -1162,6 +1162,13 @@ export function reconcile(tx: Tx, input: { agencyId: Id; paymentId: Id; billId?:
         'validation',
         `The bill is ${usdText(bill.amount)} but the payment is ${usdText(payment.amount)}.`,
       )
+    // The payment must be the one that paid this vendor for this bill.
+    const toVendor =
+      payment.recipient.kind === 'destination' && payment.recipient.destinationId === bill.destinationId
+    if (!toVendor) throw new DomainError('validation', 'This payment did not go to the vendor on the bill.')
+    if ((payment.billId && payment.billId !== bill.id) || (bill.paymentId && bill.paymentId !== payment.id)) {
+      throw new DomainError('validation', 'This payment belongs to another bill.')
+    }
     bill.status = 'reconciled'
     bill.paymentId = payment.id
     evidenceIds.push(bill.document.id)

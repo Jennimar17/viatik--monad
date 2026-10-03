@@ -153,7 +153,11 @@ export default function AgreementDetailPage() {
             content: (
               <Panel
                 title="Release schedule"
-                description="Each tranche is released after its milestone is approved."
+                description={
+                  agreement.releaseModel === 'milestone'
+                    ? 'Each tranche is released after its milestone is approved.'
+                    : 'The Agency requests each tranche; you release it from Approvals.'
+                }
               >
                 <MilestoneTimelineFor
                   state={state}

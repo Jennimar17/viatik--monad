@@ -183,7 +183,7 @@ export function VerifiedDetailsList({
       </dl>
       {details.simulated ? (
         <p className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-xs text-subtle">
-          Demo ledger: these details are simulated and are not published on Monad yet.
+          Simulated details: this operation is not published on Monad yet.
         </p>
       ) : null}
       {details.simulated ? (

@@ -22,7 +22,10 @@ export async function sha256Hex(file: File): Promise<string> {
   try {
     content = await file.arrayBuffer()
   } catch {
-    throw new DataSourceError(`${file.name} could not be read. Remove it and choose it again.`, 'unreadable_file')
+    throw new DataSourceError(
+      `${file.name} could not be read. Remove it and choose it again.`,
+      'unreadable_file',
+    )
   }
   const digest = await crypto.subtle.digest('SHA-256', content)
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')

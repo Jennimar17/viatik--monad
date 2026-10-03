@@ -160,7 +160,10 @@ export class ApiDataSource implements DataSource {
       })
       // The bytes go straight to private storage; the API only checks them afterwards.
       const failed = () =>
-        new DataSourceError(`${file.name} could not be uploaded. Check your connection and try again.`, 'upload_failed')
+        new DataSourceError(
+          `${file.name} could not be uploaded. Check your connection and try again.`,
+          'upload_failed',
+        )
       let stored: Response
       try {
         stored = await fetch(ticket.uploadUrl, {

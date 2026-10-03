@@ -57,7 +57,8 @@ const verified = (row: UploadRow): VerifiedUpload => ({
 
 /** Whether the bytes really are the announced type (Storage trusts the uploader's header). */
 function looksLike(bytes: Uint8Array, mimeType: string): boolean {
-  const text = (start: number, length: number) => String.fromCharCode(...bytes.subarray(start, start + length))
+  const text = (start: number, length: number) =>
+    String.fromCharCode(...bytes.subarray(start, start + length))
   switch (mimeType) {
     case 'application/pdf':
       return text(0, 1024).includes('%PDF-')
@@ -68,7 +69,10 @@ function looksLike(bytes: Uint8Array, mimeType: string): boolean {
     case 'image/webp':
       return text(0, 4) === 'RIFF' && text(8, 4) === 'WEBP'
     case 'image/heic':
-      return text(4, 4) === 'ftyp' && ['heic', 'heix', 'heim', 'heis', 'hevc', 'hevx', 'mif1', 'msf1'].includes(text(8, 4))
+      return (
+        text(4, 4) === 'ftyp' &&
+        ['heic', 'heix', 'heim', 'heis', 'hevc', 'hevx', 'mif1', 'msf1'].includes(text(8, 4))
+      )
     default:
       return false
   }
@@ -109,7 +113,11 @@ export const evidence = new Hono<AppEnv>()
       })
       const parsed = uploadRequest.safeParse(body)
       if (!parsed.success) {
-        throw new ApiError(422, 'invalid_file', 'Only PDF, PNG, JPG, WEBP or HEIC files up to 10 MB can be added.')
+        throw new ApiError(
+          422,
+          'invalid_file',
+          'Only PDF, PNG, JPG, WEBP or HEIC files up to 10 MB can be added.',
+        )
       }
 
       const db = getDb()
@@ -140,7 +148,10 @@ export const evidence = new Hono<AppEnv>()
           })
           .from(uploads)
           .where(and(eq(uploads.userId, user.id), gt(uploads.createdAt, new Date(Date.now() - DAY_MS))))
-        if ((today?.files ?? 0) >= DAILY_FILES || Number(today?.bytes ?? 0) + parsed.data.sizeBytes > DAILY_BYTES) {
+        if (
+          (today?.files ?? 0) >= DAILY_FILES ||
+          Number(today?.bytes ?? 0) + parsed.data.sizeBytes > DAILY_BYTES
+        ) {
           throw new ApiError(429, 'upload_limit', 'You have added a lot of files today. Try again tomorrow.')
         }
         await tx.insert(uploads).values({ id, userId: user.id, path, status: 'pending', ...parsed.data })
@@ -202,12 +213,20 @@ export const evidence = new Hono<AppEnv>()
       .select({ path: uploads.path })
       .from(uploads)
       .where(
-        and(eq(uploads.userId, item.addedBy), eq(uploads.sha256, item.sha256), eq(uploads.status, 'verified')),
+        and(
+          eq(uploads.userId, item.addedBy),
+          eq(uploads.sha256, item.sha256),
+          eq(uploads.status, 'verified'),
+        ),
       )
       .orderBy(desc(uploads.verifiedAt))
       .limit(1)
     if (!stored) {
-      throw new ApiError(404, 'not_stored', 'This file has no stored copy. Example files in the demo story cannot be opened.')
+      throw new ApiError(
+        404,
+        'not_stored',
+        'This file has no stored copy. Example files in the demo story cannot be opened.',
+      )
     }
     return c.json<EvidenceLink>({ url: await signedReadUrl(stored.path) }, 200, noStore)
   })
@@ -242,13 +261,21 @@ export async function verifiedFiles(userId: string, input: unknown): Promise<voi
     .select({ sha256: uploads.sha256, mimeType: uploads.mimeType, sizeBytes: uploads.sizeBytes })
     .from(uploads)
     .where(
-      and(eq(uploads.userId, userId), eq(uploads.status, 'verified'), inArray(uploads.sha256, hashes as string[])),
+      and(
+        eq(uploads.userId, userId),
+        eq(uploads.status, 'verified'),
+        inArray(uploads.sha256, hashes as string[]),
+      ),
     )
   const known = new Map(rows.map((row) => [row.sha256, row]))
   for (const file of files) {
     const row = known.get(file.sha256 as string)
     if (!row) {
-      throw new ApiError(422, 'file_not_uploaded', 'One of the files was not uploaded. Remove it and add it again.')
+      throw new ApiError(
+        422,
+        'file_not_uploaded',
+        'One of the files was not uploaded. Remove it and add it again.',
+      )
     }
     file.mimeType = row.mimeType
     file.sizeBytes = row.sizeBytes

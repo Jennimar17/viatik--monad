@@ -63,8 +63,11 @@ function depositSteps(phase: OperationPhase | 'idle'): Step[] {
 }
 
 export default function AddFundsPage() {
-  const { state } = useViatikState()
+  const { state, mode } = useViatikState()
   const { portfolioId } = useRole()
+  // Real accounts have no onchain vault until settlement on Monad is switched on (phase 8):
+  // no deposit address is shown, so nobody sends USDC to an address that does not exist yet.
+  const onchainDeposits = mode === 'demo'
   const href = useHref()
   const add = useCommand('addFunds')
   const [amount, setAmount] = React.useState<Cents | null>(null)
@@ -97,36 +100,49 @@ export default function AddFundsPage() {
         </div>
       </Panel>
 
-      <Panel title="Deposit instructions" description="One of the few places where network details matter.">
-        <div className="flex flex-col gap-6 sm:flex-row">
-          <QrCode value={address} label="Deposit address as a QR code" />
-          <div className="flex min-w-0 flex-1 flex-col gap-4">
-            <KeyValueList
-              items={[
-                { label: 'Asset', value: 'USDC' },
-                { label: 'Network', value: `${network.name} · chain ${network.chainId}` },
-                {
-                  label: 'Deposit address',
-                  value: (
-                    <span className="inline-flex items-center gap-1 font-mono text-xs">
-                      {address.slice(0, 12)}…{address.slice(-8)}
-                      <CopyButton value={address} label="Copy deposit address" />
-                    </span>
-                  ),
-                },
-              ]}
-            />
-            <p className="flex gap-2 rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm text-pretty">
-              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-              Only send USDC on {network.name}. Funds sent on another network will not arrive.
-            </p>
+      {onchainDeposits ? (
+        <Panel title="Deposit instructions" description="One of the few places where network details matter.">
+          <div className="flex flex-col gap-6 sm:flex-row">
+            <QrCode value={address} label="Deposit address as a QR code" />
+            <div className="flex min-w-0 flex-1 flex-col gap-4">
+              <KeyValueList
+                items={[
+                  { label: 'Asset', value: 'USDC' },
+                  { label: 'Network', value: `${network.name} · chain ${network.chainId}` },
+                  {
+                    label: 'Deposit address',
+                    value: (
+                      <span className="inline-flex items-center gap-1 font-mono text-xs">
+                        {address.slice(0, 12)}…{address.slice(-8)}
+                        <CopyButton value={address} label="Copy deposit address" />
+                      </span>
+                    ),
+                  },
+                ]}
+              />
+              <p className="flex gap-2 rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm text-pretty">
+                <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+                Only send USDC on {network.name}. Funds sent on another network will not arrive.
+              </p>
+            </div>
           </div>
-        </div>
-      </Panel>
+        </Panel>
+      ) : (
+        <Panel title="Deposits">
+          <p className="text-sm text-pretty text-muted-foreground">
+            USDC deposits on {network.name} open once settlement on Monad is switched on for your workspace.
+            Until then, credit a test deposit below to fund agreements and try every flow.
+          </p>
+        </Panel>
+      )}
 
       <Panel
-        title="Demo deposit"
-        description="This demo settles on a simulated ledger, so you can credit a test deposit instead of sending USDC."
+        title={onchainDeposits ? 'Demo deposit' : 'Test deposit'}
+        description={
+          onchainDeposits
+            ? 'This demo settles on a simulated ledger, so you can credit a test deposit instead of sending USDC.'
+            : 'Credits test funds to your Portfolio Vault. No real money moves.'
+        }
       >
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
           <FormField label="Amount" htmlFor="deposit-amount" className="flex-1">

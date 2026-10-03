@@ -200,13 +200,20 @@ export default function NewPaymentPage() {
                         label: userName(state, m.userId),
                         description: roleLabel[m.role],
                       }))
-                    : destinations.map((d) => ({ value: d.id, label: d.name, description: d.settlementLabel }))
+                    : destinations.map((d) => ({
+                        value: d.id,
+                        label: d.name,
+                        description: d.settlementLabel,
+                      }))
                 }
                 placeholder={toMember ? 'Choose a person' : 'Choose a payment destination'}
                 empty={toMember ? 'No team members yet' : 'No payment destinations yet'}
               />
               {toMember ? null : (
-                <AddDestinationButton agencyId={agencyId} onAdded={(destination) => setRecipient(destination.id)} />
+                <AddDestinationButton
+                  agencyId={agencyId}
+                  onAdded={(destination) => setRecipient(destination.id)}
+                />
               )}
             </div>
           </FormField>

@@ -50,7 +50,13 @@ export type EvidenceUploadRequest = { name: string; mimeType: string; sizeBytes:
 export type EvidenceUploadTicket = { uploadId: string; uploadUrl: string }
 
 /** `POST /v1/evidence/:uploadId/verify`: the file as the server read it back. */
-export type VerifiedUpload = { kind: 'file'; name: string; mimeType: string; sizeBytes: number; sha256: string }
+export type VerifiedUpload = {
+  kind: 'file'
+  name: string
+  mimeType: string
+  sizeBytes: number
+  sha256: string
+}
 
 /** `GET /v1/evidence/:evidenceId/link`: a short-lived link to open a file the caller may see. */
 export type EvidenceLink = { url: string }

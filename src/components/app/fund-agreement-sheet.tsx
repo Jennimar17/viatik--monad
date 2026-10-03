@@ -35,6 +35,8 @@ export function FundAgreementSheet({
   // undefined = untouched, so the amount defaults to everything that can be funded.
   const [draft, setDraft] = React.useState<Cents | null | undefined>(undefined)
   const amount = draft === undefined ? max : draft
+  // What was confirmed: after the state refreshes, `max` (and so the default amount) drops to what is left.
+  const [funded, setFunded] = React.useState<Cents | null>(null)
   const agencyLabel = state.agencies.find((a) => a.id === agreement.agencyId)?.name ?? 'Agency'
   const invalid = amount !== null && (amount <= 0 || amount > max)
 
@@ -44,6 +46,7 @@ export function FundAgreementSheet({
       onOpenChange={onOpenChange}
       onClosed={() => {
         setDraft(undefined)
+        setFunded(null)
         command.reset()
       }}
       title="Fund agreement"
@@ -61,10 +64,14 @@ export function FundAgreementSheet({
       disabled={amount === null || invalid || max <= 0}
       phase={command.phase}
       error={command.error}
-      onConfirm={() => amount && command.run({ agreementId: agreement.id, amount })}
+      onConfirm={() => {
+        if (!amount) return
+        setFunded(amount)
+        return command.run({ agreementId: agreement.id, amount })
+      }}
       success={{
         title: 'Agreement funded',
-        body: `${formatUsd(amount ?? ZERO, { withCode: true })} is now in the ${agencyLabel} Funding Vault.`,
+        body: `${formatUsd(funded ?? amount ?? ZERO, { withCode: true })} is now in the ${agencyLabel} Funding Vault.`,
       }}
     >
       <div className="flex flex-col gap-2">

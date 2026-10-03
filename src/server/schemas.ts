@@ -33,32 +33,29 @@ const category = z.enum([
   'equipment',
 ])
 
-const evidence = z.object({
-  kind: z.enum(['file', 'link', 'note']),
-  name: text(300),
-  url: z
-    .string()
-    .max(2000)
-    .regex(/^https?:\/\//i)
-    .regex(noNul)
-    .optional(),
-  mimeType: text(120).optional(),
-  sizeBytes: z
-    .number()
-    .int()
-    .min(0)
-    .max(EVIDENCE_MAX_BYTES)
-    .optional(),
-  sha256: z
-    .string()
-    .regex(/^[0-9a-f]{64}$/)
-    .optional(),
-})
+const evidence = z
+  .object({
+    kind: z.enum(['file', 'link', 'note']),
+    name: text(300),
+    url: z
+      .string()
+      .max(2000)
+      .regex(/^https?:\/\//i)
+      .regex(noNul)
+      .optional(),
+    mimeType: text(120).optional(),
+    sizeBytes: z.number().int().min(0).max(EVIDENCE_MAX_BYTES).optional(),
+    sha256: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
+  })
   // Each kind carries only its own fields: a file is an upload (its fingerprint,
   // with type and size taken from the verified upload), a link is a URL.
   .superRefine((item, ctx) => {
     const file = item.kind === 'file'
-    if (file && !item.sha256) ctx.addIssue({ code: 'custom', path: ['sha256'], message: 'Upload the file first.' })
+    if (file && !item.sha256)
+      ctx.addIssue({ code: 'custom', path: ['sha256'], message: 'Upload the file first.' })
     if (!file && (item.sha256 || item.mimeType || item.sizeBytes !== undefined)) {
       ctx.addIssue({ code: 'custom', path: ['kind'], message: 'Only files carry file details.' })
     }

@@ -613,12 +613,10 @@ export function releaseTranche(tx: Tx, input: { trancheId: Id; checkedCriteria?:
       decidedBy: tx.userId,
     }
   } else {
-    assertTransition(
-      'Tranche',
-      canTransitionTranche,
-      tranche.status === 'available' ? 'approved' : tranche.status,
-      'released',
-    )
+    // Without a milestone, releasing is the Investor's approval of the Agency's
+    // request (under review) or of a tranche that is simply available.
+    const approvable = tranche.status === 'available' || tranche.status === 'under_review'
+    assertTransition('Tranche', canTransitionTranche, approvable ? 'approved' : tranche.status, 'released')
   }
 
   const agency = tx.find('agencies', agreement.agencyId, 'Agency')

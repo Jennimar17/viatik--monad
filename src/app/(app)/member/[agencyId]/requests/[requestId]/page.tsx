@@ -45,7 +45,7 @@ function progressSteps(state: ViatikState, request: PaymentRequest, completedAt?
       {
         id: 'policy',
         label: 'Policy check',
-        detail: 'Outside the budget rules; the settlement contract rejected it as well. Nothing was paid.',
+        detail: 'Outside the budget rules, so settlement refused it. Nothing was paid.',
         state: 'failed',
       },
     ]

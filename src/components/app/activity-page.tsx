@@ -12,7 +12,7 @@ import { PageHeader, Panel } from '@/components/viatik/layout'
 import { useViatikState } from '@/data/react'
 import { actorName, agencyName } from '@/domain/queries'
 import type { ActivityType } from '@/domain/types'
-import { pluralize } from '@/lib/format'
+import { csvCell, pluralize } from '@/lib/format'
 
 type Group = 'funding' | 'payments' | 'budgets' | 'bills' | 'team'
 
@@ -139,9 +139,7 @@ export function ActivityPage({ description }: { description: string }) {
       a.amount !== undefined ? (a.amount / 100).toFixed(2) : '',
       a.agencyId ? agencyName(state, a.agencyId) : '',
     ])
-    const csv = [header, ...rows]
-      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-      .join('\r\n')
+    const csv = [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
     const link = document.createElement('a')
     link.href = url

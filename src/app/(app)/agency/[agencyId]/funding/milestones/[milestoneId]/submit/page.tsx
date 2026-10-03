@@ -15,7 +15,13 @@ import { useBottomBar } from '@/components/app/shell/app-shell'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Amount } from '@/components/viatik/amount'
-import { EvidenceUploader, FormActions, pendingUploads, toEvidence, type DraftFile } from '@/components/viatik/forms'
+import {
+  EvidenceUploader,
+  FormActions,
+  pendingUploads,
+  toEvidence,
+  type DraftFile,
+} from '@/components/viatik/forms'
 import { PageHeader, Panel } from '@/components/viatik/layout'
 import { PendingOperation } from '@/components/viatik/operation'
 import { StatusBadge } from '@/components/viatik/status'
@@ -68,8 +74,8 @@ export default function SubmitEvidencePage() {
         : pendingUploads(files)
           ? pendingUploads(files)
           : !accountId
-          ? 'Choose where the funds go.'
-          : null
+            ? 'Choose where the funds go.'
+            : null
 
   if (done) {
     return (
@@ -212,7 +218,12 @@ export default function SubmitEvidencePage() {
         <Button
           size="pill-sm"
           disabled={
-            busy || underReview || !agreementActive || files.length === 0 || Boolean(pendingUploads(files)) || !accountId
+            busy ||
+            underReview ||
+            !agreementActive ||
+            files.length === 0 ||
+            Boolean(pendingUploads(files)) ||
+            !accountId
           }
           onClick={async () => {
             if (!accountId || !agreementActive) return

@@ -50,7 +50,9 @@ export function findEvidence(state: ViatikState, evidenceId: Id): Evidence | und
 
 /** The account released funding and returned money land in by default: the Agency's active Operations account. */
 export function activeOperationsAccount(state: ViatikState, agencyId: Id) {
-  return state.accounts.find((a) => a.agencyId === agencyId && a.template === 'operations' && a.status === 'active')
+  return state.accounts.find(
+    (a) => a.agencyId === agencyId && a.template === 'operations' && a.status === 'active',
+  )
 }
 
 export function actorName(state: ViatikState, actor: Actor): string {

@@ -133,7 +133,10 @@ export function useBadgeCounts() {
       role === 'member'
         ? state.requests.filter(
             (r) =>
-              r.requester.kind === 'user' && r.requester.userId === userId && r.status === 'needs_approval',
+              r.agencyId === agencyId &&
+              r.requester.kind === 'user' &&
+              r.requester.userId === userId &&
+              r.status === 'needs_approval',
           ).length
         : 0,
     notifications: unreadCount(state, userId),

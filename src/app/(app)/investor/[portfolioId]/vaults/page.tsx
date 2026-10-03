@@ -18,7 +18,7 @@ import { KpiTile } from '@/components/viatik/finance'
 import { HairlineGrid, KeyValueList, PageHeader, Panel } from '@/components/viatik/layout'
 import { CopyButton } from '@/components/viatik/operation'
 import { StatusBadge, Tag } from '@/components/viatik/status'
-import { useViatikState } from '@/data/react'
+import { useViatik, useViatikState } from '@/data/react'
 import { pseudoAddress } from '@/domain/ids'
 import { vaultKindLabel } from '@/domain/labels'
 import { percentOf, sum, ZERO } from '@/domain/money'
@@ -326,9 +326,12 @@ function VaultAssetSheet({
   onOpenChange: (open: boolean) => void
 }) {
   const mobile = useIsMobile()
+  const { mode } = useViatik()
   const network = networkInfo(publicEnv.NEXT_PUBLIC_MONAD_NETWORK)
   if (!vault) return null
   const address = pseudoAddress(`vault:${vault.id}`)
+  // Real accounts get a vault contract address once settlement on Monad is switched on.
+  const demo = mode === 'demo'
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -346,18 +349,25 @@ function VaultAssetSheet({
               { label: 'Network', value: `${network.name} · chain ${network.chainId}` },
               {
                 label: 'Vault address',
-                value: (
+                value: demo ? (
                   <span className="inline-flex items-center gap-1 font-mono text-xs">
                     {shortHash(address, 10, 6)}
                     <CopyButton value={address} label="Copy vault address" />
                   </span>
+                ) : (
+                  'Assigned when settlement on Monad is switched on'
                 ),
               },
               {
                 label: 'Custody',
                 value: 'Smart contract vault; only funding contracts can move capital out',
               },
-              { label: 'Ledger', value: 'Simulated in this demo; the Monad deployment follows' },
+              {
+                label: 'Ledger',
+                value: demo
+                  ? 'Simulated in this demo; the Monad deployment follows'
+                  : 'Test environment: limits are enforced by Viatik; settlement on Monad testnet comes next',
+              },
               {
                 label: 'Explorer',
                 value: (

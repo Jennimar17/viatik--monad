@@ -565,7 +565,12 @@ export function SettingsPage({
                     ),
                   },
                   { label: 'Gas', value: 'Sponsored. You never need MON.' },
-                  { label: 'Ledger', value: 'Simulated in this demo; the Monad deployment follows.' },
+                  {
+                    label: 'Ledger',
+                    value: realAccount
+                      ? 'Test environment: limits are enforced by Viatik; settlement on Monad testnet comes next.'
+                      : 'Simulated in this demo; the Monad deployment follows.',
+                  },
                   {
                     label: 'Explorer',
                     value: (

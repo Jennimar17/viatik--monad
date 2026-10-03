@@ -34,7 +34,7 @@ type ChangesMode = 'changes' | 'reject'
 
 export default function MilestoneReviewPage() {
   const { agreementId, milestoneId } = useParams<{ agreementId: string; milestoneId: string }>()
-  const { state } = useViatikState()
+  const { state, userId } = useViatikState()
   const { portfolioId } = useRole()
   const href = useHref()
   const { can } = usePermissions()
@@ -53,9 +53,19 @@ export default function MilestoneReviewPage() {
   const reviewable = milestone?.status === 'ready_for_review'
   const canDecide =
     reviewable &&
+    agreement?.status === 'active' &&
     can('release_tranche', {
       createdBy: tranche?.requestedBy ? { kind: 'user', userId: tranche.requestedBy } : undefined,
     })
+  // Reviewable but not decidable: say why instead of showing a form with no buttons.
+  const blockedReason =
+    !reviewable || canDecide
+      ? null
+      : agreement?.status !== 'active'
+        ? 'This agreement is paused. Resume it to release or return this milestone.'
+        : tranche?.requestedBy === userId
+          ? 'You submitted this evidence as the Agency’s admin, so another Investor of the portfolio has to decide.'
+          : 'You cannot decide on this milestone.'
   // The action bar sits at the bottom on phones while a decision is open.
   useBottomBar(canDecide)
   if (!milestone || !agreement || !tranche) {
@@ -107,6 +117,12 @@ export default function MilestoneReviewPage() {
           </span>
         </div>
 
+        {blockedReason ? (
+          <p className="rounded-lg border border-warning/30 bg-warning-soft px-3 py-2.5 text-sm text-pretty">
+            {blockedReason}
+          </p>
+        ) : null}
+
         {reviewable ? (
           <div
             className={cn(
@@ -127,7 +143,7 @@ export default function MilestoneReviewPage() {
           </div>
         ) : null}
 
-        <fieldset className="flex flex-col gap-3" disabled={!reviewable}>
+        <fieldset className="flex flex-col gap-3" disabled={!canDecide}>
           <legend className="mb-2 text-sm font-medium">Acceptance criteria</legend>
           {milestone.acceptanceCriteria.map((criterion, index) => {
             const id = `criterion-${index}`
@@ -136,7 +152,7 @@ export default function MilestoneReviewPage() {
                 <Checkbox
                   id={id}
                   checked={checked.includes(index)}
-                  disabled={!reviewable}
+                  disabled={!canDecide}
                   onCheckedChange={(value) =>
                     setDraftChecked((prev) => (value ? [...prev, index] : prev.filter((i) => i !== index)))
                   }
@@ -156,7 +172,7 @@ export default function MilestoneReviewPage() {
           </p>
         </fieldset>
 
-        {reviewable ? (
+        {canDecide ? (
           <div className="flex flex-col gap-2">
             <Label htmlFor="decision-note">Note to the Agency (optional)</Label>
             <Textarea

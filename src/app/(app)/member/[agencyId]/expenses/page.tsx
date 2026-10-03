@@ -208,7 +208,7 @@ export default function ExpensesPage() {
         summary={{
           what: 'The receipt is attached to this expense so your Agency can reconcile the payment.',
           amount: uploading?.amount,
-          reversible: 'You can replace it later.',
+          reversible: 'Once attached, the receipt stays with the expense for reconciliation.',
           policy: 'The file stays private; only its fingerprint goes into the verified record.',
         }}
         confirmLabel="Attach receipt"
@@ -217,7 +217,8 @@ export default function ExpensesPage() {
         error={attach.error}
         onConfirm={() => {
           const receipt = files[0]
-          if (uploading && receipt) return attach.run({ expenseId: uploading.id, receipt: toEvidence(receipt) })
+          if (uploading && receipt)
+            return attach.run({ expenseId: uploading.id, receipt: toEvidence(receipt) })
         }}
         success={{ title: 'Receipt attached', body: 'The expense is complete.' }}
       >
