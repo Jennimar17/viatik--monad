@@ -68,6 +68,10 @@ const serverEnvSchema = z.object({
   MONAD_RPC_URL: z.url().optional(),
   /** Deployed ViatikLedger contract. While unset, operations settle on the mock ledger. */
   VIATIK_LEDGER_ADDRESS: address.optional(),
+  /** Settlement token the ledger was deployed with (TestUSD on testnet). Must equal the ledger's TOKEN(). */
+  TEST_USD_ADDRESS: address.optional(),
+  /** Block of the ledger's deployment: the earliest block worth scanning for its events. */
+  LEDGER_DEPLOY_BLOCK: z.coerce.bigint().nonnegative().optional(),
   DATABASE_URL: z.string().min(1).optional(),
   SUPABASE_URL: z.url().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
