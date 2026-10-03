@@ -94,21 +94,16 @@ export const commands = new Hono<AppEnv>().post(
 
       const before = withCaller(world.state, user, nowIso) ?? world.state
       const actor: Actor = { kind: 'user', userId: user.id }
-      const outcome = runCommand(before, { actor, now: nowIso }, name as CommandName, input)
+      // Ids are seeded by person and key, so a retry or a later confirm creates the same ones.
+      const ctx = { actor, now: nowIso, idSeed: `${user.id}:${key}` }
+      const outcome = runCommand(before, ctx, name as CommandName, input)
 
       let answer: Answer = { status: 200, body: { result: outcome.result } }
-      const plan = planSettlement({
-        name: name as CommandName,
-        input,
-        result: outcome.result,
-        before,
-        after: outcome.state,
-        actor,
-        idempotencyKey: `${user.id}:${key}`,
-      })
+      const plan = planSettlement({ before, after: outcome.state, actor })
       if (plan) {
         // Phase 8 swaps this for the Monad ledger; the limits and error codes are the same.
-        const settled = await plan.settle(new MockLedgerAdapter({ latencyMs: 0, now: () => nowIso }))
+        const ledger = new MockLedgerAdapter({ latencyMs: 0, now: () => nowIso })
+        const settled = await ledger.settle(plan, { before })
         if (settled.status === 'failed') {
           const code = settled.error?.code ?? 'ledger_failed'
           const message = settled.error?.message ?? 'The operation could not be completed. Nothing was moved.'

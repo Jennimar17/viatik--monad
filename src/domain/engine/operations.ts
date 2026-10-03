@@ -250,6 +250,8 @@ export function allocateToBudget(
   tx.authorize('create_budget', { agencyId: budget.agencyId })
   requirePositive(input.amount)
   const portfolioId = tx.portfolioOfAgency(budget.agencyId)
+  // Its own operation id: the ledger already recorded the budget id for the first allocation.
+  const operationId = newId('alloc')
   if (input.direction === 'allocate') {
     const available = accountBalance(tx.state, budget.sourceAccountId)
     if (available < input.amount)
@@ -262,7 +264,7 @@ export function allocateToBudget(
       {
         portfolioId,
         agencyId: budget.agencyId,
-        refId: budget.id,
+        refId: operationId,
       },
     )
   } else {
@@ -277,7 +279,7 @@ export function allocateToBudget(
       {
         portfolioId,
         agencyId: budget.agencyId,
-        refId: budget.id,
+        refId: operationId,
       },
     )
   }

@@ -26,6 +26,7 @@ const DOMAIN_ERROR_STATUS: Record<DomainErrorCode, ContentfulStatusCode> = {
   self_approval: 403,
   not_found: 404,
   invalid_state: 409,
+  already_applied: 409,
   validation: 422,
   insufficient_funds: 422,
   policy_rejected: 422,
@@ -38,6 +39,9 @@ export function ledgerStatus(code: LedgerErrorCode | string): ContentfulStatusCo
     case 'not_authorized':
       return 403
     case 'already_processed':
+    case 'invalid_state':
+    case 'not_registered':
+    case 'rule_drift':
       return 409
     case 'network_unavailable':
     case 'sponsorship_unavailable':

@@ -200,8 +200,9 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
   return { outcome, checks, reason, evaluatedAt: now }
 }
 
+/** An allowance without a per-operation limit of its own (unset or 0) follows the budget's, as onchain. */
 function minDefined(a: Cents, b: Cents | undefined): Cents {
-  return b === undefined ? a : (Math.min(a, b) as Cents)
+  return !b ? a : (Math.min(a, b) as Cents)
 }
 
 export function periodNoun(period: Budget['period']): string {

@@ -20,7 +20,8 @@ import { useSession } from '@/lib/session'
 /** Private documents behind a receipt, including those linked when it was reconciled. */
 function evidenceFor(state: ViatikState, receipt: Receipt, reconciliation?: Reconciliation): Evidence[] {
   // The same evidence can sit in two places (a request's attachment becomes its expense's receipt).
-  const ids = new Set([...receipt.evidenceIds, ...(reconciliation?.evidenceIds ?? [])])
+  // Releases saved before 03/10 can lack the list.
+  const ids = new Set([...(receipt.evidenceIds ?? []), ...(reconciliation?.evidenceIds ?? [])])
   const found = new Map<string, Evidence>()
   for (const item of [
     ...state.milestones.flatMap((m) => m.evidence),

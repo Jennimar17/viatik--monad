@@ -213,6 +213,12 @@ export function createAgreement(tx: Tx, input: CreateAgreementInput): FundingAgr
 
   input.tranches.forEach((draft, index) => {
     requirePositive(draft.amount, `Tranche ${index + 1} amount`)
+    // The ledger only knows whether a tranche has a milestone; the two must agree.
+    if (Boolean(draft.milestone) !== (draft.releaseCondition === 'milestone'))
+      throw new DomainError(
+        'validation',
+        `Tranche ${index + 1}: a milestone release needs a milestone, and only milestone releases have one.`,
+      )
     const trancheId = newId('tr')
     let milestoneId: Id | undefined
     if (draft.milestone) {
@@ -339,9 +345,17 @@ export function setAgreementPaused(tx: Tx, input: { agreementId: Id; paused: boo
 
 // ─── Capital into vaults ─────────────────────────────────────────────────────
 
+/** The settlement token mints at most 1,000,000 USD per deposit (TestUSD `MAX_MINT`). */
+export const MAX_DEPOSIT = cents(100_000_000)
+
 export function addFunds(tx: Tx, input: { portfolioId: Id; amount: Cents; source: string }) {
   tx.authorize('fund_agreement', { portfolioId: input.portfolioId })
   requirePositive(input.amount)
+  if (input.amount > MAX_DEPOSIT)
+    throw new DomainError(
+      'limit_exceeded',
+      `A single deposit can be up to ${usdText(MAX_DEPOSIT)}. Split it into several deposits.`,
+    )
   const vault = tx.state.vaults.find((v) => v.portfolioId === input.portfolioId && v.kind === 'portfolio')
   if (!vault) throw new DomainError('not_found', 'Portfolio Vault not found.')
   const operationId = newId('dep')

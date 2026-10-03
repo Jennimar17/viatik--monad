@@ -182,7 +182,7 @@ export type Milestone = {
   submissionNote?: string
   submittedAt?: ISODate
   submittedBy?: Id
-  evidenceHash?: string
+  evidenceHash?: `0x${string}`
   decision?: MilestoneDecision
 }
 

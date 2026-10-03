@@ -104,7 +104,7 @@ export class MockDataSource implements DataSource {
     input: CommandInput<N>,
     options: DispatchOptions = {},
   ): Promise<CommandResult<N>> {
-    // Phases only move forward, even when settlement takes several ledger calls.
+    // Phases only move forward.
     let current = -1
     const emit = (phase: OperationPhase) => {
       if (phase === 'failed') return options.onPhase?.('failed')
@@ -125,33 +125,23 @@ export class MockDataSource implements DataSource {
     const before = this.read()
     let outcome: { state: ViatikState; result: CommandResult<N> }
     try {
-      outcome = runCommand(before, { actor, now }, name, input)
+      outcome = runCommand(before, { actor, now, idSeed: `${userId}:${idempotencyKey}` }, name, input)
     } catch (error) {
       emit('failed')
       if (error instanceof DomainError) throw new DataSourceError(error.message, error.code)
       throw new DataSourceError('Something went wrong. Nothing was changed.', 'unknown')
     }
 
-    const plan = planSettlement({
-      name,
-      input,
-      result: outcome.result,
-      before,
-      after: outcome.state,
-      actor,
-      idempotencyKey,
-    })
-
+    const plan = planSettlement({ before, after: outcome.state, actor })
     if (plan) {
-      const ledger = new MockLedgerAdapter({
-        latencyMs: LEDGER_LATENCY_MS,
-        now: () => now,
+      const ledger = new MockLedgerAdapter({ latencyMs: LEDGER_LATENCY_MS, now: () => now })
+      const settled = await ledger.settle(plan, {
+        before,
         onStatus: (status) => {
           // `completed` is emitted once the new state is saved.
           if (status !== 'completed') emit(status)
         },
       })
-      const settled = await plan.settle(ledger)
       if (settled.status === 'failed') {
         if (plan.keepOnFailure) this.write(outcome.state)
         emit('failed')
