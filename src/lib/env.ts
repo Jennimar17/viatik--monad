@@ -72,6 +72,12 @@ const serverEnvSchema = z.object({
   TEST_USD_ADDRESS: address.optional(),
   /** Block of the ledger's deployment: the earliest block worth scanning for its events. */
   LEDGER_DEPLOY_BLOCK: z.coerce.bigint().nonnegative().optional(),
+  /** Signs role permits and runs the genesis. Server only; on testnet, the deployer's key. */
+  LEDGER_REGISTRAR_PRIVATE_KEY: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{64}$/, 'Expected a 0x-prefixed private key.')
+    .transform((value) => value as `0x${string}`)
+    .optional(),
   DATABASE_URL: z.string().min(1).optional(),
   SUPABASE_URL: z.url().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),

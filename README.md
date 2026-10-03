@@ -83,20 +83,21 @@ pnpm exec prettier --write ../src/web3/abi
 
 All variables are optional in development. See `.env.example`.
 
-| Variable                     | Purpose                                         |
-| ---------------------------- | ----------------------------------------------- |
-| `NEXT_PUBLIC_SITE_URL`       | Public origin, used for metadata                |
-| `NEXT_PUBLIC_DATA_SOURCE`    | Real accounts on `mock` (default) or `api` data |
-| `NEXT_PUBLIC_DEMO_MODE`      | Enables the demo personas and reset (`true`)    |
-| `NEXT_PUBLIC_MONAD_NETWORK`  | `testnet` (10143, default) or `mainnet` (143)   |
-| `NEXT_PUBLIC_PRIVY_APP_ID`   | Privy app for sign-in and embedded accounts     |
-| `PRIVY_APP_SECRET`           | Server-side Privy token verification            |
-| `PRIVY_JWT_VERIFICATION_KEY` | Optional, verifies tokens without calling Privy |
-| `DEMO_ACCOUNTS`              | Sign-in emails bound to the demo people         |
-| `MONAD_RPC_URL`              | RPC endpoint for server-side reads and writes   |
-| `VIATIK_LEDGER_ADDRESS`      | Deployed ViatikLedger contract                  |
-| `TEST_USD_ADDRESS`           | Settlement token the ledger was deployed with   |
-| `LEDGER_DEPLOY_BLOCK`        | Block the ledger was deployed in                |
-| `DEPLOYER_PRIVATE_KEY`       | Deploy scripts only; a dedicated testnet wallet |
-| `DATABASE_URL`, `SUPABASE_*` | Offchain data                                   |
-| `ADMIN_SEED_TOKEN`           | Optional, enables restoring the seeded data     |
+| Variable                       | Purpose                                          |
+| ------------------------------ | ------------------------------------------------ |
+| `NEXT_PUBLIC_SITE_URL`         | Public origin, used for metadata                 |
+| `NEXT_PUBLIC_DATA_SOURCE`      | Real accounts on `mock` (default) or `api` data  |
+| `NEXT_PUBLIC_DEMO_MODE`        | Enables the demo personas and reset (`true`)     |
+| `NEXT_PUBLIC_MONAD_NETWORK`    | `testnet` (10143, default) or `mainnet` (143)    |
+| `NEXT_PUBLIC_PRIVY_APP_ID`     | Privy app for sign-in and embedded accounts      |
+| `PRIVY_APP_SECRET`             | Server-side Privy token verification             |
+| `PRIVY_JWT_VERIFICATION_KEY`   | Optional, verifies tokens without calling Privy  |
+| `DEMO_ACCOUNTS`                | Sign-in emails bound to the demo people          |
+| `MONAD_RPC_URL`                | RPC endpoint for server-side reads and writes    |
+| `VIATIK_LEDGER_ADDRESS`        | Deployed ViatikLedger contract                   |
+| `TEST_USD_ADDRESS`             | Settlement token the ledger was deployed with    |
+| `LEDGER_DEPLOY_BLOCK`          | Block the ledger was deployed in                 |
+| `LEDGER_REGISTRAR_PRIVATE_KEY` | Signs role permits and the genesis (server only) |
+| `DEPLOYER_PRIVATE_KEY`         | Deploy scripts only; a dedicated testnet wallet  |
+| `DATABASE_URL`, `SUPABASE_*`   | Offchain data                                    |
+| `ADMIN_SEED_TOKEN`             | Optional, enables restoring the seeded data      |

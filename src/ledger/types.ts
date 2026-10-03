@@ -1,3 +1,5 @@
+import type { Address, Hex } from 'viem'
+
 import type { Cents } from '@/domain/money'
 import type {
   Id,
@@ -41,6 +43,10 @@ export type LedgerErrorCode =
   | 'not_supported_onchain'
   /** The app's rules and the ledger's disagree about this operation; nothing was moved. */
   | 'rule_drift'
+  /** Someone the operation names has no account on the ledger yet. */
+  | 'account_not_ready'
+  /** The transaction was sent and is not final yet: ask again before retrying. */
+  | 'still_processing'
   | 'unknown'
 
 export type LedgerError = { code: LedgerErrorCode; message: string; retryable: boolean }
@@ -222,11 +228,57 @@ export type Balances = {
 /** Optional progress hook so the UI can show Preparing → Processing → Completed. */
 export type StatusListener = (status: LedgerStatus) => void
 
+/** What turns product ids and people into the contract's ids and accounts (Monad only). */
+export type ChainContext = {
+  /** The current epoch of ids (rotates with every re-seed). */
+  namespace: string
+  /** A person's account on Monad, if they have one. */
+  addressOf: (userId: Id) => Address | undefined
+}
+
 export type SettleContext = {
   /** The state the command ran on; the mock reads the ledger's view from it. */
   before: ViatikState
   onStatus?: StatusListener
+  /** Required by the Monad ledger. */
+  chain?: ChainContext
 }
+
+/**
+ * A plan encoded and simulated from the signer's account, ready to sign as one
+ * transaction (`multicall`). It keeps what the confirmation checks: the plan,
+ * the records with their receipt hashes, and the block it was simulated at.
+ */
+export type PreparedTx = {
+  to: Address
+  data: Hex
+  chainId: number
+  /** The account that must sign it: the signer the simulation ran as. */
+  from: Address
+  plan: SettlementPlan
+  namespace: string
+  records: (PlannedRecord & { receiptHash: Hex })[]
+  /** The latest block when it was simulated: the transaction can only land after it. */
+  preparedBlock: number
+  /** When the role permits in it expire (null without a `join`); prepare again after that. */
+  expiresAt: ISODate | null
+}
+
+/** What a transaction hash turned out to be for a prepared transaction. */
+export type ConfirmedTx =
+  /** Not in a block yet, or Monad could not be read: ask again with the same hash. */
+  | { status: 'pending'; hash: Hex; problem: string }
+  /** Not the prepared transaction: another account, another deployment, or older than the simulation. */
+  | { status: 'unrelated'; hash: Hex; problem: string }
+  | {
+      status: 'confirmed'
+      hash: Hex
+      block: number
+      timestamp: ISODate
+      /** The prepared operations ran on the ledger. A failed result that landed is a divergence, not a no-op. */
+      landed: boolean
+      result: SettlementResult
+    }
 
 export interface LedgerAdapter {
   readonly network: 'testnet' | 'mainnet'
@@ -239,5 +291,8 @@ export interface LedgerAdapter {
     budgetIds: Id[]
     vaultIds: Id[]
     members?: { agencyId: Id; userId: Id }[]
+    chain?: ChainContext
+    /** Read at this block (a confirmed transaction's); the latest otherwise. */
+    block?: number
   }): Promise<Balances>
 }
