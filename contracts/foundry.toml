@@ -11,6 +11,7 @@ solc_version = "0.8.30"
 evm_version = "prague"
 optimizer = true
 optimizer_runs = 200
+via_ir = true # ViatikLedger has wide functions; the IR pipeline handles the stack
 cbor_metadata = true
 bytecode_hash = "none" # Sourcify verification: no IPFS hash (Monad docs call these metadata/metadata_hash)
 use_literal_content = true # Sourcify verification: embed source code

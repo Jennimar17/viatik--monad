@@ -22,6 +22,7 @@ import type {
   PaymentRecipient,
   PaymentRequest,
   PaymentType,
+  PolicyCheck,
   PolicyDecision,
   RequestType,
   SpendingAllowance,
@@ -580,7 +581,20 @@ export function requestPayment(tx: Tx, input: RequestPaymentInput): PaymentReque
   )
   if (duplicate) return duplicate
 
-  const decision = previewPolicy(tx, input)
+  let decision = previewPolicy(tx, input)
+  // Above the Investor's exception threshold nothing approves itself, even within the
+  // budget's automatic limit: the Investor decides (M-1, the same rule as the contract).
+  const governing = governingAgreement(tx.state, input.agencyId)
+  const isException = governing ? input.amount > governing.spendingPolicy.exceptionThreshold : false
+  if (decision.outcome === 'approved' && governing && isException) {
+    const reason: PolicyCheck = {
+      rule: 'exception_threshold',
+      passed: false,
+      blocking: false,
+      message: `Above the Investor's exception threshold of ${usdText(governing.spendingPolicy.exceptionThreshold)}. The Investor decides.`,
+    }
+    decision = { ...decision, outcome: 'needs_approval', checks: [...decision.checks, reason], reason }
+  }
   const attachments: Evidence[] = (input.attachments ?? []).map((item) =>
     evidenceFrom(item, requester, tx.now),
   )
@@ -653,11 +667,14 @@ export function requestPayment(tx: Tx, input: RequestPaymentInput): PaymentReque
   )
 
   if (decision.outcome === 'needs_approval') {
+    // Exceptions are decided by the Investor, everything else by the Agency Admins.
     tx.notify(
-      tx.holders('agency_admin', { agencyId: input.agencyId }),
+      isException
+        ? tx.holders('investor', { portfolioId })
+        : tx.holders('agency_admin', { agencyId: input.agencyId }),
       'Request needs approval',
       `${tx.actorName()} requested ${usdText(input.amount)} for ${request.purpose}.`,
-      `/agency/${input.agencyId}/approvals`,
+      isException ? `/investor/${portfolioId}/approvals` : `/agency/${input.agencyId}/approvals`,
     )
     return request
   }

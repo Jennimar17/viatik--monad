@@ -302,6 +302,7 @@ export type PolicyRuleId =
   | 'agent_per_operation_max'
   | 'agent_active'
   | 'approval_threshold'
+  | 'exception_threshold'
 
 export type PolicyCheck = {
   rule: PolicyRuleId
