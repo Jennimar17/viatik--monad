@@ -2,6 +2,7 @@ import {
   createPublicClient,
   createWalletClient,
   decodeFunctionResult,
+  encodeFunctionData,
   getAddress,
   http,
   isAddress,
@@ -25,8 +26,9 @@ import { ENTRY_POINT_V07 } from '@/web3/addresses'
 import { chains, GAS_LIMIT_MULTIPLIER, type MonadNetwork } from '@/web3/chains'
 
 import { encodePlan, LEDGER_ROLE, NotEncodable, receiptHashOf, scopeIdOf, type JoinPermit } from './encode'
+import type { Genesis, GenesisRun, GenesisTransaction } from './genesis'
 import { ledgerId, witnessesOf, type LedgerEvent, type Witness } from './ids'
-import { decodeLedgerError, ledgerErrorOf } from './revert'
+import { decodeLedgerError, isRevert, ledgerErrorOf } from './revert'
 import type {
   Balances,
   ChainContext,
@@ -61,6 +63,9 @@ export type MonadLedgerConfig = {
   /** Another chain with the same contract (a local rehearsal). */
   chain?: Chain
 }
+
+/** A genesis goes in one multicall when it fits this much gas (Monad caps a transaction at 30M), in chunks otherwise. */
+const GENESIS_CHUNK_GAS = 20_000_000n
 
 /** How long a role permit stays valid after it is prepared. */
 const PERMIT_TTL_SECONDS = 60n * 60n
@@ -202,7 +207,7 @@ export class MonadLedgerAdapter implements LedgerAdapter {
         ),
       }
     const chain = withValidAddresses(context)
-    const from = plan.signerUserId ? chain.addressOf(plan.signerUserId) : undefined
+    const from = plan.signerUserId ? (chain.signerOf ?? chain.addressOf)(plan.signerUserId) : undefined
     if (!from)
       return {
         status: 'done',
@@ -413,6 +418,122 @@ export class MonadLedgerAdapter implements LedgerAdapter {
     }
     emit(confirmed.result.status === 'completed' ? 'completed' : 'failed')
     return confirmed.result
+  }
+
+  /**
+   * Sends a genesis from the owner's key (the registrar's on testnet). It is
+   * simulated whole first: a call that would revert is named by bisecting
+   * the simulation, and nothing is sent. A genesis that fits one transaction
+   * goes in one `multicall`, so nobody can take a seeded id halfway; a bigger
+   * one goes in chunks, each simulated before it is sent. A failure stops it
+   * and nothing is undone: run it again under a fresh namespace.
+   */
+  async runGenesis(
+    genesis: Genesis,
+    { onProgress }: { onProgress?: (done: number, total: number) => void } = {},
+  ): Promise<GenesisRun> {
+    const transactions: GenesisTransaction[] = []
+    const stop = (failedAt: string, problem: string): GenesisRun => ({
+      status: 'failed',
+      namespace: genesis.namespace,
+      transactions,
+      failedAt,
+      problem,
+    })
+    const owner = this.config.registrar
+    if (!this.isConfigured || !owner)
+      return stop('setup', 'the ledger or the registrar key is not configured')
+    try {
+      const onchainOwner = await this.client.readContract({
+        address: this.ledger,
+        abi: viatikLedgerAbi,
+        functionName: 'owner',
+      })
+      if (!isAddressEqual(onchainOwner, owner.address))
+        return stop(
+          'setup',
+          `the ledger's owner is ${onchainOwner}, not the registrar key's ${owner.address}`,
+        )
+    } catch (error) {
+      return stop('setup', decodeLedgerError(error).raw)
+    }
+    const wallet = createWalletClient({
+      account: owner,
+      chain: this.chain,
+      transport: http(this.config.rpcUrl),
+    })
+    const multicall = (calls: Genesis['calls']) =>
+      encodeFunctionData({
+        abi: viatikLedgerAbi,
+        functionName: 'multicall',
+        args: [calls.map((c) => c.data)],
+      })
+    const estimate = (calls: Genesis['calls']) =>
+      this.client.estimateGas({ account: owner, to: this.ledger, data: multicall(calls) })
+    /** The first call that makes these revert: the shortest reverting prefix, found by simulation only. */
+    const firstReverting = async (calls: Genesis['calls'], failure: unknown) => {
+      let low = 1
+      let high = calls.length
+      let error = failure
+      while (low < high) {
+        const middle = Math.floor((low + high) / 2)
+        try {
+          await estimate(calls.slice(0, middle))
+          low = middle + 1
+        } catch (cause) {
+          if (!isRevert(cause)) throw cause
+          high = middle
+          error = cause
+        }
+      }
+      return { label: calls[high - 1]!.label, problem: decodeLedgerError(error).raw }
+    }
+
+    let index = 0
+    while (index < genesis.calls.length) {
+      // The rest of the genesis at once, halved only while it does not fit a transaction.
+      let size = genesis.calls.length - index
+      let gas = 0n
+      try {
+        for (;;) {
+          const chunk = genesis.calls.slice(index, index + size)
+          try {
+            gas = await estimate(chunk)
+            if (gas <= GENESIS_CHUNK_GAS || size === 1) break
+          } catch (error) {
+            if (isRevert(error)) {
+              const failing = await firstReverting(chunk, error)
+              return stop(failing.label, failing.problem)
+            }
+            if (size === 1) return stop(chunk[0]!.label, decodeLedgerError(error).raw)
+          }
+          size = Math.ceil(size / 2)
+        }
+      } catch (error) {
+        return stop('simulation', decodeLedgerError(error).raw)
+      }
+      const chunk = genesis.calls.slice(index, index + size)
+      let sent: GenesisTransaction | undefined
+      try {
+        const hash = await wallet.sendTransaction({
+          to: this.ledger,
+          data: multicall(chunk),
+          gas: (gas * BigInt(Math.round(GAS_LIMIT_MULTIPLIER * 100))) / 100n,
+        })
+        // Kept before waiting: a transaction that times out may still land.
+        sent = { hash, calls: size }
+        transactions.push(sent)
+        const receipt = await this.client.waitForTransactionReceipt({ hash, timeout: 60_000 })
+        sent.block = Number(receipt.blockNumber)
+        sent.gasUsed = Number(receipt.gasUsed)
+        if (receipt.status !== 'success') return stop(chunk[0]!.label, `transaction ${hash} reverted`)
+      } catch (error) {
+        return stop(chunk[0]!.label, decodeLedgerError(error).raw)
+      }
+      index += size
+      onProgress?.(index, genesis.calls.length)
+    }
+    return { status: 'completed', namespace: genesis.namespace, transactions }
   }
 
   async readBalances(input: Parameters<LedgerAdapter['readBalances']>[0]): Promise<Balances> {
@@ -659,12 +780,14 @@ export class MonadLedgerAdapter implements LedgerAdapter {
 
 /** People's accounts as checksummed addresses; a malformed one counts as no account. */
 function withValidAddresses(chain: ChainContext): ChainContext {
+  const valid = (lookup: (userId: Id) => Address | undefined) => (userId: Id) => {
+    const address = lookup(userId)
+    return address && isAddress(address, { strict: false }) ? getAddress(address) : undefined
+  }
   return {
     namespace: chain.namespace,
-    addressOf: (userId) => {
-      const address = chain.addressOf(userId)
-      return address && isAddress(address, { strict: false }) ? getAddress(address) : undefined
-    },
+    addressOf: valid(chain.addressOf),
+    signerOf: chain.signerOf && valid(chain.signerOf),
   }
 }
 

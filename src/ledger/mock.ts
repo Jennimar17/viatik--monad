@@ -1,10 +1,21 @@
-import { attachmentsHash } from '@/domain/evidence'
 import { pseudoHash } from '@/domain/ids'
 import { formatUsd, type Cents } from '@/domain/money'
-import type { Id, LedgerReason, Location, MembershipScope, Role, ViatikState } from '@/domain/types'
+import type { Id, LedgerReason, Location, ViatikState } from '@/domain/types'
 import { simulatedVerification } from '@/domain/verification'
 
 import { witnessesOf } from './ids'
+import {
+  adjustBalance,
+  LEDGER_ROLE_OF,
+  ledgerSnapshot,
+  place,
+  scopeId,
+  type AgreementView,
+  type BudgetView,
+  type LedgerRole,
+  type LedgerSnapshot,
+  type LocationKind,
+} from './snapshot'
 import type {
   Balances,
   Hash,
@@ -104,51 +115,6 @@ export class MockLedgerAdapter implements LedgerAdapter {
 
 // ─── The contract, over the product state ───────────────────────────────────
 
-type LedgerRole = 'investor' | 'admin' | 'member'
-type LocationKind = 'portfolio_vault' | 'funding_vault' | 'account' | 'budget'
-type AgreementState = 'pending' | 'active' | 'paused' | 'inactive'
-type TrancheState = 'planned' | 'available' | 'requested' | 'released' | 'rejected'
-type RequestState = 'pending' | 'executed' | 'rejected' | 'closed'
-
-type Place = { kind: LocationKind; scope: Id; balance: number }
-type AgreementView = {
-  agency: Id
-  vault: Id
-  committed: number
-  funded: number
-  released: number
-  exceptionThreshold: number
-  status: AgreementState
-}
-type TrancheView = {
-  agreement: Id
-  amount: number
-  index: number
-  milestone: boolean
-  status: TrancheState
-  requestedBy?: Id
-  destination?: Id
-}
-type BudgetView = {
-  agency: Id
-  sourceAccount: Id
-  perOperationLimit: number
-  approvalThreshold: number
-  paused: boolean
-  /** Empty: any destination. */
-  destinations: Set<Id>
-}
-type RequestView = {
-  budget: Id
-  agency: Id
-  requester: Id
-  destination: Id | null
-  member: Id | null
-  amount: number
-  evidenceHash: Hash | null
-  status: RequestState
-}
-
 /** What a money operation leaves in the ledger's receipt, besides its id. */
 type Written = Omit<PlannedRecord, 'opId'>
 
@@ -164,29 +130,27 @@ function revert(code: LedgerErrorCode, message: string): never {
   throw new Revert(fail(code, message))
 }
 
-const ROLE: Record<Role, LedgerRole> = { investor: 'investor', agency_admin: 'admin', member: 'member' }
-
 /** Why `requestPayment` records a rejection, in the contract's order of checks. */
 type Reason = { code: LedgerReason; message: string; limit: number } | null
 
 /** The ledger's storage, rebuilt from the state the command ran on. */
 class LedgerView {
-  private readonly scopes = new Map<Id, 'portfolio' | 'agency'>()
-  private readonly agencyPortfolio = new Map<Id, Id>()
-  private readonly roles = new Map<string, LedgerRole>()
+  private readonly scopes: LedgerSnapshot['scopes']
+  private readonly agencyPortfolio: LedgerSnapshot['agencyPortfolio']
+  private readonly roles: LedgerSnapshot['roles']
   /** Allowances and requests granted before a revocation in this transaction stop counting. */
   private readonly revokedNow = new Set<string>()
-  private readonly places = new Map<Id, Place>()
-  private readonly vaultAgreement = new Map<Id, Id>()
-  private readonly operations = new Map<Id, Id>()
-  private readonly agreements = new Map<Id, AgreementView>()
-  private readonly agencyAgreements = new Map<Id, Id[]>()
-  private readonly tranches = new Map<Id, TrancheView>()
-  private readonly budgets = new Map<Id, BudgetView>()
-  private readonly allowances = new Map<string, number>()
-  private readonly requests = new Map<Id, RequestView>()
-  private readonly members = new Map<string, number>()
-  private readonly processed = new Set<Id>()
+  private readonly places: LedgerSnapshot['places']
+  private readonly vaultAgreement: LedgerSnapshot['vaultAgreement']
+  private readonly operations: LedgerSnapshot['operations']
+  private readonly agreements: LedgerSnapshot['agreements']
+  private readonly agencyAgreements: LedgerSnapshot['agencyAgreements']
+  private readonly tranches: LedgerSnapshot['tranches']
+  private readonly budgets: LedgerSnapshot['budgets']
+  private readonly allowances: LedgerSnapshot['allowances']
+  private readonly requests: LedgerSnapshot['requests']
+  private readonly members: LedgerSnapshot['members']
+  private readonly processed: LedgerSnapshot['processed']
 
   private actor: Id | null = null
   private records: LedgerRecord[] = []
@@ -196,109 +160,21 @@ class LedgerView {
   private transaction = ''
 
   constructor(state: ViatikState) {
-    for (const portfolio of state.portfolios) this.scopes.set(portfolio.id, 'portfolio')
-    for (const agency of state.agencies) {
-      this.scopes.set(agency.id, 'agency')
-      this.agencyPortfolio.set(agency.id, agency.portfolioId)
-      // The first account opened as Operations stays the agency's for good, whatever its status.
-      const operations = state.accounts.find((a) => a.agencyId === agency.id && a.template === 'operations')
-      if (operations) this.operations.set(agency.id, operations.id)
-    }
-    for (const membership of state.memberships) {
-      if (membership.status !== 'active') continue
-      const scope = scopeId(membership.scope)
-      const fits = (membership.role === 'investor') === (membership.scope.kind === 'portfolio')
-      if (fits) this.roles.set(`${scope}|${membership.userId}`, ROLE[membership.role])
-    }
-    for (const vault of state.vaults) {
-      if (vault.kind === 'portfolio') this.places.set(vault.id, place('portfolio_vault', vault.portfolioId))
-      if (vault.kind === 'funding' && vault.agencyId) {
-        this.places.set(vault.id, place('funding_vault', vault.agencyId))
-        if (vault.agreementId) this.vaultAgreement.set(vault.id, vault.agreementId)
-      }
-    }
-    for (const account of state.accounts) this.places.set(account.id, place('account', account.agencyId))
-    for (const budget of state.budgets) {
-      this.places.set(budget.id, place('budget', budget.agencyId))
-      this.budgets.set(budget.id, {
-        agency: budget.agencyId,
-        sourceAccount: budget.sourceAccountId,
-        perOperationLimit: budget.perOperationLimit,
-        approvalThreshold: budget.approvalThreshold,
-        paused: budget.status !== 'active',
-        destinations: new Set(budget.allowedDestinationIds),
-      })
-      this.processed.add(budget.id)
-    }
-
-    for (const movement of state.movements) {
-      this.adjust(movement.from, movement.agencyId, -movement.amount)
-      this.adjust(movement.to, movement.agencyId, movement.amount)
-      if (movement.refId) this.processed.add(movement.refId)
-    }
-
-    for (const agreement of state.agreements) {
-      const vault = state.vaults.find((v) => v.kind === 'funding' && v.agreementId === agreement.id)
-      let funded = 0
-      let released = 0
-      for (const m of state.movements) {
-        if (m.agreementId !== agreement.id) continue
-        if (m.kind === 'fund_agreement') funded += m.amount
-        if (m.kind === 'release_tranche') released += m.amount
-      }
-      this.agreements.set(agreement.id, {
-        agency: agreement.agencyId,
-        vault: vault?.id ?? '',
-        committed: agreement.committed,
-        funded,
-        released,
-        exceptionThreshold: agreement.spendingPolicy.exceptionThreshold,
-        status:
-          agreement.status === 'pending_acceptance'
-            ? 'pending'
-            : agreement.status === 'active' || agreement.status === 'paused'
-              ? agreement.status
-              : 'inactive',
-      })
-      this.agencyAgreements.set(agreement.agencyId, [
-        ...(this.agencyAgreements.get(agreement.agencyId) ?? []),
-        agreement.id,
-      ])
-    }
-    for (const tranche of state.tranches) {
-      this.tranches.set(tranche.id, {
-        agreement: tranche.agreementId,
-        amount: tranche.amount,
-        index: tranche.index,
-        milestone: Boolean(tranche.milestoneId),
-        status: trancheState(tranche.status),
-        requestedBy: tranche.requestedBy,
-        destination: tranche.destinationAccountId,
-      })
-    }
-    for (const allowance of state.allowances) {
-      if (allowance.status === 'active' && allowance.holder.kind === 'member')
-        this.allowances.set(
-          `${allowance.budgetId}|${allowance.holder.userId}`,
-          allowance.perOperationLimit ?? 0,
-        )
-    }
-    for (const request of state.requests) {
-      this.processed.add(request.id)
-      if (request.requester.kind !== 'user') continue
-      this.requests.set(request.id, {
-        budget: request.budgetId,
-        agency: request.agencyId,
-        requester: request.requester.userId,
-        destination: request.destination.kind === 'destination' ? request.destination.destinationId : null,
-        member: request.destination.kind === 'member' ? request.destination.userId : null,
-        amount: request.amount,
-        evidenceHash: attachmentsHash(request.attachments),
-        status: requestState(request.status),
-      })
-    }
-    for (const payment of state.payments) this.processed.add(payment.id)
-    for (const receipt of state.receipts) this.processed.add(receipt.operationId)
+    const snapshot = ledgerSnapshot(state)
+    this.scopes = snapshot.scopes
+    this.agencyPortfolio = snapshot.agencyPortfolio
+    this.roles = snapshot.roles
+    this.places = snapshot.places
+    this.vaultAgreement = snapshot.vaultAgreement
+    this.operations = snapshot.operations
+    this.agreements = snapshot.agreements
+    this.agencyAgreements = snapshot.agencyAgreements
+    this.tranches = snapshot.tranches
+    this.budgets = snapshot.budgets
+    this.allowances = snapshot.allowances
+    this.requests = snapshot.requests
+    this.members = snapshot.members
+    this.processed = snapshot.processed
   }
 
   run(plan: SettlementPlan, now: string): Run {
@@ -352,7 +228,7 @@ class LedgerView {
         if (!fits) revert('not_registered', 'This workspace is not registered with the ledger.')
         if (this.roles.has(`${scope}|${op.userId}`))
           revert('invalid_state', 'This person already has a role here.')
-        this.roles.set(`${scope}|${op.userId}`, ROLE[op.role])
+        this.roles.set(`${scope}|${op.userId}`, LEDGER_ROLE_OF[op.role])
         return
       }
       case 'revokeRole': {
@@ -976,23 +852,7 @@ class LedgerView {
 
   /** Balances from movements: vaults, accounts and budgets, and what each Member holds per agency. */
   private adjust(location: Location, agencyId: Id | undefined, amount: number) {
-    if (location.kind === 'recipient') {
-      if (location.recipient.kind === 'member' && agencyId) {
-        const key = `${agencyId}|${location.recipient.userId}`
-        this.members.set(key, (this.members.get(key) ?? 0) + amount)
-      }
-      return
-    }
-    const id =
-      location.kind === 'vault'
-        ? location.vaultId
-        : location.kind === 'account'
-          ? location.accountId
-          : location.kind === 'budget'
-            ? location.budgetId
-            : null
-    const found = id ? this.places.get(id) : undefined
-    if (found) found.balance += amount
+    adjustBalance({ places: this.places, members: this.members }, location, agencyId, amount)
   }
 
   /** A money operation: its `Recorded` receipt, and what the person sees of it. */
@@ -1071,52 +931,12 @@ function sameEnd(a: RecordEnd, b: RecordEnd) {
   return 'member' in a ? 'member' in b && a.member === b.member : 'id' in b && a.id === b.id
 }
 
-function place(kind: LocationKind, scope: Id): Place {
-  return { kind, scope, balance: 0 }
-}
-
-function scopeId(scope: MembershipScope): Id {
-  return scope.kind === 'portfolio' ? scope.portfolioId : scope.agencyId
-}
-
 function allowed(budget: BudgetView, destinationId: Id | null) {
   return budget.destinations.size === 0 || (destinationId !== null && budget.destinations.has(destinationId))
 }
 
 function perOperationLabel(budget: BudgetView) {
   return `Payment rules · per-operation limit ${usd(budget.perOperationLimit)}`
-}
-
-function trancheState(status: ViatikState['tranches'][number]['status']): TrancheState {
-  switch (status) {
-    case 'planned':
-      return 'planned'
-    case 'available':
-      return 'available'
-    case 'requested':
-    case 'under_review':
-    case 'approved':
-      return 'requested'
-    case 'released':
-      return 'released'
-    default:
-      return 'rejected'
-  }
-}
-
-function requestState(status: ViatikState['requests'][number]['status']): RequestState {
-  switch (status) {
-    case 'needs_approval':
-      return 'pending'
-    case 'approved':
-    case 'processing':
-    case 'completed':
-      return 'executed'
-    case 'rejected':
-      return 'rejected'
-    default:
-      return 'closed'
-  }
 }
 
 function fail(code: LedgerErrorCode, message: string): LedgerError {

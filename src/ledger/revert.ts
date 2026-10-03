@@ -78,6 +78,18 @@ function revertData(error: unknown): Hex | undefined {
   return found
 }
 
+/**
+ * Whether a simulation reverted, as opposed to the RPC failing or the call
+ * not fitting the gas cap (viem files "gas required exceeds allowance" as a
+ * revert too).
+ */
+export function isRevert(error: unknown): boolean {
+  if (!(error instanceof BaseError)) return false
+  if (revertData(error)) return true
+  const text = `${error.shortMessage} ${error.details ?? ''}`
+  return /execution reverted/i.test(text) && !/gas required exceeds/i.test(text)
+}
+
 export function decodeLedgerError(raw: unknown): TranslatedError {
   const data = revertData(raw)
   return (data && ledgerErrorOf(data)) || translateLedgerError(raw)

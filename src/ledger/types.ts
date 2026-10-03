@@ -232,8 +232,10 @@ export type StatusListener = (status: LedgerStatus) => void
 export type ChainContext = {
   /** The current epoch of ids (rotates with every re-seed). */
   namespace: string
-  /** A person's account on Monad, if they have one. */
+  /** The address the ledger holds for a person: their account, or a genesis placeholder. */
   addressOf: (userId: Id) => Address | undefined
+  /** Who may sign for a person: their own account only (default: `addressOf`). */
+  signerOf?: (userId: Id) => Address | undefined
 }
 
 export type SettleContext = {
