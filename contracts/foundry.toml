@@ -1,0 +1,35 @@
+# Based on the official Monad Foundry template (monad-developers/foundry-monad).
+# Dependencies come from the app's node_modules (pnpm): see remappings.txt.
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+libs = ["../node_modules"]
+auto_detect_remappings = false # only remappings.txt: Sourcify publishes them
+solc_version = "0.8.30"
+evm_version = "prague"
+optimizer = true
+optimizer_runs = 200
+cbor_metadata = true
+bytecode_hash = "none" # Sourcify verification: no IPFS hash (Monad docs call these metadata/metadata_hash)
+use_literal_content = true # Sourcify verification: embed source code
+
+# Tests run locally with Monad Testnet's chain id. No default RPC: with one set,
+# every `forge test` forks the chain. Scripts and verification name it explicitly
+# (--rpc-url monad_testnet, or the private MONAD_RPC_URL).
+chain_id = 10143
+
+[rpc_endpoints]
+monad_testnet = "https://testnet-rpc.monad.xyz"
+
+[fuzz]
+runs = 1000
+
+[fmt]
+line_length = 120
+
+# Monad's execution rules (gas schedule included), for deploy scripts and a final
+# test run before each deploy: FOUNDRY_PROFILE=monad forge test / forge script.
+[profile.monad]
+network = "monad"

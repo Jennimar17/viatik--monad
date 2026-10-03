@@ -17,6 +17,7 @@ One app serves both the marketing site and the product.
 
 - Node.js 22
 - pnpm 10 (`corepack enable`; the version is pinned in `package.json`)
+- Foundry 1.8+ for the contracts
 
 ## Getting started
 
@@ -35,6 +36,19 @@ The app runs on http://localhost:3000.
 | `pnpm start`     | Serve the production build         |
 | `pnpm lint`      | ESLint                             |
 | `pnpm typecheck` | Generate route types and run `tsc` |
+
+## Contracts
+
+`contracts/` is a Foundry project. Its dependencies (OpenZeppelin, forge-std) install with `pnpm install`.
+
+```bash
+cd contracts
+forge test
+```
+
+Tests run locally. `FOUNDRY_PROFILE=monad` applies Monad's execution rules; use it for deploy scripts and for a last test run before deploying.
+
+`TestUSD` is the testnet stand-in for USDC: 6 decimals, an open faucet capped at 1,000,000 per mint, and no value. It refuses to deploy on Monad mainnet.
 
 ## Environment
 
