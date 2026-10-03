@@ -33,7 +33,23 @@ export const app = new Hono<AppEnv>()
         database = 'unavailable'
       }
     }
-    const accounts = publicEnv.NEXT_PUBLIC_PRIVY_APP_ID && env.PRIVY_APP_SECRET ? 'ok' : 'not_configured'
+    // Sign-in needs Privy's public keys to verify tokens (unless a verification key is set locally).
+    let accounts: 'ok' | 'unavailable' | 'not_configured' = 'not_configured'
+    if (publicEnv.NEXT_PUBLIC_PRIVY_APP_ID && env.PRIVY_APP_SECRET) {
+      accounts = 'ok'
+      if (!env.PRIVY_JWT_VERIFICATION_KEY) {
+        try {
+          const keys = await fetch(
+            `https://auth.privy.io/api/v1/apps/${publicEnv.NEXT_PUBLIC_PRIVY_APP_ID}/jwks.json`,
+            { cache: 'no-store', signal: AbortSignal.timeout(5_000) },
+          )
+          if (!keys.ok) throw new Error(`status ${keys.status}`)
+        } catch (error) {
+          console.error(`[api] ${c.get('requestId')} health: Privy keys`, error)
+          accounts = 'unavailable'
+        }
+      }
+    }
     return c.json({ ok: database === 'ok' && accounts === 'ok', database, accounts }, 200, {
       'cache-control': 'no-store',
     })
