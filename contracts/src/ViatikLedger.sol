@@ -259,6 +259,8 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
     mapping(bytes32 scope => mapping(address account => Role)) private _roles;
     /// @notice Portfolio and agency ids live in one space and never collide.
     mapping(bytes32 scope => ScopeKind) public scopeKind;
+    /// @dev Portfolios created by genesis: only those can receive more imported agencies.
+    mapping(bytes32 portfolio => bool) private _importedPortfolio;
     /// @notice Bumped when someone loses their role in an agency, so their allowances and
     /// pending requests stop counting (and do not come back if they rejoin).
     mapping(bytes32 agency => mapping(address account => uint64)) public membershipEpoch;
@@ -417,6 +419,7 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
         bool[] calldata milestones
     ) external {
         _requireRole(_requireAgency(agencyId), Role.Investor);
+        if (agreementId == bytes32(0)) revert InvalidState(agreementId);
         if (_agreements[agreementId].status != AgreementStatus.None) revert AlreadyProcessed(agreementId);
         if (trancheIds.length == 0 || amounts.length != trancheIds.length || milestones.length != trancheIds.length) {
             revert InvalidState(agreementId);
@@ -530,6 +533,7 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
         if (tranche.amount > available) revert InsufficientFunds(agreement.vault, available, tranche.amount);
 
         tranche.status = TrancheStatus.Released;
+        _processed[caller][trancheId] = true;
         tranche.destination = destination;
         agreement.released += tranche.amount;
         _move(agreement.vault, destination, tranche.amount);
@@ -566,6 +570,7 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
         emit BudgetCreated(budgetId, agency, sourceAccount, allocation);
         if (allocation > 0) {
             // The initial allocation is recorded under the budget's own id.
+            _claim(budgetId);
             _move(sourceAccount, budgetId, allocation);
             _record(budgetId, ReceiptKind.Allocation, allocation, sourceAccount, budgetId, bytes32(0));
         }
@@ -895,9 +900,13 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
     /// Send the whole genesis in one owner multicall with a fresh namespace, so nobody can
     /// squat a seeded id in between; an id taken by someone else makes this revert.
     function importScope(bytes32 portfolioId, bytes32 agencyId) external onlyOwner {
-        ScopeKind kind = scopeKind[portfolioId];
-        if (portfolioId == bytes32(0) || kind == ScopeKind.Agency) revert InvalidState(portfolioId);
-        scopeKind[portfolioId] = ScopeKind.Portfolio;
+        if (portfolioId == bytes32(0)) revert InvalidState(portfolioId);
+        if (!_importedPortfolio[portfolioId]) {
+            // A portfolio someone opened before genesis would leave them as its Investor.
+            if (scopeKind[portfolioId] != ScopeKind.None) revert AlreadyProcessed(portfolioId);
+            scopeKind[portfolioId] = ScopeKind.Portfolio;
+            _importedPortfolio[portfolioId] = true;
+        }
         if (agencyId != bytes32(0)) {
             if (scopeKind[agencyId] != ScopeKind.None) revert AlreadyProcessed(agencyId);
             scopeKind[agencyId] = ScopeKind.Agency;
@@ -1009,9 +1018,8 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
     /// placeholder address for a seeded person without a wallet.
     function importPendingRequest(ImportedRequest calldata data) external onlyOwner {
         bytes32 agency = _requireLocation(data.budget, LocationKind.Budget).scope;
-        if (_requests[data.requestId].status != RequestStatus.None || data.amount == 0) {
-            revert AlreadyProcessed(data.requestId);
-        }
+        if (data.amount == 0) revert InvalidState(data.requestId);
+        if (_requests[data.requestId].status != RequestStatus.None) revert AlreadyProcessed(data.requestId);
         _requireHolder(data.budget, agency, data.requester);
         _requests[data.requestId] = PaymentRequest({
             budget: data.budget,
@@ -1052,7 +1060,9 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
     ) private returns (uint256 total) {
         for (uint256 i; i < trancheIds.length; ++i) {
             bytes32 trancheId = trancheIds[i];
-            if (amounts[i] == 0 || _tranches[trancheId].status != TrancheStatus.None) revert InvalidState(trancheId);
+            if (trancheId == bytes32(0) || amounts[i] == 0 || _tranches[trancheId].status != TrancheStatus.None) {
+                revert InvalidState(trancheId);
+            }
             total += amounts[i];
             _tranches[trancheId] = Tranche({
                 agreement: agreementId,
