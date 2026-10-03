@@ -7,7 +7,7 @@ import * as React from 'react'
 import { ButtonLink } from '@/components/app/button-link'
 import { receiptHref } from '@/components/app/nav'
 import { AttachmentNames } from '@/components/app/open-file'
-import { ReceiptDetailsButton } from '@/components/app/receipt-details'
+import { ReceiptDetailsButton, requestRecord } from '@/components/app/receipt-details'
 import { useHref, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,7 @@ import { KeyValueList, PageHeader, Panel } from '@/components/viatik/layout'
 import { Steps, type Step } from '@/components/viatik/operation'
 import { PolicyVerdict } from '@/components/viatik/policy'
 import { StatusBadge } from '@/components/viatik/status'
+import { VerifiedDetailsButton } from '@/components/viatik/verified-details-drawer'
 import { useCommand, useViatikState } from '@/data/react'
 import { categoryLabel, requestTypeLabel } from '@/domain/labels'
 import { budgetName, receiptFor, recipientName, userName } from '@/domain/queries'
@@ -45,7 +46,11 @@ function progressSteps(state: ViatikState, request: PaymentRequest, completedAt?
       {
         id: 'policy',
         label: 'Policy check',
-        detail: 'Outside the budget rules, so settlement refused it. Nothing was paid.',
+        // Only a rejection the ledger recorded can be said to come from settlement.
+        detail:
+          request.ledger?.outcome === 'rejected'
+            ? 'Outside the budget rules, so settlement refused it. Nothing was paid.'
+            : 'Outside the budget rules. Nothing was paid.',
         state: 'failed',
       },
     ]
@@ -131,6 +136,12 @@ export default function RequestDetailPage() {
   const receipt = receiptFor(state, payment?.receiptId)
   const steps = progressSteps(state, request, payment?.completedAt)
   const recipient = recipientName(state, request.destination)
+  // What the ledger recorded when it was sent, while that is still the latest word on it:
+  // once paid the receipt is the record, and a closed request has moved on.
+  const ledgerRecord =
+    request.status === 'rejected' || request.status === 'needs_approval'
+      ? requestRecord(state, request)
+      : undefined
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
@@ -162,6 +173,7 @@ export default function RequestDetailPage() {
             <Amount value={request.amount} size="xl" />
           </div>
           <ReceiptDetailsButton receipt={receipt} />
+          {ledgerRecord ? <VerifiedDetailsButton record={ledgerRecord} /> : null}
         </div>
       </Panel>
 

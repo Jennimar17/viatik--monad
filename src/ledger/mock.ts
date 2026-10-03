@@ -1,8 +1,10 @@
 import { attachmentsHash } from '@/domain/evidence'
+import { pseudoHash } from '@/domain/ids'
 import { formatUsd, type Cents } from '@/domain/money'
-import type { Id, Location, MembershipScope, Role, ViatikState } from '@/domain/types'
+import type { Id, LedgerReason, Location, MembershipScope, Role, ViatikState } from '@/domain/types'
 import { simulatedVerification } from '@/domain/verification'
 
+import { witnessesOf } from './ids'
 import type {
   Balances,
   Hash,
@@ -165,7 +167,7 @@ function revert(code: LedgerErrorCode, message: string): never {
 const ROLE: Record<Role, LedgerRole> = { investor: 'investor', agency_admin: 'admin', member: 'member' }
 
 /** Why `requestPayment` records a rejection, in the contract's order of checks. */
-type Reason = { code: LedgerErrorCode; message: string } | null
+type Reason = { code: LedgerReason; message: string; limit: number } | null
 
 /** The ledger's storage, rebuilt from the state the command ran on. */
 class LedgerView {
@@ -191,6 +193,7 @@ class LedgerView {
   private written: PlannedRecord[] = []
   private rejected = false
   private now = ''
+  private transaction = ''
 
   constructor(state: ViatikState) {
     for (const portfolio of state.portfolios) this.scopes.set(portfolio.id, 'portfolio')
@@ -301,6 +304,12 @@ class LedgerView {
   run(plan: SettlementPlan, now: string): Run {
     this.actor = plan.signerUserId
     this.now = now
+    // One command is one transaction: every record of the plan shares its hash.
+    this.transaction = pseudoHash(
+      `tx:${witnessesOf(plan)
+        .map((w) => `${w.events[0]}:${w.id}`)
+        .join(',')}:${now}`,
+    )
     for (const op of plan.ops) this.apply(op, plan)
     // What the ledger would record must be what the app planned: same ids, amounts and ends.
     if (!sameRecords(this.written, plan.records))
@@ -497,6 +506,7 @@ class LedgerView {
         tranche.status = 'requested'
         tranche.requestedBy = this.caller()
         tranche.destination = op.accountId
+        this.confirm(op.trancheId, 'requestTranche', 'Tranche request')
         return
       }
       case 'requestChanges': {
@@ -663,6 +673,7 @@ class LedgerView {
             reason?.message ?? 'Outside the budget rules',
             written('payment_rejected', op.amount, { id: op.budgetId }, end, op.evidenceHash),
             'rejected',
+            reason ?? undefined,
           )
         } else if (outcome === 'pending') {
           this.record(
@@ -814,11 +825,12 @@ class LedgerView {
     member: Id | null,
     amount: number,
   ): Reason {
-    if (budget.paused) return { code: 'budget_paused', message: 'This budget is paused.' }
+    if (budget.paused) return { code: 'budget_paused', message: 'This budget is paused.', limit: 0 }
     if (!member && !allowed(budget, destinationId))
       return {
         code: 'destination_not_allowed',
         message: 'This payment destination is not approved for this budget.',
+        limit: 0,
       }
     const own = this.allowances.get(`${budgetId}|${holder}`) ?? 0
     const limit = own !== 0 && own < budget.perOperationLimit ? own : budget.perOperationLimit
@@ -826,10 +838,15 @@ class LedgerView {
       return {
         code: 'limit_exceeded',
         message: `The amount exceeds the per-operation limit of ${usd(limit)}.`,
+        limit,
       }
     const available = this.places.get(budgetId)?.balance ?? 0
     if (amount > available)
-      return { code: 'insufficient_funds', message: `The budget has ${usd(available)} available.` }
+      return {
+        code: 'insufficient_funds',
+        message: `The budget has ${usd(available)} available.`,
+        limit: available,
+      }
     return null
   }
 
@@ -978,24 +995,40 @@ class LedgerView {
     if (found) found.balance += amount
   }
 
+  /** A money operation: its `Recorded` receipt, and what the person sees of it. */
   private record(
     opId: Id,
     call: LedgerCall,
     contractPolicy: string,
     receipt: Written,
     outcome?: RequestOutcome,
+    reason?: NonNullable<Reason>,
   ) {
     this.written.push({ opId, ...receipt })
     this.records.push({
       opId,
       call,
       outcome,
-      verified: simulatedVerification({
-        operationId: opId,
-        account: this.caller(),
-        timestamp: this.now,
-        contractPolicy,
-      }),
+      reason: reason?.code,
+      limit: reason ? (reason.limit as Cents) : undefined,
+      verified: this.verified(opId, contractPolicy),
+    })
+  }
+
+  /** An operation the ledger confirms with its own event, without a receipt (a tranche request). */
+  private confirm(opId: Id, call: LedgerCall, contractPolicy: string) {
+    const verified = this.verified(`${opId}:${call}`, contractPolicy)
+    delete verified.receiptHash
+    this.records.push({ opId, call, verified })
+  }
+
+  private verified(operationId: Id, contractPolicy: string) {
+    return simulatedVerification({
+      operationId,
+      account: this.caller(),
+      timestamp: this.now,
+      contractPolicy,
+      transaction: this.transaction,
     })
   }
 }

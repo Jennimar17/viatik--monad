@@ -9,15 +9,18 @@ import type {
   PaymentRequest,
   PolicyRuleId,
   SpendingAllowance,
+  VerifiedDetails,
   ViatikState,
 } from '@/domain/types'
 import type {
   LedgerError,
   LedgerErrorCode,
   LedgerOp,
+  LedgerRecord,
   PlannedRecord,
   RecordEnd,
   SettlementPlan,
+  SettlementResult,
 } from '@/ledger/types'
 
 /**
@@ -318,6 +321,89 @@ export function planSettlement({ before, after, actor }: PlanArgs): SettlementPl
 
   if (ops.length === 0 && !refusal && uncovered.length === 0) return null
   return { ops, records, signerUserId, keepOnFailure, ...(refusal ? { refusal } : {}), uncovered }
+}
+
+/**
+ * Writes what the ledger recorded onto the state the command produced, after
+ * every settlement (the mock now, Monad's confirm in step 8.3): the verified
+ * details of the command's receipts, of a payment request (also a rejected
+ * one) and of a tranche request. A request refused before the ledger gets no
+ * ledger record, so no screen can say the ledger refused it.
+ *
+ * It changes `after` in place, so a command's result (which points into it)
+ * carries the same details.
+ */
+export function applySettlement(
+  before: ViatikState,
+  after: ViatikState,
+  plan: SettlementPlan,
+  result: SettlementResult,
+): void {
+  const planned = new Map(plan.records.map((record) => [record.opId, record]))
+  const recorded = (opId: Id, call: LedgerRecord['call']) =>
+    result.records.find((record) => record.opId === opId && record.call === call)
+
+  // Receipts keep the product's policy wording; the rest is the ledger's.
+  const known = new Set(before.receipts.map((r) => r.id))
+  for (const receipt of after.receipts) {
+    if (known.has(receipt.id)) continue
+    const record = result.records.find((r) => r.opId === receipt.operationId && r.call !== 'requestTranche')
+    if (!record) continue
+    receipt.verified = {
+      ...record.verified,
+      contractPolicy: receipt.verified.contractPolicy,
+      ...fingerprints(planned.get(record.opId)),
+    }
+  }
+
+  for (const op of plan.ops) {
+    if (op.call === 'requestPayment') {
+      const request = after.requests.find((r) => r.id === op.requestId)
+      const record = recorded(op.requestId, 'requestPayment') ?? recorded(op.paymentId, 'requestPayment')
+      if (!request || !record) continue
+      const receipt = after.receipts.find((r) => r.operationId === record.opId)
+      // The rule that decided it, as the request shows it; the ledger's own words if it
+      // rejected for another reason (its state can differ from the app's).
+      const rule = request.decision.reason?.rule
+      const sameReason = !record.reason || (rule !== undefined && LEDGER_RULES.get(rule) === record.reason)
+      request.ledger = {
+        ...record.verified,
+        contractPolicy: sameReason
+          ? (request.decision.reason?.message ?? receipt?.policyLabel ?? record.verified.contractPolicy)
+          : record.verified.contractPolicy,
+        outcome: record.outcome,
+        reason: record.reason ? { code: record.reason, limit: record.limit } : undefined,
+        ...fingerprints(planned.get(record.opId)),
+      }
+    }
+    if (op.call === 'requestTranche') {
+      const record = recorded(op.trancheId, 'requestTranche')
+      const tranche = after.tranches.find((t) => t.id === op.trancheId)
+      if (!record || !tranche) continue
+      const details: VerifiedDetails = {
+        ...record.verified,
+        contractPolicy: tranche.milestoneId
+          ? 'Milestone evidence fingerprinted · the Investor reviews it before releasing'
+          : 'Requested by the Agency · the Investor approves the release',
+        evidenceHash: op.evidenceHash ?? undefined,
+      }
+      tranche.requestVerified = details
+      const milestone = tranche.milestoneId
+        ? after.milestones.find((m) => m.id === tranche.milestoneId)
+        : undefined
+      if (milestone) milestone.submissionVerified = details
+    }
+  }
+}
+
+/** The fingerprint a record carries: a payment's documents, or the decision behind a release. */
+function fingerprints(record: PlannedRecord | undefined): Partial<VerifiedDetails> {
+  if (!record) return {}
+  if (record.kind === 'tranche_release')
+    return record.evidenceHash ? { decisionHash: record.evidenceHash } : {}
+  if (record.kind === 'payment' || record.kind === 'payment_pending' || record.kind === 'payment_rejected')
+    return { evidenceHash: record.evidenceHash }
+  return {}
 }
 
 /**

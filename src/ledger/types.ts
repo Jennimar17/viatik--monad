@@ -1,5 +1,13 @@
 import type { Cents } from '@/domain/money'
-import type { Id, ISODate, MembershipScope, Role, VerifiedDetails, ViatikState } from '@/domain/types'
+import type {
+  Id,
+  ISODate,
+  LedgerReason,
+  MembershipScope,
+  Role,
+  VerifiedDetails,
+  ViatikState,
+} from '@/domain/types'
 
 /**
  * Product-language boundary between Viatik and Monad. UI code never calls a
@@ -179,11 +187,17 @@ export type SettlementPlan = {
   uncovered: Id[]
 }
 
-/** One operation the ledger recorded (`Recorded(opId, …)` onchain). */
+/**
+ * One operation the ledger confirmed: a money operation (`Recorded(opId, …)`
+ * onchain), or a tranche request (`TrancheRequested`), which records no money.
+ */
 export type LedgerRecord = {
   opId: Id
   call: LedgerCall
   outcome?: RequestOutcome
+  /** A rejected request: why, and the limit or balance the ledger applied. */
+  reason?: LedgerReason
+  limit?: Cents
   verified: VerifiedDetails
 }
 

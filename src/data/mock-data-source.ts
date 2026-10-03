@@ -24,7 +24,7 @@ import {
   type UploadedFile,
 } from './data-source'
 import { assertEvidenceFile, sha256Hex } from './evidence-files'
-import { planSettlement } from './settlement'
+import { applySettlement, planSettlement } from './settlement'
 
 const STORAGE_KEY = 'viatik:demo-state'
 const STATE_VERSION = 1
@@ -142,6 +142,8 @@ export class MockDataSource implements DataSource {
           if (status !== 'completed') emit(status)
         },
       })
+      // What the ledger recorded (receipts, a request, a tranche request) joins the new state.
+      applySettlement(before, outcome.state, plan, settled)
       if (settled.status === 'failed') {
         if (plan.keepOnFailure) this.write(outcome.state)
         emit('failed')

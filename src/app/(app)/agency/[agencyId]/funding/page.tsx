@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowRight, HandCoins } from 'lucide-react'
+import { ArrowRight, HandCoins, ShieldCheck } from 'lucide-react'
 import * as React from 'react'
 
 import { ButtonLink } from '@/components/app/button-link'
@@ -11,7 +11,7 @@ import {
   MilestoneTimelineFor,
 } from '@/components/app/funding-parts'
 import { PageTabs } from '@/components/app/page-tabs'
-import { useReceiptDrawer } from '@/components/app/receipt-details'
+import { trancheRequestRecord, useReceiptDrawer } from '@/components/app/receipt-details'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { Button } from '@/components/ui/button'
 import { Amount } from '@/components/viatik/amount'
@@ -19,6 +19,7 @@ import { ApprovalSheet } from '@/components/viatik/approval-sheet'
 import { EmptyState } from '@/components/viatik/feedback'
 import { PageHeader, Panel } from '@/components/viatik/layout'
 import { StatusBadge, Tag } from '@/components/viatik/status'
+import { VerifiedDetailsButton } from '@/components/viatik/verified-details-drawer'
 import { useCommand, useViatikState } from '@/data/react'
 import { activeAgreement, receiptFor } from '@/domain/queries'
 import { agreementStatus } from '@/domain/status'
@@ -118,10 +119,17 @@ export default function AgencyFundingPage() {
                           size="pill-sm"
                           onClick={() => receipts.show(receiptFor(state, tranche.receiptId))}
                         >
-                          Verified details
+                          <ShieldCheck data-icon="inline-start" /> Verified details
                         </Button>
                       )
                     }
+                    // A request waiting for the Investor: what the ledger recorded when it was sent.
+                    const requested =
+                      tranche.status === 'under_review' && trancheRequestRecord(state, tranche)
+                    if (requested)
+                      return (
+                        <VerifiedDetailsButton record={requested} label="Verified details" variant="ghost" />
+                      )
                     if (agreement.status !== 'active' || !can('submit_milestone_evidence')) return null
                     if (milestone && SUBMITTABLE.has(milestone.status)) {
                       return (

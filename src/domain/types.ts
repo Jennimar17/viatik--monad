@@ -143,6 +143,8 @@ export type Tranche = {
   releasedAt?: ISODate
   releasedBy?: Id
   receiptId?: Id
+  /** The ledger's record of the Agency's request. */
+  requestVerified?: VerifiedDetails
 }
 
 export type MilestoneStatus =
@@ -184,6 +186,8 @@ export type Milestone = {
   submittedBy?: Id
   evidenceHash?: `0x${string}`
   decision?: MilestoneDecision
+  /** The ledger's record of the latest evidence submission. */
+  submissionVerified?: VerifiedDetails
 }
 
 export type VaultKind = 'portfolio' | 'funding' | 'agency_reserve' | 'yield'
@@ -342,6 +346,8 @@ export type PaymentRequest = {
   paymentId?: Id
   idempotencyKey: string
   createdAt: ISODate
+  /** What the ledger recorded when the request was sent. Absent when it never reached the ledger. */
+  ledger?: VerifiedDetails
 }
 
 export type PaymentType =
@@ -421,7 +427,15 @@ export type Reconciliation = {
 
 // ─── Verification ────────────────────────────────────────────────────────────
 
-/** The only place blockchain terminology is allowed in the product. */
+/** Why the ledger rejected a payment request (its `Reason`), in product codes. */
+export type LedgerReason =
+  'budget_paused' | 'destination_not_allowed' | 'limit_exceeded' | 'insufficient_funds'
+
+/**
+ * The settlement record of one operation: the only place blockchain
+ * terminology is allowed in the product. The optional fields are its
+ * "Advanced" part.
+ */
 export type VerifiedDetails = {
   status: 'confirmed' | 'pending'
   network: string
@@ -430,11 +444,24 @@ export type VerifiedDetails = {
   transaction: string
   block: number
   timestamp: ISODate
-  receiptHash: string
+  /** The ledger's receipt hash; records without money (a tranche request) have none. */
+  receiptHash?: string
   contractPolicy: string
   explorerUrl: string
   /** True while the ledger runs on the mock adapter. */
   simulated: boolean
+  /** The ledger contract that recorded it (real ledger only). */
+  contract?: string
+  /** The operation's id in the ledger, as recorded (real ledger only). */
+  operationRef?: string
+  /** What the ledger did with a payment request. */
+  outcome?: 'executed' | 'pending' | 'rejected'
+  /** Why the ledger rejected it, and the limit or balance it applied. */
+  reason?: { code: LedgerReason; limit?: Cents }
+  /** The documents' fingerprint the record carries; null when none were attached. */
+  evidenceHash?: `0x${string}` | null
+  /** The fingerprint of the Investor's decision, recorded with a release. */
+  decisionHash?: `0x${string}`
 }
 
 export type ReceiptKind = 'payment' | 'tranche_release' | 'deposit' | 'funding' | 'transfer' | 'allocation'

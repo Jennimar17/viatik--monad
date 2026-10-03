@@ -6,7 +6,7 @@ import { bodyLimit } from 'hono/body-limit'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 
 import { canonical } from '@/data/canonical'
-import { planSettlement } from '@/data/settlement'
+import { applySettlement, planSettlement } from '@/data/settlement'
 import { runCommand, type CommandName } from '@/domain/engine'
 import type { Actor } from '@/domain/types'
 import { MockLedgerAdapter } from '@/ledger/mock'
@@ -104,6 +104,7 @@ export const commands = new Hono<AppEnv>().post(
         // Phase 8 swaps this for the Monad ledger; the limits and error codes are the same.
         const ledger = new MockLedgerAdapter({ latencyMs: 0, now: () => nowIso })
         const settled = await ledger.settle(plan, { before })
+        applySettlement(before, outcome.state, plan, settled)
         if (settled.status === 'failed') {
           const code = settled.error?.code ?? 'ledger_failed'
           const message = settled.error?.message ?? 'The operation could not be completed. Nothing was moved.'

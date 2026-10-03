@@ -8,7 +8,7 @@ import * as React from 'react'
 import { ButtonLink } from '@/components/app/button-link'
 import { FormField, SimpleSelect } from '@/components/app/form-controls'
 import { receiptHref } from '@/components/app/nav'
-import { ReceiptDetailsButton } from '@/components/app/receipt-details'
+import { ReceiptDetailsButton, requestRecord } from '@/components/app/receipt-details'
 import { useHref, useRole } from '@/components/app/role-context'
 import { useBottomBar } from '@/components/app/shell/app-shell'
 import { Button } from '@/components/ui/button'
@@ -27,6 +27,7 @@ import {
 import { PageHeader, Panel } from '@/components/viatik/layout'
 import { PendingOperation } from '@/components/viatik/operation'
 import { PolicyVerdict } from '@/components/viatik/policy'
+import { VerifiedDetailsButton } from '@/components/viatik/verified-details-drawer'
 import { useCommand, useEvidenceFiles, useViatikState } from '@/data/react'
 import { execute, previewPolicy } from '@/domain/engine'
 import { newId } from '@/domain/ids'
@@ -178,6 +179,8 @@ function NewRequest() {
     const payment = state.payments.find((p) => p.id === result.paymentId)
     const receipt = receiptFor(state, payment?.receiptId)
     const recipient = recipientName(state, result.destination)
+    // What the ledger recorded when it was sent; none when it never got there.
+    const ledgerRecord = requestRecord(state, result)
     return (
       <div className="mx-auto flex w-full max-w-xl flex-col gap-6 py-10">
         {result.status === 'rejected' ? (
@@ -187,14 +190,16 @@ function NewRequest() {
               description="Nothing was paid. The attempt is kept in your request history."
             />
             <PolicyVerdict decision={result.decision} />
-            <p className="flex items-start gap-2.5 rounded-xl border border-border bg-card px-4 py-3 text-sm text-pretty text-muted-foreground">
-              <ShieldX className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden="true" />
-              <span>
-                <span className="font-medium text-foreground">Settlement refused it too.</span> Budget rules
-                are enforced when money moves, not only in the app
-                {command.error ? `: ${command.error}` : '.'}
-              </span>
-            </p>
+            {result.ledger?.outcome === 'rejected' ? (
+              <p className="flex items-start gap-2.5 rounded-xl border border-border bg-card px-4 py-3 text-sm text-pretty text-muted-foreground">
+                <ShieldX className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden="true" />
+                <span>
+                  <span className="font-medium text-foreground">Settlement refused it too.</span> Budget rules
+                  are enforced when money moves, not only in the app
+                  {command.error ? `: ${command.error}` : '.'}
+                </span>
+              </p>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               <Button size="pill" onClick={editRequest}>
                 <Pencil data-icon="inline-start" /> Edit request
@@ -202,6 +207,9 @@ function NewRequest() {
               <ButtonLink href={href(`requests/${result.id}`)} variant="outline" size="pill">
                 View request
               </ButtonLink>
+              {ledgerRecord ? (
+                <VerifiedDetailsButton record={ledgerRecord} variant="ghost" size="pill" />
+              ) : null}
             </div>
           </>
         ) : result.status === 'needs_approval' ? (
@@ -227,6 +235,9 @@ function NewRequest() {
               <ButtonLink href={href('home')} variant="outline" size="pill">
                 Back to home
               </ButtonLink>
+              {ledgerRecord ? (
+                <VerifiedDetailsButton record={ledgerRecord} variant="ghost" size="pill" />
+              ) : null}
             </div>
           </>
         ) : (

@@ -7,7 +7,7 @@ import * as React from 'react'
 
 import { ButtonLink } from '@/components/app/button-link'
 import { EvidenceList } from '@/components/app/funding-parts'
-import { ReceiptDetailsButton } from '@/components/app/receipt-details'
+import { ReceiptDetailsButton, trancheRequestRecord } from '@/components/app/receipt-details'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
 import { useBottomBar } from '@/components/app/shell/app-shell'
@@ -22,6 +22,7 @@ import { FormActions } from '@/components/viatik/forms'
 import { KeyValueList, PageHeader, Panel } from '@/components/viatik/layout'
 import { PersonAvatar } from '@/components/viatik/people'
 import { StatusBadge } from '@/components/viatik/status'
+import { VerifiedDetailsButton } from '@/components/viatik/verified-details-drawer'
 import { useCommand, useViatikState } from '@/data/react'
 import { add, formatUsd, subtract } from '@/domain/money'
 import { accountName, receiptFor, userName } from '@/domain/queries'
@@ -89,6 +90,8 @@ export default function MilestoneReviewPage() {
   const checked = milestone.decision ? milestone.decision.checkedCriteria : draftChecked
   const allChecked = checked.length === milestone.acceptanceCriteria.length
   const releaseReceipt = receiptFor(state, tranche.receiptId)
+  // What the ledger recorded when the evidence was submitted with the tranche request.
+  const submission = milestone.submissionVerified ? trancheRequestRecord(state, tranche) : undefined
   const rejecting = (changesMode ?? lastChangesMode) === 'reject'
 
   const openChanges = (mode: ChangesMode) => {
@@ -287,6 +290,9 @@ export default function MilestoneReviewPage() {
               <p className="mt-3 font-mono text-2xs text-subtle">
                 Evidence fingerprint {milestone.evidenceHash.slice(0, 18)}…
               </p>
+            ) : null}
+            {submission ? (
+              <VerifiedDetailsButton record={submission} label="Verified submission" className="mt-3 w-fit" />
             ) : null}
           </Panel>
 

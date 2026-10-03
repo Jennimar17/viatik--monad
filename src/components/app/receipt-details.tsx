@@ -7,7 +7,8 @@ import {
   VerifiedDetailsDrawer,
   type VerifiedRecord,
 } from '@/components/viatik/verified-details-drawer'
-import type { Receipt } from '@/domain/types'
+import { accountName, agencyName, budgetName, recipientName } from '@/domain/queries'
+import type { PaymentRequest, Receipt, Tranche, ViatikState } from '@/domain/types'
 
 export function receiptRecord(receipt: Receipt): VerifiedRecord {
   return {
@@ -16,6 +17,31 @@ export function receiptRecord(receipt: Receipt): VerifiedRecord {
     fromLabel: receipt.fromLabel,
     toLabel: receipt.toLabel,
     details: receipt.verified,
+  }
+}
+
+/** What the ledger recorded when a request was sent; none if it never reached the ledger. */
+export function requestRecord(state: ViatikState, request: PaymentRequest): VerifiedRecord | undefined {
+  if (!request.ledger) return undefined
+  return {
+    title: request.purpose,
+    amount: request.amount,
+    fromLabel: budgetName(state, request.budgetId),
+    toLabel: recipientName(state, request.destination),
+    details: request.ledger,
+  }
+}
+
+/** What the ledger recorded when the Agency requested a tranche. */
+export function trancheRequestRecord(state: ViatikState, tranche: Tranche): VerifiedRecord | undefined {
+  if (!tranche.requestVerified) return undefined
+  const agreement = state.agreements.find((a) => a.id === tranche.agreementId)
+  return {
+    title: `${tranche.name} request`,
+    amount: tranche.amount,
+    fromLabel: agreement?.title ?? 'Funding agreement',
+    toLabel: `${agencyName(state, agreement?.agencyId)} · ${accountName(state, tranche.destinationAccountId)}`,
+    details: tranche.requestVerified,
   }
 }
 

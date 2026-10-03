@@ -103,7 +103,9 @@ export default function ReceiptPage() {
     { label: 'Organization', value: organization },
     { label: 'Policy applied', value: receipt.policyLabel },
     ...(bill ? [{ label: 'Bill', value: bill.number }] : []),
-    { label: 'Receipt hash', value: shortHash(receipt.verified.receiptHash, 10, 8), mono: true },
+    ...(receipt.verified.receiptHash
+      ? [{ label: 'Receipt hash', value: shortHash(receipt.verified.receiptHash, 10, 8), mono: true }]
+      : []),
   ]
 
   return (
