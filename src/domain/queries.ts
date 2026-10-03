@@ -1,5 +1,5 @@
 import { cents, clampToZero, sum } from './money'
-import { budgetUsage } from './selectors'
+import { budgetUsage, committedAt } from './selectors'
 import type {
   Actor,
   AllowanceHolder,
@@ -144,8 +144,8 @@ export function memberBudgets(state: ViatikState, agencyId: Id, userId: Id, now:
             r.requester.kind === 'user' &&
             r.requester.userId === userId &&
             (r.status === 'completed' || r.status === 'approved' || r.status === 'processing') &&
-            r.createdAt >= window.start &&
-            r.createdAt < window.end,
+            committedAt(r) >= window.start &&
+            committedAt(r) < window.end,
         ),
         (r) => r.amount,
       )

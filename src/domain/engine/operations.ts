@@ -1,19 +1,14 @@
 import { newId } from '../ids'
 import { cents, sum, type Cents } from '../money'
-import { evaluatePolicy } from '../policy'
+import { evaluatePolicy, type PolicyRequest } from '../policy'
 import { accountTemplate } from '../labels'
 import { activeOperationsAccount, governingAgreement } from '../queries'
-import {
-  accountBalance,
-  agentSpentToday,
-  budgetBalance,
-  budgetUsage,
-  holderSpentInPeriod,
-} from '../selectors'
+import { accountBalance, agentSpentToday, budgetUsage, holderSpentInPeriod } from '../selectors'
 import { assertTransition, canTransitionRequest } from '../status'
 import type {
   Account,
   AccountTemplate,
+  Actor,
   AllowanceHolder,
   Bill,
   Budget,
@@ -508,7 +503,26 @@ export function previewPolicy(
   input: Pick<RequestPaymentInput, 'budgetId' | 'amount' | 'category' | 'destinationId'>,
 ): PolicyDecision {
   const budget = tx.find('budgets', input.budgetId, 'Budget')
-  const actor = tx.actor
+  return policyForHolder(tx, budget, tx.actor, {
+    amount: input.amount,
+    category: input.category,
+    destinationId: input.destinationId,
+  })
+}
+
+/**
+ * The budget policy for whoever asks (`actor`), against current state. Pending
+ * requests are not counted, so a request waiting for approval can be checked
+ * again without counting itself. If pending requests start to count (M-14),
+ * the request being approved has to be left out here.
+ */
+function policyForHolder(
+  tx: Tx,
+  budget: Budget,
+  actor: Actor,
+  request: PolicyRequest,
+  holderName?: string,
+): PolicyDecision {
   const holder: AllowanceHolder | null =
     actor.kind === 'user'
       ? { kind: 'member', userId: actor.userId }
@@ -533,7 +547,7 @@ export function previewPolicy(
     budget,
     allowance: allowance ?? null,
     agent,
-    request: { amount: input.amount, category: input.category, destinationId: input.destinationId },
+    request,
     usage: {
       budgetAvailable: usage.available,
       holderSpentThisPeriod: holder ? holderSpentInPeriod(tx.state, budget, holder, tx.now) : cents(0),
@@ -541,6 +555,7 @@ export function previewPolicy(
       agentSpentToday: agent ? agentSpentToday(tx.state, agent.id, tx.now) : undefined,
     },
     now: tx.now,
+    holderName,
   })
 }
 
@@ -782,15 +797,31 @@ export function approveRequest(tx: Tx, input: { requestId: Id }) {
   const budget = tx.find('budgets', request.budgetId, 'Budget')
   if (budget.status !== 'active')
     throw new DomainError('invalid_state', 'The budget is paused. Resume it before approving.')
-  const available = budgetBalance(tx.state, budget.id)
-  if (available < request.amount)
-    throw new DomainError('insufficient_funds', `${budget.name} has ${usdText(available)} available.`)
+  // The rules are checked again now, not as they were when the request was
+  // sent: other payments may have used the limit since, or the budget changed.
+  const requesterName = tx.actorName(request.requester)
+  const recheck = policyForHolder(
+    tx,
+    budget,
+    request.requester,
+    {
+      amount: request.amount,
+      category: request.category,
+      destinationId: request.destination.kind === 'destination' ? request.destination.destinationId : null,
+    },
+    requesterName,
+  )
+  if (recheck.outcome === 'rejected' && recheck.reason) {
+    throw new DomainError(
+      recheck.reason.rule === 'budget_available' ? 'insufficient_funds' : 'policy_rejected',
+      `${recheck.reason.message} The request stays pending until it fits the rules or is declined.`,
+    )
+  }
 
   request.status = 'approved'
   request.approvedBy = tx.userId
   request.decidedAt = tx.now
   const portfolioId = tx.portfolioOfAgency(request.agencyId)
-  const requesterName = tx.actorName(request.requester)
   tx.activity(
     'payment_approved',
     `Approved ${requesterName}'s ${usdText(request.amount)} request`,
