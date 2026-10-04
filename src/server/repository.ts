@@ -94,17 +94,20 @@ export async function saveLedgerBalances(balances: Balances, namespace: string):
 }
 
 /**
- * Replaces the state with a fresh demo story (admin seed). The story is not on
- * Monad, so the world settles on the demo ledger until a genesis binds it again.
+ * Replaces the state with a fresh story (admin seed) and where it settles:
+ * bound to Monad after a genesis of exactly that state, or the demo ledger.
  */
-export async function resetWorld(tx: DbTx): Promise<void> {
+export async function resetWorld(
+  tx: DbTx,
+  next: { state: ViatikState; ledger: WorldLedger | null },
+): Promise<void> {
   await seedIfMissing(tx)
   await tx
     .update(worldState)
     .set({
-      state: createDemoState(new Date().toISOString()),
+      state: next.state,
       version: sql`${worldState.version} + 1`,
-      ledger: null,
+      ledger: next.ledger,
       updatedAt: new Date(),
     })
     .where(eq(worldState.id, WORLD))

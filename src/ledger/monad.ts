@@ -540,7 +540,10 @@ export class MonadLedgerAdapter implements LedgerAdapter {
    */
   async runGenesis(
     genesis: Genesis,
-    { onProgress }: { onProgress?: (done: number, total: number) => void } = {},
+    {
+      onProgress,
+      receiptTimeoutMs = 60_000,
+    }: { onProgress?: (done: number, total: number) => void; receiptTimeoutMs?: number } = {},
   ): Promise<GenesisRun> {
     const transactions: GenesisTransaction[] = []
     const stop = (failedAt: string, problem: string): GenesisRun => ({
@@ -623,23 +626,43 @@ export class MonadLedgerAdapter implements LedgerAdapter {
         return stop('simulation', decodeLedgerError(error).raw)
       }
       const chunk = genesis.calls.slice(index, index + size)
+      const limit = (gas * BigInt(Math.round(GAS_LIMIT_MULTIPLIER * 100))) / 100n
+      // Monad charges the whole gas limit: the owner needs that much MON before anything is sent.
+      try {
+        const [balance, fees] = await Promise.all([
+          this.client.getBalance({ address: owner.address }),
+          this.client.estimateFeesPerGas(),
+        ])
+        const cost = limit * (fees.maxFeePerGas ?? fees.gasPrice ?? 0n)
+        if (balance < cost) {
+          const mon = (wei: bigint) => (Number(wei / 10n ** 14n) / 10_000).toFixed(4)
+          return stop(
+            'owner account',
+            `the owner needs about ${mon(cost)} MON for this transaction and has ${mon(balance)}`,
+          )
+        }
+      } catch (error) {
+        return stop('owner account', decodeLedgerError(error).raw)
+      }
       let sent: GenesisTransaction | undefined
       try {
-        const hash = await wallet.sendTransaction({
-          to: this.ledger,
-          data: multicall(chunk),
-          gas: (gas * BigInt(Math.round(GAS_LIMIT_MULTIPLIER * 100))) / 100n,
-        })
+        const hash = await wallet.sendTransaction({ to: this.ledger, data: multicall(chunk), gas: limit })
         // Kept before waiting: a transaction that times out may still land.
         sent = { hash, calls: size }
         transactions.push(sent)
-        const receipt = await this.receiptOf(hash, 60_000)
-        if (!receipt) return stop(chunk[0]!.label, `transaction ${hash} not in a block after 60 s`)
+        const receipt = await this.receiptOf(hash, receiptTimeoutMs)
+        if (!receipt) {
+          return stop(
+            'owner account',
+            `transaction ${hash} not in a block after ${receiptTimeoutMs / 1000} s`,
+          )
+        }
         sent.block = Number(receipt.blockNumber)
         sent.gasUsed = Number(receipt.gasUsed)
         if (receipt.status !== 'success') return stop(chunk[0]!.label, `transaction ${hash} reverted`)
       } catch (error) {
-        return stop(chunk[0]!.label, decodeLedgerError(error).raw)
+        // A send that fails without reverting is the owner's account (nonce, funds, the RPC), not a call.
+        return stop(isRevert(error) ? chunk[0]!.label : 'owner account', decodeLedgerError(error).raw)
       }
       index += size
       onProgress?.(index, genesis.calls.length)

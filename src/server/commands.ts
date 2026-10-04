@@ -4,12 +4,14 @@ import { and, asc, desc, eq, inArray, isNotNull, lt, ne } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
+import type { Address } from 'viem'
 
 import type { ConfirmAnswer, PendingCall } from '@/data/api-contract'
 import { canonical } from '@/data/canonical'
 import { applySettlement, planSettlement } from '@/data/settlement'
 import { DomainError, runCommand, type CommandInput, type CommandName } from '@/domain/engine'
 import type { Actor, ViatikState } from '@/domain/types'
+import { needsReseed } from '@/ledger/genesis'
 import { MockLedgerAdapter } from '@/ledger/mock'
 import type { MonadLedgerAdapter } from '@/ledger/monad'
 import type {
@@ -593,6 +595,22 @@ export const commands = new Hono<AppEnv>()
       const plan = planSettlement({ before, after: outcome.state, actor })
       if (!plan) return respond(await commitLocked(caller, input, fingerprint))
 
+      // The account the person signs with now does not hold their roles on Monad (it changed since
+      // the seed, or the seed gave them a placeholder): only a new seed binds it.
+      if (
+        needsReseed(
+          user.id,
+          user.walletAddress as Address | null,
+          world.ledger.placeholders,
+          world.ledger.accounts,
+        )
+      ) {
+        throw new ApiError(
+          409,
+          'account_changed',
+          'Your account is not the one Viatik was last reset with, so it cannot act on Monad. Ask an admin to reset the demo.',
+        )
+      }
       const prepared = await monad.prepare(plan, chain)
       if (prepared.status === 'done') {
         const { result } = prepared

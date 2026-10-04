@@ -54,8 +54,9 @@ export function requireMonad(): MonadLedgerAdapter {
 }
 
 /**
- * How the world's people map to Monad: their embedded account, or the
- * placeholder its genesis gave them. Only a real account signs.
+ * How the world's people map to Monad: the account the genesis bound, their
+ * embedded account, or the placeholder the genesis gave them. Only a real
+ * account signs.
  */
 export async function chainContextFor(ledger: WorldLedger, db: DbTx | ReturnType<typeof getDb> = getDb()) {
   const rows = await db
@@ -71,7 +72,12 @@ export async function chainContextFor(ledger: WorldLedger, db: DbTx | ReturnType
       .filter((row) => holders.get(row.wallet!.toLowerCase()) === 1)
       .map((row) => [row.id, row.wallet as Address]),
   )
-  return genesisContext(ledger.namespace, (userId: Id) => accounts.get(userId), ledger.placeholders)
+  return genesisContext(
+    ledger.namespace,
+    (userId: Id) => accounts.get(userId),
+    ledger.placeholders,
+    ledger.accounts,
+  )
 }
 
 /**

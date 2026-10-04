@@ -31,6 +31,10 @@ export type UserRow = typeof users.$inferSelect
 export type WorldLedger = {
   namespace: string
   placeholders: Record<Id, Address>
+  /** The real accounts the genesis bound (person → account); a person whose account changed since needs a re-seed. */
+  accounts?: Record<Id, Address>
+  /** When the genesis ran, and its transactions. */
+  genesis?: { at: string; transactions: string[] }
   balances?: Balances
 }
 

@@ -115,20 +115,45 @@ export function placeholderAddress(namespace: string, userId: Id): Address {
 }
 
 /**
- * The context to settle on after a genesis: each person's account, or the
- * placeholder this genesis gave them (`Genesis.placeholders`, kept with the
- * world). Only a real account signs.
+ * The context to settle on after a genesis: where it put each person's roles
+ * and balances, which is the account it bound, the placeholder it gave them,
+ * or (for someone who joined later) their current account. Only a person's
+ * current account signs, and only while it is the one that holds their roles:
+ * not for someone bound to another account, nor for someone on a placeholder.
  */
 export function genesisContext(
   namespace: string,
   accountOf: (userId: Id) => Address | undefined,
   placeholders: Readonly<Record<Id, Address>>,
+  bound: Readonly<Record<Id, Address>> = {},
 ): ChainContext {
   return {
     namespace,
-    addressOf: (userId) => accountOf(userId) ?? placeholders[userId],
-    signerOf: accountOf,
+    addressOf: (userId) => bound[userId] ?? placeholders[userId] ?? accountOf(userId),
+    signerOf: (userId) => {
+      const current = accountOf(userId)
+      if (!current || placeholders[userId]) return undefined
+      const binding = bound[userId]
+      return !binding || binding.toLowerCase() === current.toLowerCase() ? current : undefined
+    },
   }
+}
+
+/**
+ * Whether a person's current account cannot act for them on Monad: it is not
+ * the one the genesis bound, or the genesis gave them a placeholder. Either
+ * way their roles stay where the genesis put them until the next seed.
+ */
+export function needsReseed(
+  userId: Id,
+  current: Address | null | undefined,
+  placeholders: Readonly<Record<Id, Address>>,
+  bound: Readonly<Record<Id, Address>> = {},
+): boolean {
+  if (!current) return false
+  if (placeholders[userId]) return true
+  const binding = bound[userId]
+  return Boolean(binding && binding.toLowerCase() !== current.toLowerCase())
 }
 
 /** The namespace as the contract stores it (`bytes32`, readable). */
@@ -354,7 +379,7 @@ export function buildGenesis(
   if (waitingFromAgents > 0)
     skipped.push(`${waitingFromAgents} pending requests from automations (automations do not sign)`)
 
-  if (problems.length > 0) throw new GenesisError(problems)
+  if (problems.length > 0) throw new GenesisError([...new Set(problems)])
 
   // Last: the namespace marks the epoch once everything in it exists.
   call(`namespace ${namespace}`, 'setNamespace', [namespaceHex(namespace)])
