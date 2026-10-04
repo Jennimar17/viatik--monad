@@ -47,6 +47,8 @@ export type LedgerErrorCode =
   | 'account_not_ready'
   /** The transaction was sent and is not final yet: ask again before retrying. */
   | 'still_processing'
+  /** The transaction did not go through (reverted, or its user operation failed): nothing moved. */
+  | 'not_landed'
   | 'unknown'
 
 export type LedgerError = { code: LedgerErrorCode; message: string; retryable: boolean }

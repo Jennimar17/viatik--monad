@@ -47,7 +47,7 @@ export type Witness = {
   events: LedgerEvent[]
   id: Id
   userId?: Id
-  args?: Record<string, string | number | boolean>
+  args?: Record<string, string | number | boolean | null>
 }
 
 /**
@@ -86,7 +86,9 @@ function witnessOf(op: LedgerOp): Witness {
     case 'setAgreementPaused':
       return one('AgreementPausedSet', op.agreementId, { args: { paused: op.paused } })
     case 'requestTranche':
-      return one('TrancheRequested', op.trancheId, { args: { account: op.accountId } })
+      return one('TrancheRequested', op.trancheId, {
+        args: { account: op.accountId, evidenceHash: op.evidenceHash },
+      })
     case 'requestChanges':
       return one('TrancheChangesRequested', op.trancheId, { args: { rejected: op.reject } })
     case 'createBudget':
@@ -98,7 +100,11 @@ function witnessOf(op: LedgerOp): Witness {
     case 'setBudgetPaused':
       return one('BudgetPausedSet', op.budgetId, { args: { paused: op.paused } })
     case 'setAllowance':
-      return one('AllowanceSet', op.budgetId, { userId: op.userId, args: { active: op.active } })
+      // Every value the event carries: another allowance change for the same person is not this one.
+      return one('AllowanceSet', op.budgetId, {
+        userId: op.userId,
+        args: { active: op.active, perOperationLimit: op.perOperationLimit },
+      })
     case 'closeRequest':
       return one('RequestClosed', op.requestId)
     case 'requestPayment':

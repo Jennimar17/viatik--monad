@@ -6,6 +6,8 @@ import type { Evidence, ViatikState } from '@/domain/types'
 import { apiFetch, apiRequest } from './api'
 import {
   CONNECTION_FAILED,
+  type CommandAnswer,
+  type ConfirmAnswer,
   type EvidenceLink,
   type EvidenceUploadTicket,
   type VerifiedUpload,
@@ -18,15 +20,16 @@ import {
   type EvidenceOptions,
   type InvitationPreview,
   type LoadOptions,
+  type OpenOperation,
   type OperationPhase,
+  type ResumeOutcome,
+  UNSETTLED_CODES,
   type UploadedFile,
 } from './data-source'
 import { assertEvidenceFile, sha256Hex } from './evidence-files'
+import { forgetOpen, openOperation, openOperationsOf, rememberOpen } from './open-operations'
 
 const PHASE_ORDER: OperationPhase[] = ['preparing', 'waiting_for_confirmation', 'processing', 'completed']
-
-/** A request still open after this long is shown as processing. */
-const PROCESSING_AFTER_MS = 700
 
 /** Waits before resending an operation whose answer never arrived (same key, so never applied twice). */
 const RESEND_AFTER_MS = [800, 2000]
@@ -36,6 +39,23 @@ const RESEND_AFTER_MS = [800, 2000]
  * platform answered for it (a gateway error without Viatik's error body).
  */
 const UNANSWERED = new Set([CONNECTION_FAILED, '502', '503', '504'])
+
+/** Waits between confirmations of a transaction that is not final yet (about a minute in all). */
+const CONFIRM_AFTER_MS = [1_000, 2_000, 3_000, 5_000, 5_000, 8_000, 10_000, 10_000, 15_000]
+
+/** Answers that leave a signed operation's outcome open: confirm again, never sign again. */
+const CONFIRM_AGAIN = new Set([...UNANSWERED, 'network_unavailable', 'not_configured', 'still_processing'])
+
+/** Answers about the request, not the operation (session, Viatik itself): keep it to confirm later. */
+const KEEP_OPEN = new Set([
+  'unauthenticated',
+  'session_changed',
+  'accounts_unavailable',
+  'accounts_not_configured',
+  'storage_not_configured',
+  'unknown',
+  'expired',
+])
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -53,7 +73,10 @@ function requireCredentials(credentials: CredentialsProvider | undefined): Crede
 /**
  * Real accounts. The state lives on the server (`/api/v1`), shared by every
  * person and device; the server runs the same domain engine and ledger rules
- * the demo runs in the browser, for the person its token proves.
+ * the demo runs in the browser, for the person its token proves. On a world
+ * bound to Monad, a command that moves something is prepared by the server,
+ * signed here with the person's account (sponsored gas) and confirmed once
+ * Monad has it.
  */
 export class ApiDataSource implements DataSource {
   readonly kind = 'api' as const
@@ -95,10 +118,13 @@ export class ApiDataSource implements DataSource {
     options: DispatchOptions = {},
   ): Promise<CommandResult<N>> {
     const credentials = requireCredentials(options.credentials)
-    const idempotencyKey = options.idempotencyKey ?? newId('op')
+    const key = options.idempotencyKey ?? newId('op')
 
-    // Phases only move forward. The server answers once, when the operation
-    // is settled; until then the person sees it is on its way.
+    // Phases only move forward: preparing (the request), waiting for
+    // confirmation (the signature), processing (Monad confirming), completed.
+    // A command that settles at once (offchain, or a world on the demo ledger)
+    // goes from preparing to completed. An operation still unsettled when this
+    // gives up stays in processing: it is not a failure.
     let current = -1
     const emit = (phase: OperationPhase) => {
       if (phase === 'failed') return options.onPhase?.('failed')
@@ -110,36 +136,209 @@ export class ApiDataSource implements DataSource {
     }
 
     emit('preparing')
-    const processing = setTimeout(() => emit('processing'), PROCESSING_AFTER_MS)
+    let signing = false
     try {
-      for (let attempt = 0; ; attempt++) {
+      const prepare = () => this.prepare<CommandResult<N>>(userId, name, input, key, credentials)
+      let { answer, replayed } = await prepare()
+      // A role permit that expired before it was signed: the server prepares it again under the same key.
+      if (
+        'pending' in answer &&
+        answer.pending.expiresAt &&
+        Date.parse(answer.pending.expiresAt) <= Date.now()
+      ) {
+        ;({ answer, replayed } = await prepare())
+      }
+      if ('result' in answer) {
+        emit('completed')
+        return answer.result
+      }
+
+      // Signing the same key's transaction again is safe: once one of them lands, the other is
+      // refused onchain (the ids repeat). Only a hash in hand for this same preparation (a replayed
+      // answer) means "never sign, confirm"; a fresh preparation replaces an attempt that ended.
+      const known = openOperation(key)
+      const operation: OpenOperation = known ?? {
+        key,
+        name,
+        userId,
+        hash: null,
+        at: new Date().toISOString(),
+        fingerprint: options.fingerprint,
+      }
+      if (!replayed) operation.hash = null
+      if (!operation.hash) {
+        if (!options.sendCall) {
+          throw new DataSourceError(
+            'Your account is still being set up. Try again in a moment.',
+            'account_not_ready',
+            true,
+          )
+        }
+        emit('waiting_for_confirmation')
+        // Kept before signing: if the tab closes mid-signature, the next visit looks for it on Monad.
+        rememberOpen(operation)
+        signing = true
         try {
-          const tokens = await credentials()
-          emit('waiting_for_confirmation')
-          const { result } = await apiFetch<{ result: CommandResult<N> }>(`/v1/commands/${name}`, {
-            method: 'POST',
-            body: input,
-            credentials: tokens,
-            idempotencyKey,
-            expectedUserId: userId,
-          })
-          emit('completed')
-          return result
+          operation.hash = await options.sendCall(answer.pending)
+          rememberOpen(operation)
         } catch (error) {
-          // It may or may not have run: the same key makes resending safe
-          // (an operation that did run is answered again, not repeated).
-          const unanswered = error instanceof DataSourceError && UNANSWERED.has(error.code)
-          const delay = RESEND_AFTER_MS[attempt]
-          if (!unanswered || delay === undefined) throw error
-          await wait(delay)
+          const notSent = error instanceof DataSourceError && error.notSent
+          // The sponsor refusing a transaction this key may already have sent: it most likely landed.
+          const mayHaveLanded = error instanceof DataSourceError && error.code === 'reverted' && replayed
+          if (notSent && !mayHaveLanded) {
+            if (!known) {
+              forgetOpen(key)
+              signing = false
+              // The server stops looking for a transaction that was never sent.
+              if (!replayed) void this.abandon(userId, name, key, credentials)
+            }
+            throw error
+          }
+          // Otherwise it is unclear whether it went out (a lost answer, a timeout): look for it on Monad.
         }
       }
+
+      emit('processing')
+      const result = await this.confirm<CommandResult<N>>(operation, credentials)
+      emit('completed')
+      return result
     } catch (error) {
+      if (error instanceof DataSourceError && UNSETTLED_CODES.has(error.code)) throw error
       emit('failed')
       if (error instanceof DataSourceError) throw error
-      throw new DataSourceError('Something went wrong. Nothing was changed.', 'unknown')
-    } finally {
-      clearTimeout(processing)
+      throw signing
+        ? new DataSourceError(
+            'We could not confirm it yet. It will show up here once Monad has it.',
+            'still_processing',
+          )
+        : new DataSourceError('Something went wrong. Nothing was changed.', 'unknown')
+    }
+  }
+
+  openOperations(userId: string): OpenOperation[] {
+    return openOperationsOf(userId)
+  }
+
+  async resume(operation: OpenOperation, options: DispatchOptions = {}): Promise<ResumeOutcome> {
+    try {
+      await this.confirm(operation, requireCredentials(options.credentials))
+      return { status: 'confirmed' }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'An operation you started earlier did not go through.'
+      const kept = openOperation(operation.key)
+      if (!kept) return { status: 'failed', message }
+      // Still open: say so once, not on every visit.
+      rememberOpen({ ...kept, notifiedAt: new Date().toISOString() })
+      return { status: 'unsettled', message, firstTime: !kept.notifiedAt }
+    }
+  }
+
+  /**
+   * Sends the command. It settles at once (`result`), or comes back prepared
+   * for the person's signature (`pending`); `replayed` when this key was
+   * prepared before. An answer that never arrived is sent again with the
+   * same key, which never applies it twice.
+   */
+  private async prepare<R>(
+    userId: string,
+    name: CommandName,
+    input: unknown,
+    idempotencyKey: string,
+    credentials: CredentialsProvider,
+  ): Promise<{ answer: CommandAnswer<R>; replayed: boolean }> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const response = await apiRequest(`/v1/commands/${name}`, {
+          method: 'POST',
+          body: input,
+          credentials: await credentials(),
+          idempotencyKey,
+          expectedUserId: userId,
+        })
+        const answer = (await response.json().catch(() => null)) as CommandAnswer<R> | null
+        if (!answer)
+          throw new DataSourceError(
+            'We could not reach Viatik. Check your connection and try again.',
+            CONNECTION_FAILED,
+          )
+        return { answer, replayed: response.headers.get('idempotent-replayed') === 'true' }
+      } catch (error) {
+        const unclear =
+          error instanceof DataSourceError &&
+          (UNANSWERED.has(error.code) || error.code === 'still_processing')
+        const delay = RESEND_AFTER_MS[attempt]
+        if (!unclear || delay === undefined) throw error
+        await wait(delay)
+      }
+    }
+  }
+
+  /** Tells Viatik a prepared operation was never signed, so it stops looking for it (best effort). */
+  private async abandon(
+    userId: string,
+    name: CommandName,
+    idempotencyKey: string,
+    credentials: CredentialsProvider,
+  ) {
+    try {
+      await apiRequest(`/v1/commands/${name}/confirm`, {
+        method: 'POST',
+        body: { abandoned: true },
+        credentials: await credentials(),
+        idempotencyKey,
+        expectedUserId: userId,
+      })
+    } catch {
+      // The server's sweep marks it expired later anyway.
+    }
+  }
+
+  /**
+   * Asks Viatik to confirm a signed operation until it is final: settled, or
+   * refused for good. Not final yet (202), no answer, or a hiccup: ask again,
+   * a little later each time, and never sign again. A hash that is not this
+   * operation's is dropped so Viatik searches Monad for the real one. The
+   * entry on this device is forgotten only once the outcome is final.
+   */
+  private async confirm<R>(operation: OpenOperation, credentials: CredentialsProvider): Promise<R> {
+    let hash = operation.hash
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const response = await apiRequest(`/v1/commands/${operation.name}/confirm`, {
+          method: 'POST',
+          body: hash ? { txHash: hash } : {},
+          credentials: await credentials(),
+          idempotencyKey: operation.key,
+          expectedUserId: operation.userId,
+        })
+        const answer = (await response.json().catch(() => null)) as ConfirmAnswer<R> | null
+        if (answer && 'result' in answer) {
+          forgetOpen(operation.key)
+          return answer.result
+        }
+      } catch (error) {
+        if (error instanceof DataSourceError) {
+          if (error.code === 'unrelated_transaction') {
+            hash = null
+            rememberOpen({ ...openOperation(operation.key), ...operation, hash: null })
+          } else if (!CONFIRM_AGAIN.has(error.code)) {
+            // Not this operation's outcome (signed out, Viatik unavailable): keep it to confirm later.
+            if (KEEP_OPEN.has(error.code) || /^\d+$/.test(error.code)) throw error
+            forgetOpen(operation.key)
+            throw error
+          }
+        }
+        // Anything else (a hiccup in this tab) is not an outcome either: ask again.
+      }
+      const delay = CONFIRM_AFTER_MS[attempt]
+      if (delay === undefined) {
+        throw new DataSourceError(
+          'We could not confirm it on Monad yet. It will show up here as soon as it is final.',
+          'still_processing',
+        )
+      }
+      await wait(delay)
     }
   }
 

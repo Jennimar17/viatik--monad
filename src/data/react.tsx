@@ -21,9 +21,11 @@ import {
   getDataSource,
   type CredentialsProvider,
   type OperationPhase,
+  type SendCall,
   type SessionMode,
   type SessionProfile,
   type UploadedFile,
+  UNSETTLED_CODES,
 } from './index'
 
 type ViatikContextValue = {
@@ -41,6 +43,8 @@ type ViatikContextValue = {
   now: string
   /** Tokens for the API; unused by the demo. */
   credentials: CredentialsProvider
+  /** Signs what Viatik prepared on Monad; only a real account has it. */
+  sendCall: SendCall | undefined
 }
 
 const ViatikContext = React.createContext<ViatikContextValue | null>(null)
@@ -67,6 +71,7 @@ export function ViatikProvider({
   mode,
   profile,
   credentials,
+  sendCall,
   onUnauthenticated,
   children,
 }: {
@@ -75,6 +80,7 @@ export function ViatikProvider({
   /** A real account's verified profile, so the data knows the person on their first visit. */
   profile: SessionProfile | null
   credentials: CredentialsProvider
+  sendCall?: SendCall
   /** The server no longer accepts the session (expired or revoked). */
   onUnauthenticated: () => void
   children: React.ReactNode
@@ -102,6 +108,28 @@ export function ViatikProvider({
     if (unauthenticated) onUnauthenticated()
   }, [unauthenticated, onUnauthenticated])
 
+  // Operations signed on this device but not confirmed (the page reloaded, or the tab closed after
+  // signing): confirm them once the person's data is in, then refresh what screens show.
+  const queryClient = useQueryClient()
+  const loaded = Boolean(query.data)
+  const resumedFor = React.useRef<string | null>(null)
+  React.useEffect(() => {
+    if (!loaded || !userId || !mode || resumedFor.current === userId) return
+    resumedFor.current = userId
+    const source = getDataSource(mode)
+    const open = source.openOperations?.(userId) ?? []
+    if (open.length === 0) return
+    void (async () => {
+      for (const operation of open) {
+        const outcome = await source.resume?.(operation, { credentials, sendCall })
+        if (outcome?.status === 'confirmed') toast.success('An operation you started earlier is confirmed.')
+        else if (outcome?.status === 'failed') toast.error(outcome.message)
+        else if (outcome?.firstTime) toast(outcome.message)
+      }
+      await queryClient.invalidateQueries({ queryKey: STATE_KEY })
+    })()
+  }, [loaded, userId, mode, credentials, sendCall, queryClient])
+
   const value = React.useMemo<ViatikContextValue>(
     () => ({
       state,
@@ -114,8 +142,9 @@ export function ViatikProvider({
       memberships: state?.memberships.filter((m) => m.userId === userId && m.status === 'active') ?? [],
       now,
       credentials,
+      sendCall,
     }),
-    [state, isLoading, isError, refetch, userId, mode, now, credentials],
+    [state, isLoading, isError, refetch, userId, mode, now, credentials, sendCall],
   )
 
   return <ViatikContext.Provider value={value}>{children}</ViatikContext.Provider>
@@ -143,14 +172,15 @@ export function useSubject() {
 /**
  * Runs a domain command through the data source and tracks the human
  * operation lifecycle (Preparing → Waiting for confirmation → Processing →
- * Completed). Refreshes everything the user sees afterwards, including a
+ * Completed). On Monad those are real: the request, the signature, Monad
+ * confirming. Refreshes everything the user sees afterwards, including a
  * rejection the ledger recorded.
  */
 export function useCommand<N extends CommandName>(
   name: N,
   options: { success?: string | ((result: CommandResult<N>) => string); silent?: boolean } = {},
 ) {
-  const { userId, mode, credentials } = useViatik()
+  const { userId, mode, credentials, sendCall } = useViatik()
   const queryClient = useQueryClient()
   const [phase, setPhase] = React.useState<OperationPhase | 'idle'>('idle')
   // A failed attempt may still have happened on the server (the answer got
@@ -163,11 +193,19 @@ export function useCommand<N extends CommandName>(
     mutationFn: (input: CommandInput<N>) => {
       if (!userId || !mode) throw new DataSourceError('Sign in to continue.', 'unauthenticated')
       const fingerprint = `${mode}:${userId}:${canonical(input)}`
-      if (attempt.current?.input !== fingerprint) attempt.current = { key: newId('op'), input: fingerprint }
+      if (attempt.current?.input !== fingerprint) {
+        // After a reload, the same command with the same input, still open on this device, keeps its key.
+        const open = getDataSource(mode)
+          .openOperations?.(userId)
+          .find((operation) => operation.name === name && operation.fingerprint === fingerprint)
+        attempt.current = { key: open?.key ?? newId('op'), input: fingerprint }
+      }
       return getDataSource(mode).dispatch(userId, name, input, {
         onPhase: setPhase,
         credentials,
+        sendCall,
         idempotencyKey: attempt.current.key,
+        fingerprint,
       })
     },
     // Offline, the request fails right away and says so, instead of waiting
@@ -180,7 +218,11 @@ export function useCommand<N extends CommandName>(
       }
     },
     onError: (error) => {
-      if (!options.silent) toast.error(error instanceof Error ? error.message : 'Something went wrong.')
+      // The key survives every failure: trying the same operation again can never apply it twice.
+      if (options.silent) return
+      const message = error instanceof Error ? error.message : 'Something went wrong.'
+      if (error instanceof DataSourceError && UNSETTLED_CODES.has(error.code)) toast(message)
+      else toast.error(message)
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: STATE_KEY }),
   })

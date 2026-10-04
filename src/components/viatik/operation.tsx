@@ -1,6 +1,16 @@
 'use client'
 
-import { ArrowUpRight, Check, ChevronDown, CircleDashed, Copy, Loader2, ShieldCheck, X } from 'lucide-react'
+import {
+  ArrowUpRight,
+  Check,
+  ChevronDown,
+  CircleDashed,
+  Clock,
+  Copy,
+  Loader2,
+  ShieldCheck,
+  X,
+} from 'lucide-react'
 import * as React from 'react'
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -64,6 +74,12 @@ export function PendingOperation({
         <p className="flex items-start gap-2 rounded-lg border border-danger/35 bg-danger-soft p-3 text-sm text-foreground">
           <X className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden="true" />
           {error ?? 'The operation could not be completed. Nothing was moved.'}
+        </p>
+      ) : error ? (
+        // Not a failure: it is on its way and shows up once it is final.
+        <p className="flex items-start gap-2 rounded-lg border border-border bg-muted p-3 text-sm text-foreground">
+          <Clock className="mt-0.5 size-4 shrink-0 text-subtle" aria-hidden="true" />
+          {error}
         </p>
       ) : null}
     </div>

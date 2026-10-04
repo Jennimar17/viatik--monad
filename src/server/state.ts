@@ -4,6 +4,7 @@ import { invitationPreview } from '@/domain/identity'
 import { scopeStateForUser } from '@/domain/visibility'
 
 import { requireAccount } from './auth'
+import { sweepOpenOperations } from './commands'
 import type { AppEnv } from './context'
 import { ApiError } from './errors'
 import { readWorld, readWorldVersion, withWorld } from './repository'
@@ -14,10 +15,13 @@ const noStore = { 'cache-control': 'no-store' }
 /**
  * `GET /v1/state`: everything the caller may see (`scopeStateForUser`). The
  * ETag is the caller plus the state version, so a client polling for changes
- * gets a 304 without the state being read or sent again.
+ * gets a 304 without the state being read or sent again. Each read also
+ * sweeps the caller's operations still pending on Monad.
  */
 export const state = new Hono<AppEnv>().get('/', requireAccount, requireUser, async (c) => {
   const user = c.get('user')
+  // Operations of this person still pending on Monad get a short look first (it may change the version).
+  await sweepOpenOperations(user, c.get('requestId'))
   const version = await readWorldVersion()
   if (version !== null && c.req.header('if-none-match') === `"${user.id}:${version}"`) {
     return c.body(null, 304, { ...noStore, etag: `"${user.id}:${version}"` })

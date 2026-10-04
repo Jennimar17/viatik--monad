@@ -1,14 +1,24 @@
 'use client'
 
-import { useIdentityToken, useLogin, usePrivy, useUser, type User as PrivyUser } from '@privy-io/react-auth'
+import {
+  useIdentityToken,
+  useLogin,
+  usePrivy,
+  useSendTransaction,
+  useUser,
+  useWallets,
+  type User as PrivyUser,
+} from '@privy-io/react-auth'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as React from 'react'
 
 import { apiFetch, type ApiCredentials } from '@/data/api'
 import type { SessionResponse } from '@/data/api-contract'
-import { DataSourceError, type SessionMode } from '@/data/data-source'
+import { DataSourceError, type SendCall, type SessionMode } from '@/data/data-source'
+import { translateLedgerError } from '@/ledger/errors'
 
 import { accountsEnabled } from './privy'
+import { TimeoutError, withTimeout } from './timeout'
 
 export type SignInMethod = 'email' | 'google' | 'passkey'
 
@@ -46,11 +56,15 @@ type SessionContextValue = {
   signOut: () => Promise<void>
   /** Tokens for API requests; empty in the demo. */
   credentials: () => Promise<ApiCredentials>
+  /** Signs what Viatik prepared on Monad with the person's account (sponsored gas); absent in the demo. */
+  sendCall?: SendCall
 }
 
 const SessionContext = React.createContext<SessionContextValue | null>(null)
 
 const NO_CREDENTIALS: ApiCredentials = { accessToken: null }
+/** How long a signature may take before Viatik looks for the transaction on Monad instead. */
+const SIGN_TIMEOUT_MS = 60_000
 const SESSION_KEY = ['session'] as const
 
 // ─── Demo person ─────────────────────────────────────────────────────────────
@@ -285,6 +299,73 @@ function AccountSessionProvider({ children }: { children: React.ReactNode }) {
     [mode, getAccessToken, identityToken],
   )
 
+  // Signing: the same call as the sponsorship check, for exactly what the server prepared.
+  const { sendTransaction } = useSendTransaction()
+  const { ready: walletsReady, wallets } = useWallets()
+  const accountAddress = account?.address ?? null
+  const sendCall = React.useCallback<SendCall>(
+    async (call) => {
+      // Only the account it was prepared for signs, and only while it is the one signed in here.
+      if (!accountAddress || accountAddress.toLowerCase() !== call.from.toLowerCase()) {
+        throw new DataSourceError(
+          'You switched accounts in another tab. Reload the page to continue.',
+          'session_changed',
+          true,
+        )
+      }
+      const signable =
+        walletsReady &&
+        wallets.some(
+          (wallet) =>
+            wallet.walletClientType === 'privy' && wallet.address.toLowerCase() === call.from.toLowerCase(),
+        )
+      if (!signable) {
+        throw new DataSourceError(
+          'Your account is still being set up. Try again in a moment.',
+          'account_not_ready',
+          true,
+        )
+      }
+      try {
+        const { hash } = await withTimeout(
+          sendTransaction(
+            { to: call.to, data: call.data, chainId: call.chainId },
+            { sponsor: true, address: call.from, uiOptions: { showWalletUIs: false } },
+          ),
+          SIGN_TIMEOUT_MS,
+        )
+        return hash
+      } catch (error) {
+        // Unknown whether it went out: Viatik looks for it on Monad.
+        if (error instanceof TimeoutError) {
+          throw new DataSourceError(
+            'Your signature is taking longer than usual. Checking Monad…',
+            'signing_timeout',
+          )
+        }
+        const failure = translateLedgerError(error)
+        // "Nothing was sent" only when Privy refused before sending: the sponsor's own simulation
+        // reverted (something changed since it was prepared), its rate limit, or a wallet that could
+        // not sign at all. Anything else (a lost answer, a timeout, a 5xx) may have gone out.
+        if (/execution reverted/i.test(failure.raw)) {
+          throw new DataSourceError(
+            'This can no longer go through as prepared. Refresh and try again. Nothing was moved.',
+            'reverted',
+            true,
+          )
+        }
+        if (/too many requests|not supported|unable to connect|rejected|cancel|mfa/i.test(failure.raw)) {
+          throw new DataSourceError(failure.message, failure.code, true)
+        }
+        throw new DataSourceError(
+          'We could not confirm your signature yet. Checking Monad…',
+          'signing_unclear',
+        )
+      }
+    },
+    [accountAddress, walletsReady, wallets, sendTransaction],
+  )
+
   const value = React.useMemo<SessionContextValue>(
     () => ({
       mode,
@@ -298,8 +379,9 @@ function AccountSessionProvider({ children }: { children: React.ReactNode }) {
       signIn,
       signOut,
       credentials,
+      sendCall: mode === 'account' ? sendCall : undefined,
     }),
-    [mode, userId, account, ready, error, refetch, signIn, signOut, credentials],
+    [mode, userId, account, ready, error, refetch, signIn, signOut, credentials, sendCall],
   )
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { translateLedgerError } from '@/ledger/errors'
 import { shortHash } from '@/lib/format'
+import { withTimeout } from '@/lib/timeout'
 
 type Check =
   | { status: 'idle' }
@@ -16,22 +17,6 @@ type Check =
   | { status: 'failed'; message: string; raw: string }
 
 const TIMEOUT_MS = 60_000
-
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`timeout after ${ms / 1000}s`)), ms)
-    promise.then(
-      (value) => {
-        clearTimeout(timer)
-        resolve(value)
-      },
-      (error: unknown) => {
-        clearTimeout(timer)
-        reject(error)
-      },
-    )
-  })
-}
 
 /**
  * Developer mode: sends an empty operation from the person's embedded account

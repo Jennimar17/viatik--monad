@@ -43,6 +43,15 @@ export async function readWorld(): Promise<World> {
   return { state: row.state, version: row.version, ledger: row.ledger }
 }
 
+/** Where the world settles (null on the demo ledger), without reading the state itself. */
+export async function readWorldLedger(): Promise<WorldLedger | null> {
+  const [row] = await getDb()
+    .select({ ledger: worldState.ledger })
+    .from(worldState)
+    .where(eq(worldState.id, WORLD))
+  return row?.ledger ?? null
+}
+
 /**
  * Serialized read-modify-write of the whole state. The row lock makes
  * concurrent commands wait for each other (the transaction pooler supports

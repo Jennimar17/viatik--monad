@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 
-import { and, eq, inArray, isNotNull, ne } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, lt, ne } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
@@ -28,7 +28,7 @@ import { operations, users, type OperationRow, type OperationStatus, type UserRo
 import { ApiError, ledgerStatus } from './errors'
 import { verifiedFiles } from './evidence'
 import { chainContextFor, requireMonad, saveBalancesAfter } from './ledger'
-import { readWorld, withWorld, type DbTx } from './repository'
+import { readWorld, readWorldLedger, withWorld, type DbTx } from './repository'
 import { isCommandName, parseCommandInput } from './schemas'
 import { requireUser, withCaller } from './user'
 
@@ -41,6 +41,12 @@ const UNKNOWN_HASH_MS = 2 * 60 * 1000
 const CONFIRM_TIMEOUT_MS = 15_000
 /** How long one request may spend searching Monad's logs; the next one carries on from there. */
 const SEARCH_BUDGET_MS = 20_000
+/** The state read sweeps operations still pending after this, */
+const SWEEP_AFTER_MS = 30_000
+/** each at most this often, */
+const SWEEP_EVERY_MS = 60_000
+/** and never makes the read wait longer than this. */
+const SWEEP_DEADLINE_MS = 2_500
 
 const noStore = { 'cache-control': 'no-store' }
 const HASH = /^0x[0-9a-fA-F]{64}$/
@@ -326,10 +332,11 @@ async function search(
   monad: MonadLedgerAdapter,
   chain: ChainContext,
   row: Prepared,
+  budgetMs = SEARCH_BUDGET_MS,
 ): Promise<{ found: Landed } | { answer: Answer } | { waiting: true }> {
   const found = await monad.findConfirmation(row.prepared, chain, {
     from: row.scannedTo == null ? undefined : row.scannedTo + 1,
-    budgetMs: SEARCH_BUDGET_MS,
+    budgetMs,
     exclude: await claimedHashes(caller.user, caller.key),
   })
   if (found.status === 'found') return { found: found.confirmed }
@@ -340,8 +347,10 @@ async function search(
     .where(and(where, inArray(operations.status, OPEN)))
   const permitOpen = row.prepared.expiresAt != null && new Date(row.prepared.expiresAt) > new Date()
   const overdue = Date.now() - row.preparedAt.getTime() > PENDING_TTL_MS && !permitOpen
+  // An operation already expired (or abandoned unsigned) that a full search did not find stays so.
+  if (found.status === 'searched' && found.complete && row.status === 'expired')
+    return { answer: replay(row) }
   if (found.status !== 'searched' || !found.complete || !overdue) return { waiting: true }
-  if (row.status === 'expired') return { answer: replay(row) }
   const answer = failure(
     'expired',
     'This operation was not found on Monad in time. If it was signed, checking again later still picks it up.',
@@ -351,6 +360,143 @@ async function search(
     .set({ status: 'expired', statusCode: answer.status, response: answer.body })
     .where(and(where, eq(operations.status, 'pending')))
   return { answer }
+}
+
+/**
+ * Confirms an open operation: with a hash (given now, or stored), reads its
+ * transaction; without one, or with one Monad never heard of, searches the
+ * logs. Settles it when found; otherwise it is still processing. Shared by
+ * `/:name/confirm` and the sweep in GET /v1/state, each with its own budget.
+ */
+export async function confirmOpen(
+  caller: Caller,
+  row: OperationRow,
+  given?: Hash,
+  { confirmTimeoutMs = CONFIRM_TIMEOUT_MS, searchBudgetMs = SEARCH_BUDGET_MS } = {},
+): Promise<{ answer: Answer } | { processing: Hash | null }> {
+  const { user, key, name, requestId } = caller
+  const where = operationOf(user, key)
+  const open = and(where, inArray(operations.status, OPEN))
+  const { prepared, preparedAt } = row
+  if (!prepared || !preparedAt) throw new Error(`Operation ${name} has no prepared transaction.`)
+
+  const ledger = await readWorldLedger()
+  if (!ledger || ledger.namespace !== prepared.namespace) {
+    // Reset while this waited: it belongs to a story that is gone.
+    const reset = failure('invalid_state', 'Viatik was reset after this was prepared. It no longer applies.')
+    await getDb()
+      .update(operations)
+      .set({ status: 'failed', statusCode: reset.status, response: reset.body })
+      .where(open)
+    const [after] = await getDb().select().from(operations).where(where).limit(1)
+    return { answer: after ? replay(after) : reset }
+  }
+  const monad = requireMonad()
+  const chain = await chainContextFor(ledger)
+  const settle = async (confirmed: Landed) => {
+    const answer = await settleConfirmation(caller, confirmed)
+    if (confirmed.landed) await saveBalancesAfter(monad, chain, confirmed.block, requestId)
+    return { answer }
+  }
+
+  let hash = given ?? (row.txHash as Hash | null) ?? undefined
+  if (hash && (await claimedHashes(user, key)).has(hash.toLowerCase())) {
+    if (given) throw unrelated()
+    await getDb()
+      .update(operations)
+      .set({ txHash: null })
+      .where(and(open, eq(operations.txHash, hash)))
+    hash = undefined
+  }
+  if (hash) {
+    const confirmed = await monad.confirm(prepared, hash, chain, { timeoutMs: confirmTimeoutMs })
+    if (confirmed.status === 'confirmed') return settle(confirmed)
+    // Forget a stored hash that is not this operation, or that Monad never heard of after a while
+    // (dropped, replaced, mistyped): the next confirmation searches the logs instead.
+    const stale =
+      confirmed.status === 'unrelated' ||
+      (!given &&
+        Date.now() - preparedAt.getTime() > UNKNOWN_HASH_MS &&
+        (await monad.knowsTransaction(hash)) === false)
+    if (stale) {
+      await getDb()
+        .update(operations)
+        .set({ txHash: null })
+        .where(and(open, eq(operations.txHash, hash)))
+    }
+    if (confirmed.status === 'unrelated') {
+      const [after] = await getDb().select().from(operations).where(where).limit(1)
+      if (after && !isOpen(after)) return { answer: replay(after) }
+      throw unrelated()
+    }
+    if (!stale) {
+      if (given && given !== row.txHash) await getDb().update(operations).set({ txHash: given }).where(open)
+      return { processing: hash }
+    }
+  }
+
+  const searched = await search(caller, monad, chain, { ...row, prepared, preparedAt }, searchBudgetMs)
+  if ('found' in searched) return settle(searched.found)
+  if ('answer' in searched) return { answer: searched.answer }
+  return { processing: null }
+}
+
+/** When each operation was last swept on this server, so a poll every 15 s does not repeat the work. */
+const swept = new Map<string, number>()
+
+/**
+ * The sweep behind GET /v1/state: the caller's operations still pending after
+ * 30 s get a short look, so one whose tab closed after signing (or that was
+ * signed on another device) settles on its own. Each read looks at the newest
+ * (the likeliest to have landed) and the oldest (so one never signed gets
+ * marked expired), each at most once a minute, and never makes the read wait
+ * more than a couple of seconds: an unfinished look carries on in the background.
+ */
+export async function sweepOpenOperations(user: UserRow, requestId: string): Promise<void> {
+  const work = (async () => {
+    const due = and(
+      eq(operations.userId, user.id),
+      eq(operations.status, 'pending'),
+      lt(operations.preparedAt, new Date(Date.now() - SWEEP_AFTER_MS)),
+    )
+    const [newest] = await getDb()
+      .select()
+      .from(operations)
+      .where(due)
+      .orderBy(desc(operations.preparedAt))
+      .limit(1)
+    if (!newest) return
+    const [oldest] = await getDb()
+      .select()
+      .from(operations)
+      .where(due)
+      .orderBy(asc(operations.preparedAt))
+      .limit(1)
+    const rows = oldest && oldest.idempotencyKey !== newest.idempotencyKey ? [newest, oldest] : [newest]
+    for (const row of rows) {
+      const id = `${user.id}:${row.idempotencyKey}`
+      if (!isCommandName(row.command) || Date.now() - (swept.get(id) ?? 0) < SWEEP_EVERY_MS) continue
+      swept.set(id, Date.now())
+      try {
+        const outcome = await confirmOpen(
+          { user, key: row.idempotencyKey, name: row.command, requestId },
+          row,
+          undefined,
+          {
+            confirmTimeoutMs: 0,
+            searchBudgetMs: 2_000,
+          },
+        )
+        if ('answer' in outcome) await syncName(user, outcome.answer.savedName, requestId)
+      } catch (error) {
+        console.error(
+          `[api] ${requestId} sweep ${row.idempotencyKey}: ${error instanceof ApiError ? error.code : String(error)}`,
+        )
+      }
+    }
+    if (swept.size > 1_000) swept.clear()
+  })().catch((error: unknown) => console.error(`[api] ${requestId} sweep`, error))
+  await Promise.race([work, new Promise((resolve) => setTimeout(resolve, SWEEP_DEADLINE_MS))])
 }
 
 /**
@@ -509,7 +655,7 @@ export const commands = new Hono<AppEnv>()
       }
       const { key, name } = caller
       const raw: unknown = await c.req.json().catch(() => null)
-      const body = raw && typeof raw === 'object' ? (raw as { txHash?: unknown }) : {}
+      const body = raw && typeof raw === 'object' ? (raw as { txHash?: unknown; abandoned?: unknown }) : {}
       if (body.txHash !== undefined && (typeof body.txHash !== 'string' || !HASH.test(body.txHash))) {
         throw new ApiError(400, 'invalid_transaction', 'This is not a transaction hash.')
       }
@@ -520,79 +666,25 @@ export const commands = new Hono<AppEnv>()
           ...(answer.replayed ? { 'idempotent-replayed': 'true' } : {}),
         })
       }
-      const processing = (txHash: Hash | null) =>
-        c.json({ processing: { txHash } } satisfies ConfirmAnswer, 202, noStore)
-
-      const where = operationOf(user, key)
-      const open = and(where, inArray(operations.status, OPEN))
-      const [row] = await getDb().select().from(operations).where(where).limit(1)
+      const [row] = await getDb().select().from(operations).where(operationOf(user, key)).limit(1)
       if (!row || row.command !== name) {
         throw new ApiError(404, 'not_found', 'There is no operation to confirm with this key.')
       }
       if (!isOpen(row)) return respond(replay(row))
-      const { prepared, preparedAt } = row
-      if (!prepared || !preparedAt) throw new Error(`Operation ${name} has no prepared transaction.`)
-
-      const world = await readWorld()
-      if (!world.ledger || world.ledger.namespace !== prepared.namespace) {
-        // Reset while this waited: it belongs to a story that is gone.
-        const reset = failure(
-          'invalid_state',
-          'Viatik was reset after this was prepared. It no longer applies.',
-        )
+      // The browser never got to sign it (the wallet refused before sending): mark it expired, so the
+      // sweep stops looking for it. A transaction that shows up for it later still settles it.
+      if (body.abandoned === true && !body.txHash && !row.txHash) {
+        const notSigned = failure('not_signed', 'This operation was not signed. Nothing was moved.')
         await getDb()
           .update(operations)
-          .set({ status: 'failed', statusCode: reset.status, response: reset.body })
-          .where(open)
-        const [after] = await getDb().select().from(operations).where(where).limit(1)
-        return respond(after ? replay(after) : reset)
+          .set({ status: 'expired', statusCode: notSigned.status, response: notSigned.body })
+          .where(and(operationOf(user, key), eq(operations.status, 'pending')))
+        const [after] = await getDb().select().from(operations).where(operationOf(user, key)).limit(1)
+        return respond(after ? replay(after) : notSigned)
       }
-      const monad = requireMonad()
-      const chain = await chainContextFor(world.ledger)
-
-      const given = body.txHash as Hash | undefined
-      const hash = given ?? (row.txHash as Hash | null) ?? undefined
-      if (hash) {
-        if ((await claimedHashes(user, key)).has(hash.toLowerCase())) throw unrelated()
-        const confirmed = await monad.confirm(prepared, hash, chain, { timeoutMs: CONFIRM_TIMEOUT_MS })
-        if (confirmed.status === 'confirmed') {
-          const answer = await settleConfirmation(caller, confirmed)
-          if (confirmed.landed) await saveBalancesAfter(monad, chain, confirmed.block, caller.requestId)
-          return respond(answer)
-        }
-        // Forget a stored hash that is not this operation, or that Monad never heard of after a while
-        // (dropped, replaced, mistyped): the next confirmation searches the logs instead.
-        const stale =
-          confirmed.status === 'unrelated' ||
-          (!given &&
-            Date.now() - preparedAt.getTime() > UNKNOWN_HASH_MS &&
-            (await monad.knowsTransaction(hash)) === false)
-        if (stale) {
-          await getDb()
-            .update(operations)
-            .set({ txHash: null })
-            .where(and(open, eq(operations.txHash, hash)))
-        }
-        if (confirmed.status === 'unrelated') {
-          const [after] = await getDb().select().from(operations).where(where).limit(1)
-          if (after && !isOpen(after)) return respond(replay(after))
-          throw unrelated()
-        }
-        if (!stale) {
-          if (given && given !== row.txHash)
-            await getDb().update(operations).set({ txHash: given }).where(open)
-          return processing(hash)
-        }
-      }
-
-      const searched = await search(caller, monad, chain, { ...row, prepared, preparedAt })
-      if ('found' in searched) {
-        const answer = await settleConfirmation(caller, searched.found)
-        if (searched.found.landed)
-          await saveBalancesAfter(monad, chain, searched.found.block, caller.requestId)
-        return respond(answer)
-      }
-      if ('answer' in searched) return respond(searched.answer)
-      return processing(null)
+      const outcome = await confirmOpen(caller, row, body.txHash as Hash | undefined)
+      return 'processing' in outcome
+        ? c.json({ processing: { txHash: outcome.processing } } satisfies ConfirmAnswer, 202, noStore)
+        : respond(outcome.answer)
     },
   )

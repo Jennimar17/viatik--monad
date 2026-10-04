@@ -15,6 +15,8 @@ import {
   type Log,
   type TransactionReceipt,
   TransactionNotFoundError,
+  TransactionReceiptNotFoundError,
+  zeroHash,
 } from 'viem'
 import { entryPoint07Abi } from 'viem/account-abstraction'
 
@@ -70,6 +72,8 @@ const GENESIS_CHUNK_GAS = 20_000_000n
 
 /** How long one RPC call may take, with one retry. */
 const RPC_TIMEOUT_MS = 8_000
+/** How often a receipt is read again while waiting for it. */
+const RECEIPT_POLL_MS = 500
 
 /** The block range the public RPC accepts in one `eth_getLogs`. */
 const LOG_WINDOW = 100n
@@ -101,7 +105,7 @@ const DRIFT_MESSAGE = 'The ledger and the app disagree about this payment. Nothi
 /** Said after a transaction landed, so it never claims that nothing moved. */
 const DIVERGED_MESSAGE = 'Monad recorded this differently from what was prepared. It is flagged for review.'
 const NOT_THROUGH: LedgerError = {
-  code: 'unknown',
+  code: 'not_landed',
   message: 'The transaction did not go through. Nothing was moved.',
   retryable: true,
 }
@@ -300,7 +304,9 @@ export class MonadLedgerAdapter implements LedgerAdapter {
     let receipt: TransactionReceipt
     let timestamp: ISODate
     try {
-      receipt = await this.client.waitForTransactionReceipt({ hash, timeout: timeoutMs })
+      const found = await this.receiptOf(hash, timeoutMs)
+      if (!found) return { status: 'pending', hash, problem: 'not in a block yet' }
+      receipt = found
       const block = await this.client.getBlock({ blockNumber: receipt.blockNumber })
       timestamp = new Date(Number(block.timestamp) * 1000).toISOString()
     } catch (error) {
@@ -450,6 +456,24 @@ export class MonadLedgerAdapter implements LedgerAdapter {
       return { status: 'searched', scannedTo, complete: scannedTo >= latest }
     } catch {
       return { status: 'unreadable', scannedTo }
+    }
+  }
+
+  /**
+   * A transaction's receipt, read again every half second until `timeoutMs`
+   * (once, with 0). Plain reads and no block watcher, so nothing keeps
+   * running after it returns. Null while it is not in a block.
+   */
+  private async receiptOf(hash: Hex, timeoutMs: number): Promise<TransactionReceipt | null> {
+    const deadline = Date.now() + timeoutMs
+    for (;;) {
+      try {
+        return await this.client.getTransactionReceipt({ hash })
+      } catch (error) {
+        if (!(error instanceof TransactionReceiptNotFoundError)) throw error
+      }
+      if (Date.now() >= deadline) return null
+      await new Promise((resolve) => setTimeout(resolve, RECEIPT_POLL_MS))
     }
   }
 
@@ -609,7 +633,8 @@ export class MonadLedgerAdapter implements LedgerAdapter {
         // Kept before waiting: a transaction that times out may still land.
         sent = { hash, calls: size }
         transactions.push(sent)
-        const receipt = await this.client.waitForTransactionReceipt({ hash, timeout: 60_000 })
+        const receipt = await this.receiptOf(hash, 60_000)
+        if (!receipt) return stop(chunk[0]!.label, `transaction ${hash} not in a block after 60 s`)
         sent.block = Number(receipt.blockNumber)
         sent.gasUsed = Number(receipt.gasUsed)
         if (receipt.status !== 'success') return stop(chunk[0]!.label, `transaction ${hash} reverted`)
@@ -981,6 +1006,8 @@ function matches(event: LedgerEventLog, witness: Witness, namespace: string, cha
       if (actual !== ledgerId(namespace, expected as Id)) return false
     } else if (key === 'perOperationLimit' || key === 'approvalThreshold') {
       if (actual !== centsToUnits(expected as Cents)) return false
+    } else if (key === 'evidenceHash') {
+      if (actual !== ((expected as Hex | null) ?? zeroHash)) return false
     } else if (actual !== expected) return false
   }
   return true

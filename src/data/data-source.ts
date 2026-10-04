@@ -4,6 +4,7 @@ import type { Evidence, ViatikState } from '@/domain/types'
 import type { LedgerStatus } from '@/ledger/types'
 
 import type { ApiCredentials } from './api'
+import type { PendingCall } from './api-contract'
 
 /** Human operation lifecycle shown while a command settles. */
 export type OperationPhase = LedgerStatus
@@ -26,11 +27,37 @@ export type LoadOptions = {
   credentials?: CredentialsProvider
 }
 
+/**
+ * Signs a transaction Viatik prepared, from the person's own account with
+ * sponsored gas, and returns its hash. A real account's session provides it;
+ * the demo settles without one.
+ */
+export type SendCall = (call: PendingCall) => Promise<`0x${string}`>
+
 export type DispatchOptions = {
   onPhase?: (phase: OperationPhase) => void
   /** Retries with the same key never double-spend. Generated when omitted. */
   idempotencyKey?: string
   credentials?: CredentialsProvider
+  /** Needed when the world settles on Monad. */
+  sendCall?: SendCall
+  /** The command and its input as the screen sent them, so a reload can find this operation again. */
+  fingerprint?: string
+}
+
+/** An operation that was signed (or may have been) and is not confirmed yet. */
+export type OpenOperation = {
+  key: string
+  name: CommandName
+  userId: string
+  /** The signed transaction, when its hash came back. */
+  hash: `0x${string}` | null
+  /** When it was sent for signing. */
+  at: string
+  /** `DispatchOptions.fingerprint`: the same command and input, retried after a reload, reuse this key. */
+  fingerprint?: string
+  /** When the person was last told it is still unsettled, so a later visit does not say it again. */
+  notifiedAt?: string
 }
 
 /** A file stored privately and verified, ready to be attached to a command. */
@@ -63,13 +90,29 @@ export interface DataSource {
   /** Whether a file has a copy that can be opened here (example files and, in the demo, files from other tabs do not). */
   canOpenEvidence(evidence: Evidence): boolean
   reset?(): Promise<void>
+  /** Operations of this person left open on this device (a reload or a closed tab after signing). */
+  openOperations?(userId: string): OpenOperation[]
+  /** Confirms one of them. */
+  resume?(operation: OpenOperation, options?: DispatchOptions): Promise<ResumeOutcome>
 }
+
+/** Endings that are not failures: the operation may still settle, and shows up when it does. */
+export const UNSETTLED_CODES: ReadonlySet<string> = new Set(['still_processing', 'expired'])
+
+/** What confirming an operation left open on this device came to. */
+export type ResumeOutcome =
+  | { status: 'confirmed' }
+  /** Still not final; `firstTime` when the person has not been told yet. */
+  | { status: 'unsettled'; message: string; firstTime: boolean }
+  | { status: 'failed'; message: string }
 
 /** Errors carry product-language messages that can be shown as-is. */
 export class DataSourceError extends Error {
   constructor(
     message: string,
     readonly code: string,
+    /** Nothing reached Monad (the signature failed or was refused): trying again starts afresh. */
+    readonly notSent = false,
   ) {
     super(message)
     this.name = 'DataSourceError'
