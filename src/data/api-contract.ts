@@ -31,6 +31,40 @@ export type SessionResponse = {
   isNew: boolean
 }
 
+// ─── Commands settled on Monad ───────────────────────────────────────────────
+
+type Hex = `0x${string}`
+
+/**
+ * A command that moves money on Monad, prepared and simulated by Viatik: the
+ * one transaction the person's account signs (sponsored gas), sent as is.
+ */
+export type PendingCall = {
+  to: Hex
+  data: Hex
+  chainId: number
+  /** The account that must sign it; the browser refuses to send from another. */
+  from: Hex
+  /** When the role permits in it expire (null without one); after that, prepare again. */
+  expiresAt: string | null
+}
+
+/**
+ * `POST /v1/commands/:name`: settled (`result`, 200), or prepared and waiting
+ * for the person's signature (`pending`, 202). A world on the demo ledger
+ * always answers `result`.
+ */
+export type CommandAnswer<R = unknown> = { result: R } | { pending: PendingCall }
+
+/**
+ * `POST /v1/commands/:name/confirm`, with the same Idempotency-Key: the hash
+ * of the signed transaction. Without one, Viatik looks for it on Monad.
+ */
+export type ConfirmRequest = { txHash?: Hex }
+
+/** The confirmation: settled (`result`), or not final yet (`processing`, 202): confirm again shortly. */
+export type ConfirmAnswer<R = unknown> = { result: R } | { processing: { txHash: Hex | null } }
+
 // ─── Evidence files ──────────────────────────────────────────────────────────
 
 /** What the private `evidence` bucket accepts; Storage enforces the same limits. */

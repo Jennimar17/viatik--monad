@@ -2,9 +2,10 @@ import { eq, sql } from 'drizzle-orm'
 
 import { createDemoState } from '@/domain/fixtures'
 import type { ViatikState } from '@/domain/types'
+import type { Balances } from '@/ledger/types'
 
 import { getDb } from './db/client'
-import { worldState } from './db/schema'
+import { worldState, type WorldLedger } from './db/schema'
 
 const WORLD = 'main'
 
@@ -12,7 +13,7 @@ type Db = ReturnType<typeof getDb>
 /** The transaction handle Drizzle passes to `db.transaction`. */
 export type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0]
 
-export type World = { state: ViatikState; version: number }
+export type World = { state: ViatikState; version: number; ledger: WorldLedger | null }
 
 /** The first read on an empty database starts from the demo story (Northstar, Arc Studio, Lumen Labs). */
 async function seedIfMissing(db: Db | DbTx) {
@@ -39,7 +40,7 @@ export async function readWorld(): Promise<World> {
     ;[row] = await db.select().from(worldState).where(eq(worldState.id, WORLD))
   }
   if (!row) throw new Error('The product state could not be created.')
-  return { state: row.state, version: row.version }
+  return { state: row.state, version: row.version, ledger: row.ledger }
 }
 
 /**
@@ -58,7 +59,7 @@ export async function withWorld<R>(
       ;[row] = await tx.select().from(worldState).where(eq(worldState.id, WORLD)).for('update')
     }
     if (!row) throw new Error('The product state could not be created.')
-    const { state, result } = await work({ state: row.state, version: row.version }, tx)
+    const { state, result } = await work({ state: row.state, version: row.version, ledger: row.ledger }, tx)
     if (state) {
       await tx
         .update(worldState)
@@ -69,7 +70,24 @@ export async function withWorld<R>(
   })
 }
 
-/** Replaces the state with a fresh demo story (admin seed). */
+/**
+ * Keeps the balances last read from Monad with the world, if it is still in
+ * the same namespace and no newer read is there. The state and its version
+ * do not change.
+ */
+export async function saveLedgerBalances(balances: Balances, namespace: string): Promise<void> {
+  await getDb()
+    .update(worldState)
+    .set({ ledger: sql`jsonb_set(${worldState.ledger}, '{balances}', ${JSON.stringify(balances)}::jsonb)` })
+    .where(
+      sql`${worldState.id} = ${WORLD} and ${worldState.ledger}->>'namespace' = ${namespace} and coalesce((${worldState.ledger}->'balances'->>'block')::bigint, -1) <= ${balances.block ?? 0}`,
+    )
+}
+
+/**
+ * Replaces the state with a fresh demo story (admin seed). The story is not on
+ * Monad, so the world settles on the demo ledger until a genesis binds it again.
+ */
 export async function resetWorld(tx: DbTx): Promise<void> {
   await seedIfMissing(tx)
   await tx
@@ -77,6 +95,7 @@ export async function resetWorld(tx: DbTx): Promise<void> {
     .set({
       state: createDemoState(new Date().toISOString()),
       version: sql`${worldState.version} + 1`,
+      ledger: null,
       updatedAt: new Date(),
     })
     .where(eq(worldState.id, WORLD))

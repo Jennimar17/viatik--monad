@@ -42,11 +42,12 @@ export function ledgerStatus(code: LedgerErrorCode | string): ContentfulStatusCo
     case 'invalid_state':
     case 'not_registered':
     case 'rule_drift':
-    case 'still_processing':
+    case 'expired':
       return 409
     case 'network_unavailable':
     case 'sponsorship_unavailable':
     case 'not_configured':
+    case 'still_processing':
       return 503
     default:
       return 422

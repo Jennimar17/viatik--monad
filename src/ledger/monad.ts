@@ -14,6 +14,7 @@ import {
   type LocalAccount,
   type Log,
   type TransactionReceipt,
+  TransactionNotFoundError,
 } from 'viem'
 import { entryPoint07Abi } from 'viem/account-abstraction'
 
@@ -67,6 +68,12 @@ export type MonadLedgerConfig = {
 /** A genesis goes in one multicall when it fits this much gas (Monad caps a transaction at 30M), in chunks otherwise. */
 const GENESIS_CHUNK_GAS = 20_000_000n
 
+/** How long one RPC call may take, with one retry. */
+const RPC_TIMEOUT_MS = 8_000
+
+/** The block range the public RPC accepts in one `eth_getLogs`. */
+const LOG_WINDOW = 100n
+
 /** How long a role permit stays valid after it is prepared. */
 const PERMIT_TTL_SECONDS = 60n * 60n
 /** `RequestStatus` in the contract. */
@@ -118,6 +125,14 @@ const NOT_CONFIGURED = failed(
 
 export type Prepared = { status: 'ready'; tx: PreparedTx } | { status: 'done'; result: SettlementResult }
 
+/** What a search for a prepared transaction found. */
+export type ConfirmationSearch =
+  | { status: 'found'; confirmed: Extract<ConfirmedTx, { status: 'confirmed' }> }
+  /** Nothing up to `scannedTo`; `complete` when that was the latest block. */
+  | { status: 'searched'; scannedTo: number; complete: boolean }
+  /** Monad could not be read past `scannedTo`: nothing can be concluded. */
+  | { status: 'unreadable'; scannedTo: number }
+
 /** The logs a transaction emitted for the prepared account alone, or why there are none. */
 type OwnLogs =
   | { kind: 'own'; logs: Log[] }
@@ -141,11 +156,16 @@ export class MonadLedgerAdapter implements LedgerAdapter {
 
   constructor(private readonly config: MonadLedgerConfig) {
     this.network = config.network
-    this.client = createPublicClient({ chain: this.chain, transport: http(config.rpcUrl) })
+    this.client = createPublicClient({ chain: this.chain, transport: this.transport() })
   }
 
   get chain(): Chain {
     return this.config.chain ?? chains[this.network]
+  }
+
+  /** One retry and a short timeout: a stuck node fails fast instead of holding a request for ~40 s. */
+  private transport() {
+    return http(this.config.rpcUrl, { timeout: RPC_TIMEOUT_MS, retryCount: 1 })
   }
 
   get isConfigured() {
@@ -348,9 +368,14 @@ export class MonadLedgerAdapter implements LedgerAdapter {
         records.push({ opId: op.trancheId, call: 'requestTranche', verified: verified(op.trancheId) })
     }
 
-    const missing = witnessesOf(tx.plan).some(
-      (witness) => !events.some((event) => matches(event, witness, tx.namespace, chain)),
+    const witnesses = witnessesOf(tx.plan)
+    const witnessed = witnesses.filter((witness) =>
+      events.some((event) => matches(event, witness, tx.namespace, chain)),
     )
+    // Another transaction of the same account, with none of this operation in it.
+    if (witnessed.length === 0 && !tx.records.some((record) => recorded.has(id(record.opId))))
+      return { status: 'unrelated', hash, problem: 'it carries none of this operation' }
+    const missing = witnessed.length < witnesses.length
     const altered = tx.records.some((record) => recorded.get(id(record.opId)) !== record.receiptHash)
     if (missing || altered)
       return done(true, {
@@ -377,6 +402,67 @@ export class MonadLedgerAdapter implements LedgerAdapter {
     )
   }
 
+  /**
+   * Looks for a prepared transaction when its hash is unknown (the tab closed
+   * after signing). Scans the ledger's logs forward from `from` (by default
+   * the block after the simulation), in windows of 100 blocks (the public
+   * RPC's limit), for an event that witnesses one of its operations, and
+   * confirms that transaction. It stops when it reaches the latest block or
+   * its time budget runs out, and says how far it got, so the next search
+   * can carry on. Hashes in `exclude` (already settled as other operations)
+   * are skipped. An RPC failure is reported as such, never as "not found".
+   */
+  async findConfirmation(
+    tx: PreparedTx,
+    context: ChainContext,
+    {
+      from,
+      budgetMs = 20_000,
+      exclude,
+    }: { from?: number; budgetMs?: number; exclude?: ReadonlySet<string> } = {},
+  ): Promise<ConfirmationSearch> {
+    const chain = withValidAddresses(context)
+    const witnesses = witnessesOf(tx.plan)
+    const tried = new Set<string>(exclude)
+    const started = Date.now()
+    let scannedTo = Math.max(tx.preparedBlock, (from ?? 0) - 1)
+    try {
+      const latest = Number(await this.client.getBlockNumber({ cacheTime: 0 }))
+      while (scannedTo < latest && Date.now() - started < budgetMs) {
+        const to = Math.min(scannedTo + Number(LOG_WINDOW), latest)
+        const logs = await this.client.getLogs({
+          address: this.ledger,
+          fromBlock: BigInt(scannedTo + 1),
+          toBlock: BigInt(to),
+        })
+        for (const event of parseEventLogs({ abi: viatikLedgerAbi, logs })) {
+          const hash = event.transactionHash
+          if (!hash || tried.has(hash)) continue
+          if (!witnesses.some((witness) => matches(event, witness, tx.namespace, chain))) continue
+          tried.add(hash)
+          // Another account can witness the same id (another Admin pausing the same budget): keep looking.
+          const confirmed = await this.confirm(tx, hash, context, { timeoutMs: 5_000 })
+          if (confirmed.status === 'confirmed') return { status: 'found', confirmed }
+          if (confirmed.status === 'pending') return { status: 'unreadable', scannedTo }
+        }
+        scannedTo = to
+      }
+      return { status: 'searched', scannedTo, complete: scannedTo >= latest }
+    } catch {
+      return { status: 'unreadable', scannedTo }
+    }
+  }
+
+  /** Whether Monad knows a transaction, mined or waiting; null when it could not be read. */
+  async knowsTransaction(hash: Hex): Promise<boolean | null> {
+    try {
+      await this.client.getTransaction({ hash })
+      return true
+    } catch (error) {
+      return error instanceof TransactionNotFoundError ? false : null
+    }
+  }
+
   /** Prepares, signs with an account the server holds, and confirms. People sign in their browser instead. */
   async settle(plan: SettlementPlan, { chain, onStatus }: SettleContext): Promise<SettlementResult> {
     const emit = onStatus ?? (() => {})
@@ -399,7 +485,7 @@ export class MonadLedgerAdapter implements LedgerAdapter {
       const wallet = createWalletClient({
         account: signer,
         chain: this.chain,
-        transport: http(this.config.rpcUrl),
+        transport: this.transport(),
       })
       // Monad charges the gas limit, so the estimate is padded modestly.
       const estimate = await this.client.estimateGas({ account: signer, to: tx.to, data: tx.data })
@@ -460,7 +546,7 @@ export class MonadLedgerAdapter implements LedgerAdapter {
     const wallet = createWalletClient({
       account: owner,
       chain: this.chain,
-      transport: http(this.config.rpcUrl),
+      transport: this.transport(),
     })
     const multicall = (calls: Genesis['calls']) =>
       encodeFunctionData({

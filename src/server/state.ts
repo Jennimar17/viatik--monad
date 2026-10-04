@@ -30,7 +30,7 @@ export const state = new Hono<AppEnv>().get('/', requireAccount, requireUser, as
       const next = withCaller(current.state, user, new Date().toISOString())
       return {
         state: next,
-        result: next ? { state: next, version: current.version + 1 } : current,
+        result: next ? { ...current, state: next, version: current.version + 1 } : current,
       }
     })
   }

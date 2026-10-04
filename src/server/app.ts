@@ -11,7 +11,28 @@ import { getDb } from './db/client'
 import { toErrorResponse } from './errors'
 import { evidence } from './evidence'
 import { session } from './session'
+import { getMonadLedger } from './ledger'
 import { invitations, state } from './state'
+
+/** The ledger check, kept for a minute: the endpoint is public and each check costs four RPC calls. */
+let ledgerChecked: { at: number; status: 'ok' | 'unavailable' | 'not_configured' } | null = null
+
+/** Settlement on Monad: the deployment answers on the expected chain, with its token and registrar. */
+async function ledgerHealth(requestId: string) {
+  if (ledgerChecked && Date.now() - ledgerChecked.at < 60_000) return ledgerChecked.status
+  const monad = getMonadLedger()
+  let status: 'ok' | 'unavailable' | 'not_configured' = 'not_configured'
+  if (monad) {
+    const timeout = new Promise<{ ok: false; problem: string }>((resolve) =>
+      setTimeout(() => resolve({ ok: false, problem: 'no answer within 5 s' }), 5_000),
+    )
+    const health = await Promise.race([monad.check(), timeout])
+    status = health.ok ? 'ok' : 'unavailable'
+    if (!health.ok) console.error(`[api] ${requestId} health: ledger ${health.problem}`)
+  }
+  ledgerChecked = { at: Date.now(), status }
+  return status
+}
 
 /**
  * The Viatik API, mounted by Next at `/api`. Product routes verify the
@@ -50,9 +71,12 @@ export const app = new Hono<AppEnv>()
         }
       }
     }
-    return c.json({ ok: database === 'ok' && accounts === 'ok', database, accounts }, 200, {
-      'cache-control': 'no-store',
-    })
+    const ledger = await ledgerHealth(c.get('requestId'))
+    return c.json(
+      { ok: database === 'ok' && accounts === 'ok' && ledger !== 'unavailable', database, accounts, ledger },
+      200,
+      { 'cache-control': 'no-store' },
+    )
   })
   .route('/v1/session', session)
   .route('/v1/state', state)
