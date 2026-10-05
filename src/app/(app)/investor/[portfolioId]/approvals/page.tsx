@@ -5,51 +5,46 @@ import * as React from 'react'
 
 import { ButtonLink } from '@/components/app/button-link'
 import { PageTabs } from '@/components/app/page-tabs'
-import { ReceiptDetailsButton } from '@/components/app/receipt-details'
+import { ReleaseTrancheSheet } from '@/components/app/release-tranche-sheet'
 import { RequestQueue } from '@/components/app/request-queue'
 import { RequestReviewSheet } from '@/components/app/request-review-sheet'
 import { useHref, useRole } from '@/components/app/role-context'
 import { Button } from '@/components/ui/button'
 import { Amount } from '@/components/viatik/amount'
-import { ApprovalSheet } from '@/components/viatik/approval-sheet'
 import { EmptyState } from '@/components/viatik/feedback'
 import { PageHeader } from '@/components/viatik/layout'
 import { OrgAvatar } from '@/components/viatik/people'
 import { StatusBadge } from '@/components/viatik/status'
-import { useCommand, useViatikState } from '@/data/react'
-import { formatUsd } from '@/domain/money'
-import { accountName, agencyName, investorApprovals, receiptFor, userName } from '@/domain/queries'
-import { agreementCapital } from '@/domain/selectors'
+import { useViatikState } from '@/data/react'
+import { agencyName, investorApprovals, userName } from '@/domain/queries'
 import { trancheStatus } from '@/domain/status'
 import type { PaymentRequest, Tranche } from '@/domain/types'
-import { formatRelative } from '@/lib/format'
+import { formatDate, formatRelative } from '@/lib/format'
 
 export default function InvestorApprovalsPage() {
   const { state, now } = useViatikState()
   const { portfolioId } = useRole()
   const href = useHref()
-  const release = useCommand('releaseTranche')
   const [reviewingId, setReviewingId] = React.useState<string | null>(null)
   const [reviewOpen, setReviewOpen] = React.useState(false)
   // The tranche being released stays mounted while its sheet animates closed.
   const [releasingId, setReleasingId] = React.useState<string | null>(null)
   const [releaseOpen, setReleaseOpen] = React.useState(false)
 
-  const { tranches, exceptions } = investorApprovals(state, portfolioId)
-  const releasing = state.tranches.find((t) => t.id === releasingId)
-  const releasingAgreement = state.agreements.find((a) => a.id === releasing?.agreementId)
-  const releasingAgency = releasingAgreement ? agencyName(state, releasingAgreement.agencyId) : 'the Agency'
-  const releasingCapital = releasingAgreement ? agreementCapital(state, releasingAgreement.id) : undefined
-  const destination = releasing?.destinationAccountId
-    ? accountName(state, releasing.destinationAccountId)
-    : (state.accounts.find(
-        (a) =>
-          a.agencyId === releasingAgreement?.agencyId && a.template === 'operations' && a.status === 'active',
-      )?.name ?? 'Operations')
-  const releaseReceipt = receiptFor(state, releasing?.receiptId)
-  const releaseBlocked = Boolean(
-    releasing && releasingCapital && releasingCapital.released + releasing.amount > releasingCapital.funded,
+  const { tranches: requested, exceptions } = investorApprovals(state, portfolioId)
+  // Tranches without a milestone that are simply available (Manual, Scheduled, Recurring): the
+  // Investor can release them without waiting for a request. They are not approvals, so they do not
+  // count in the sidebar badge.
+  const portfolioAgreements = new Set(
+    state.agreements.filter((a) => a.portfolioId === portfolioId && a.status === 'active').map((a) => a.id),
   )
+  const ready = state.tranches.filter(
+    (t) =>
+      portfolioAgreements.has(t.agreementId) &&
+      t.status === 'available' &&
+      t.releaseCondition !== 'milestone',
+  )
+  const tranches = [...requested, ...ready]
 
   const review = (request: PaymentRequest) => {
     setReviewingId(request.id)
@@ -72,13 +67,14 @@ export default function InvestorApprovalsPage() {
           {
             value: 'tranches',
             label: 'Tranche requests',
-            count: tranches.length,
+            // Only real requests count, like the sidebar badge; the ready ones are listed with them.
+            count: requested.length,
             content:
               tranches.length === 0 ? (
                 <EmptyState
                   icon={<ShieldCheck />}
                   title="Nothing needs your attention"
-                  description="Tranche requests from your Agencies will appear here."
+                  description="Tranche requests from your Agencies, and tranches ready to release, will appear here."
                 />
               ) : (
                 <ul className="surface flex flex-col divide-y divide-border overflow-hidden rounded-xl">
@@ -100,6 +96,9 @@ export default function InvestorApprovalsPage() {
                             </span>
                             <span className="truncate text-xs text-subtle">
                               {agency} · {agreement?.title}
+                              {tranche.status === 'available' && tranche.scheduledFor
+                                ? ` · planned for ${formatDate(tranche.scheduledFor)}`
+                                : ''}
                               {tranche.requestedBy
                                 ? ` · requested by ${userName(state, tranche.requestedBy)}`
                                 : ''}
@@ -124,7 +123,11 @@ export default function InvestorApprovalsPage() {
                               className="w-full sm:w-auto"
                               onClick={() => openRelease(tranche)}
                             >
-                              Release tranche
+                              {tranche.status !== 'available'
+                                ? 'Release tranche'
+                                : tranche.scheduledFor && tranche.scheduledFor > now
+                                  ? 'Release early'
+                                  : 'Release now'}
                             </Button>
                           )}
                         </span>
@@ -174,48 +177,13 @@ export default function InvestorApprovalsPage() {
         onClosed={() => setReviewingId(null)}
       />
 
-      <ApprovalSheet
+      <ReleaseTrancheSheet
         key={`release-${releasingId ?? 'none'}`}
+        trancheId={releasingId}
         open={releaseOpen}
         onOpenChange={setReleaseOpen}
-        onClosed={() => {
-          release.reset()
-          setReleasingId(null)
-        }}
-        title="Release tranche"
-        description={releasing ? `${releasing.name} · ${releasingAgreement?.title ?? ''}` : undefined}
-        summary={{
-          what: releasing
-            ? `${formatUsd(releasing.amount, { withCode: true })} moves from the ${releasingAgency} Funding Vault into the Agency’s ${destination} account.`
-            : '',
-          amount: releasing?.amount,
-          from: `${releasingAgency} Funding Vault`,
-          to: `${releasingAgency} · ${destination}`,
-          reversible:
-            'Cannot be undone once released. The Agency operates with it under the agreement’s policy.',
-          policy:
-            'Released capital can never exceed funded capital; the funding contract enforces it, not only the app.',
-        }}
-        confirmLabel="Release tranche"
-        disabled={!releasing || releaseBlocked}
-        phase={release.phase}
-        error={release.error}
-        onConfirm={() => releasing && release.run({ trancheId: releasing.id })}
-        success={{
-          title: 'Funding released',
-          body: releasing
-            ? `${formatUsd(releasing.amount, { withCode: true })} is now available in the ${releasingAgency} ${destination} account.`
-            : '',
-          actions: <ReceiptDetailsButton receipt={releaseReceipt} />,
-        }}
-      >
-        {releaseBlocked && releasingCapital ? (
-          <p className="rounded-xl border border-warning/30 bg-warning-soft p-4 text-sm text-pretty">
-            Fund the agreement first: only {formatUsd(releasingCapital.inFundingVault, { withCode: true })} is
-            in the Funding Vault.
-          </p>
-        ) : null}
-      </ApprovalSheet>
+        onClosed={() => setReleasingId(null)}
+      />
     </div>
   )
 }

@@ -17,9 +17,9 @@ import { OrgAvatar } from '@/components/viatik/people'
 import { StatusBadge } from '@/components/viatik/status'
 import { useViatikState } from '@/data/react'
 import { agencyTypeLabel } from '@/domain/labels'
-import { percentOf, sum, ZERO, type Cents } from '@/domain/money'
+import { percentOf, sum, type Cents } from '@/domain/money'
 import { userName } from '@/domain/queries'
-import { agencyCapital, agreementCapital, budgetUsage } from '@/domain/selectors'
+import { agencyCapital, agencyFunding, budgetUsage } from '@/domain/selectors'
 import { agencyStatus } from '@/domain/status'
 import type { Agency, AgencyStatus, AgencyType } from '@/domain/types'
 import { pluralize } from '@/lib/format'
@@ -57,8 +57,7 @@ export default function AgenciesPage() {
   const agencies = state.agencies.filter((a) => a.portfolioId === portfolioId)
 
   const rows: Row[] = agencies.map((agency) => {
-    const agreement = state.agreements.find((a) => a.agencyId === agency.id && a.status !== 'cancelled')
-    const capital = agreement ? agreementCapital(state, agreement.id) : undefined
+    const capital = agencyFunding(state, agency.id)
     const operating = agencyCapital(state, agency.id, now)
     const usage = state.budgets
       .filter((b) => b.agencyId === agency.id && b.status === 'active')
@@ -75,9 +74,9 @@ export default function AgenciesPage() {
     return {
       agency,
       admin: admin ? userName(state, admin.userId) : 'Invitation pending',
-      committed: capital?.committed ?? ZERO,
-      funded: capital?.funded ?? ZERO,
-      released: capital?.released ?? ZERO,
+      committed: capital.committed,
+      funded: capital.funded,
+      released: capital.released,
       spent: operating.states.spent,
       spentThisMonth: operating.spentThisPeriod,
       budgetUsed,

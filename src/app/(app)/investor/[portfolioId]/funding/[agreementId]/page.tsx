@@ -24,6 +24,7 @@ import {
   MilestoneTimelineFor,
 } from '@/components/app/funding-parts'
 import { PageTabs } from '@/components/app/page-tabs'
+import { ReleaseTrancheSheet } from '@/components/app/release-tranche-sheet'
 import { useReceiptDrawer } from '@/components/app/receipt-details'
 import { useHref, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
@@ -53,6 +54,9 @@ export default function AgreementDetailPage() {
   const { portfolioId } = useRole()
   const href = useHref()
   const [fundOpen, setFundOpen] = React.useState(false)
+  // The tranche being released stays selected while its sheet animates closed.
+  const [releasingId, setReleasingId] = React.useState<string | null>(null)
+  const [releaseOpen, setReleaseOpen] = React.useState(false)
   const [pauseOpen, setPauseOpen] = React.useState(false)
   // Fixed when the sheet opens: the refreshed status must not flip its copy.
   const [resuming, setResuming] = React.useState(false)
@@ -156,13 +160,30 @@ export default function AgreementDetailPage() {
                 description={
                   agreement.releaseModel === 'milestone'
                     ? 'Each tranche is released after its milestone is approved.'
-                    : 'The Agency requests each tranche; you release it from Approvals.'
+                    : 'You release each tranche yourself, in order. The Agency can also request one; it then comes to Approvals.'
                 }
               >
                 <MilestoneTimelineFor
                   state={state}
                   agreementId={agreement.id}
                   actionFor={(tranche, milestone) => {
+                    // No milestone to review and nothing the Agency has to request: the Investor can release it.
+                    if (
+                      agreement.status === 'active' &&
+                      tranche.status === 'available' &&
+                      tranche.releaseCondition !== 'milestone'
+                    )
+                      return (
+                        <Button
+                          size="pill-sm"
+                          onClick={() => {
+                            setReleasingId(tranche.id)
+                            setReleaseOpen(true)
+                          }}
+                        >
+                          Release now
+                        </Button>
+                      )
                     if (milestone?.status === 'ready_for_review')
                       return (
                         <ButtonLink href={milestoneHref(milestone.id)} size="pill-sm">
@@ -264,6 +285,12 @@ export default function AgreementDetailPage() {
         ]}
       />
 
+      <ReleaseTrancheSheet
+        trancheId={releasingId}
+        open={releaseOpen}
+        onOpenChange={setReleaseOpen}
+        onClosed={() => setReleasingId(null)}
+      />
       <FundAgreementSheet agreement={agreement} open={fundOpen} onOpenChange={setFundOpen} />
       <ApprovalSheet
         open={pauseOpen}

@@ -19,6 +19,7 @@ import { PolicySummary } from '@/components/viatik/policy'
 import { useCommand, useViatikState } from '@/data/react'
 import type { TrancheDraft } from '@/domain/engine/funding'
 import { categoryLabel, releaseModelLabel } from '@/domain/labels'
+import { governingAgreement } from '@/domain/queries'
 import { formatUsd, splitEvenly, sum, usd, ZERO, type Cents } from '@/domain/money'
 import { joinList } from '@/domain/policy'
 import type { ReleaseModel, SpendingCategory, SpendingPolicy } from '@/domain/types'
@@ -102,7 +103,7 @@ function NewAgreement() {
   const [exception, setException] = React.useState<Cents | null>(usd(10_000))
   const [cadence, setCadence] = React.useState<SpendingPolicy['reportingCadence']>('per_milestone')
   const [returns, setReturns] = React.useState(
-    'Unreleased capital returns to the Portfolio Vault if the agreement is cancelled or expires.',
+    'Unreleased capital stays in the Funding Vault until the parties agree on what happens to it.',
   )
   const [evidence, setEvidence] = React.useState(
     'Each milestone needs a written summary, a demo link or build, and supporting documents.',
@@ -110,6 +111,8 @@ function NewAgreement() {
   useBottomBar(!createdId)
 
   const agency = agencies.find((a) => a.id === agencyId)
+  // The agreement whose threshold the engine and the contract apply to this Agency, if it has one.
+  const governing = agencyId ? governingAgreement(state, agencyId) : undefined
   const total = sum(rows, (r) => r.amount ?? ZERO)
   const startAt = fromDateInput(start)
   const endAt = fromDateInput(end)
@@ -153,7 +156,7 @@ function NewAgreement() {
       }
       for (const row of rows) {
         if (!row.amount) next[`amount-${row.key}`] = 'Enter an amount.'
-        if (!fromDateInput(row.due)) next[`due-${row.key}`] = 'Pick a date.'
+        if (model !== 'manual' && !fromDateInput(row.due)) next[`due-${row.key}`] = 'Pick a date.'
         if (model === 'milestone' && row.title.trim().length < 3)
           next[`title-${row.key}`] = 'Name the milestone.'
       }
@@ -357,7 +360,9 @@ function NewAgreement() {
           description={
             model === 'milestone'
               ? 'Each tranche is released after its milestone is approved.'
-              : 'Tranches are released on their dates or when you decide.'
+              : model === 'manual'
+                ? 'You release each tranche yourself, whenever you decide.'
+                : 'You release each tranche yourself when its planned date comes.'
           }
           action={
             <div className="flex gap-1" role="group" aria-label="Split the commitment into">
@@ -403,18 +408,20 @@ function NewAgreement() {
                       invalid={Boolean(errors[`amount-${row.key}`])}
                     />
                   </FormField>
-                  <FormField
-                    label={model === 'milestone' ? 'Milestone due' : 'Release date'}
-                    htmlFor={`due-${row.key}`}
-                    error={errors[`due-${row.key}`]}
-                  >
-                    <PillInput
-                      id={`due-${row.key}`}
-                      type="date"
-                      value={row.due}
-                      onChange={(e) => updateRow(row.key, { due: e.target.value })}
-                    />
-                  </FormField>
+                  {model === 'manual' ? null : (
+                    <FormField
+                      label={model === 'milestone' ? 'Milestone due' : 'Planned release date'}
+                      htmlFor={`due-${row.key}`}
+                      error={errors[`due-${row.key}`]}
+                    >
+                      <PillInput
+                        id={`due-${row.key}`}
+                        type="date"
+                        value={row.due}
+                        onChange={(e) => updateRow(row.key, { due: e.target.value })}
+                      />
+                    </FormField>
+                  )}
                   {model === 'milestone' ? (
                     <>
                       <FormField
@@ -453,7 +460,8 @@ function NewAgreement() {
                 </div>
                 {i === 0 && model !== 'milestone' ? (
                   <p className="text-xs text-subtle">
-                    The first tranche becomes available as soon as the Agency accepts.
+                    The first tranche becomes available as soon as the Agency accepts. You release it from the
+                    agreement or from Approvals.
                   </p>
                 ) : null}
               </div>
@@ -505,7 +513,11 @@ function NewAgreement() {
                 label="Exception threshold"
                 htmlFor="agreement-exception"
                 error={errors.exception}
-                hint="Single operations above this come to you for approval."
+                hint={
+                  governing
+                    ? `${agency?.name ?? 'This Agency'} already has an active agreement: its threshold (${formatUsd(governing.spendingPolicy.exceptionThreshold, { withCode: true })}) applies until it ends. Releasing a tranche is always your decision.`
+                    : 'Single payments above this come to you for approval. Releasing a tranche is always your decision, whatever its size.'
+                }
               >
                 <MoneyInput
                   id="agreement-exception"
@@ -568,7 +580,7 @@ function NewAgreement() {
                 `You commit ${formatUsd(committed ?? ZERO, { withCode: true })} to ${agency?.name ?? 'the Agency'}, released in ${rows.length} tranches.`,
                 model === 'milestone'
                   ? 'Each tranche is released only after you approve its milestone.'
-                  : 'Tranches are released on schedule or when you decide.',
+                  : 'You release each tranche yourself, in order. Viatik does not release by itself.',
                 `Capital can be used for ${joinList(categories.map((c) => categoryLabel[c].toLowerCase()))}.`,
                 `Single operations above ${formatUsd(exception ?? ZERO, { withCode: true })} come to you as exceptions.`,
                 'Released capital can never exceed what you have funded.',

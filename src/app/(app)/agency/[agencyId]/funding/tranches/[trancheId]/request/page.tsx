@@ -62,7 +62,7 @@ export default function TrancheRequestPage() {
           title="Funding requested"
           description={`${investor} will review your request for ${tranche.name}. ${formatUsd(tranche.amount, { withCode: true })} lands in ${accountName(state, accountId ?? undefined)} when it is released.`}
         />
-        <ButtonLink href={href('funding')} size="pill" className="w-fit">
+        <ButtonLink href={href(`funding?agreement=${agreement.id}`)} size="pill" className="w-fit">
           Back to funding
         </ButtonLink>
       </div>
@@ -73,7 +73,7 @@ export default function TrancheRequestPage() {
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
       <PageHeader
         eyebrow={
-          <Link href={href('funding')} className="hover:text-foreground">
+          <Link href={href(`funding?agreement=${agreement.id}`)} className="hover:text-foreground">
             Funding
           </Link>
         }
@@ -150,7 +150,7 @@ export default function TrancheRequestPage() {
       ) : null}
 
       <FormActions>
-        <Button variant="ghost" size="pill-sm" onClick={() => router.push(href('funding'))} disabled={busy}>
+        <Button variant="ghost" size="pill-sm" onClick={() => router.push(href(`funding?agreement=${agreement.id}`))} disabled={busy}>
           Cancel
         </Button>
         <Button

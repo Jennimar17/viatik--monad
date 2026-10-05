@@ -77,7 +77,7 @@ export function trancheTimeline(
       : milestone
         ? `Milestone due ${formatDate(milestone.dueDate)}`
         : tranche.scheduledFor
-          ? `Scheduled for ${formatDate(tranche.scheduledFor)}`
+          ? `Planned for ${formatDate(tranche.scheduledFor)}`
           : undefined
     return {
       id: tranche.id,

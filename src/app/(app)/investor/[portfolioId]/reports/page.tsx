@@ -15,14 +15,8 @@ import { PageHeader, Panel } from '@/components/viatik/layout'
 import { OrgAvatar } from '@/components/viatik/people'
 import { useViatikState } from '@/data/react'
 import { categoryLabel } from '@/domain/labels'
-import { cents, formatUsd, percentOf, sum, ZERO, type Cents } from '@/domain/money'
-import {
-  agencyCapital,
-  agreementCapital,
-  budgetUsage,
-  capitalOverTime,
-  spendByMonth,
-} from '@/domain/selectors'
+import { cents, formatUsd, percentOf, sum, type Cents } from '@/domain/money'
+import { agencyCapital, agencyFunding, budgetUsage, capitalOverTime, spendByMonth } from '@/domain/selectors'
 import type { SpendingCategory } from '@/domain/types'
 import { seriesColor, seriesKey } from '@/lib/chart-colors'
 import { csvCell, pluralize } from '@/lib/format'
@@ -83,12 +77,12 @@ export default function ReportsPage() {
   const totalSpend = cents(totals.reduce((acc, t) => acc + t.value, 0))
 
   const rows: Row[] = agencies.map((agency) => {
-    const agreement = state.agreements.find((a) => a.agencyId === agency.id && a.status !== 'cancelled')
-    const capital = agreement ? agreementCapital(state, agreement.id) : undefined
+    const capital = agencyFunding(state, agency.id)
     const operating = agencyCapital(state, agency.id, now)
-    const milestones = agreement
-      ? state.milestones.filter((m) => m.agreementId === agreement.id && m.submittedAt)
-      : []
+    const agreementIds = new Set(
+      state.agreements.filter((a) => a.agencyId === agency.id && a.status !== 'cancelled').map((a) => a.id),
+    )
+    const milestones = state.milestones.filter((m) => agreementIds.has(m.agreementId) && m.submittedAt)
     const onTime = milestones.filter((m) => (m.submittedAt ?? '') <= m.dueDate).length
     const usage = state.budgets
       .filter((b) => b.agencyId === agency.id && b.status === 'active')
@@ -101,7 +95,7 @@ export default function ReportsPage() {
     return {
       id: agency.id,
       name: agency.name,
-      released: capital?.released ?? ZERO,
+      released: capital.released,
       spent: operating.states.spent,
       burn,
       runwayMonths: burn > 0 ? Math.floor(runway / burn) : null,

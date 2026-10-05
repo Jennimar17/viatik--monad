@@ -110,11 +110,22 @@ export const requestTypeLabel: Record<RequestType, string> = {
 export const releaseModelLabel: Record<ReleaseModel, { label: string; description: string }> = {
   milestone: {
     label: 'Milestone-based',
-    description: 'Each tranche is released after its milestone is approved.',
+    description: 'The Agency submits evidence for each milestone. You review it, then release the tranche.',
   },
-  scheduled: { label: 'Scheduled', description: 'Tranches are released on fixed dates.' },
-  manual: { label: 'Manual', description: 'The Investor decides when each tranche is released.' },
-  recurring: { label: 'Recurring', description: 'The same amount is released every period.' },
+  scheduled: {
+    label: 'Scheduled',
+    description:
+      'Each tranche has a planned date. You release it when it is due; Viatik does not release by itself.',
+  },
+  manual: {
+    label: 'Manual',
+    description: 'You release each tranche, in order, whenever you decide. No evidence needed.',
+  },
+  recurring: {
+    label: 'Recurring',
+    description:
+      'The same amount, planned every period. You release each one; Viatik does not release by itself.',
+  },
 }
 
 export const vaultKindLabel: Record<VaultKind, { label: string; description: string }> = {

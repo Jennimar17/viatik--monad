@@ -30,7 +30,7 @@ import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useCommand, useViatikState } from '@/data/react'
 import { agencyTypeLabel, categoryLabel } from '@/domain/labels'
 import { roleLabel } from '@/domain/permissions'
-import { userName } from '@/domain/queries'
+import { agreementsOf, userName } from '@/domain/queries'
 import { agencyCapital, budgetUsage, spendByMonth } from '@/domain/selectors'
 import { agencyStatus, agreementStatus, budgetStatus } from '@/domain/status'
 import type { SpendingCategory } from '@/domain/types'
@@ -58,7 +58,10 @@ export default function InvestorAgencyDetailPage() {
     )
   }
 
-  const agreement = state.agreements.find((a) => a.agencyId === agency.id && a.status !== 'cancelled')
+  // An Agency can have several agreements. The header acts on the one that is running (or the most
+  // urgent), and the Overview tab lists them all.
+  const agreements = agreementsOf(state, agency.id)
+  const agreement = agreements.find((a) => a.status === 'active' || a.status === 'paused') ?? agreements[0]
   const capital = agencyCapital(state, agency.id, now)
   const budgets = state.budgets.filter((b) => b.agencyId === agency.id)
   const members = state.memberships.filter(
@@ -69,9 +72,10 @@ export default function InvestorAgencyDetailPage() {
   )
   const payments = state.payments.filter((p) => p.agencyId === agency.id)
   const activity = state.activity.filter((a) => a.agencyId === agency.id).slice(0, 40)
-  const review = agreement
-    ? state.milestones.find((m) => m.agreementId === agreement.id && m.status === 'ready_for_review')
-    : undefined
+  const review = state.milestones.find(
+    (m) => m.status === 'ready_for_review' && agreements.some((a) => a.id === m.agreementId),
+  )
+  const reviewAgreement = review ? agreements.find((a) => a.id === review.agreementId) : undefined
   const paused = agreement?.status === 'paused'
   const categories = Array.from(new Set(payments.map((p) => p.category))) as SpendingCategory[]
   const categorySeries = categories.map((category, i) => ({
@@ -109,8 +113,8 @@ export default function InvestorAgencyDetailPage() {
         meta={
           <>
             <Tag>{agencyTypeLabel[agency.type]}</Tag>
-            {agreement ? (
-              <StatusBadge status={agreementStatus[agreement.status]} size="md" />
+            {agreements[0] ? (
+              <StatusBadge status={agreementStatus[agreements[0].status]} size="md" />
             ) : (
               <StatusBadge status={agencyStatus[agency.status]} size="md" />
             )}
@@ -144,14 +148,18 @@ export default function InvestorAgencyDetailPage() {
                     }}
                   >
                     {paused ? <PlayCircle className="size-4" /> : <PauseCircle className="size-4" />}
-                    {paused ? 'Resume agreement' : 'Pause agreement'}
+                    {paused ? 'Resume' : 'Pause'} {agreements.length > 1 ? agreement.title : 'agreement'}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}
-            {review && agreement ? (
-              <ButtonLink href={href(`funding/${agreement.id}/milestones/${review.id}`)} size="pill">
+            {review && reviewAgreement ? (
+              <ButtonLink href={href(`funding/${reviewAgreement.id}/milestones/${review.id}`)} size="pill">
                 Review milestone <ArrowRight data-icon="inline-end" />
+              </ButtonLink>
+            ) : agreements.length > 1 ? (
+              <ButtonLink href={href('funding')} size="pill">
+                Open funding
               </ButtonLink>
             ) : agreement ? (
               <ButtonLink href={href(`funding/${agreement.id}`)} size="pill">
@@ -166,10 +174,14 @@ export default function InvestorAgencyDetailPage() {
         }
       />
 
-      {paused ? (
+      {agreements.some((a) => a.status === 'paused') ? (
         <div className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm">
-          The funding agreement is paused. Tranche releases are on hold; {agency.name} keeps operating with
-          capital already released.
+          {agreements
+            .filter((a) => a.status === 'paused')
+            .map((a) => a.title)
+            .join(', ')}{' '}
+          {agreements.filter((a) => a.status === 'paused').length > 1 ? 'are' : 'is'} paused. Tranche releases
+          are on hold; {agency.name} keeps operating with capital already released.
         </div>
       ) : null}
 
@@ -189,52 +201,62 @@ export default function InvestorAgencyDetailPage() {
           {
             value: 'overview',
             label: 'Overview',
-            content: agreement ? (
-              <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-                <div className="flex flex-col gap-6 xl:col-span-2">
-                  <Panel
-                    title={agreement.title}
-                    description={agreement.purpose}
-                    action={
-                      <ButtonLink href={href(`funding/${agreement.id}`)} variant="ghost" size="pill-sm">
-                        Details <ArrowRight data-icon="inline-end" />
-                      </ButtonLink>
-                    }
-                  >
-                    <AgreementProgress state={state} agreement={agreement} />
-                  </Panel>
-                  <Panel title="Milestones">
-                    <MilestoneTimelineFor
-                      state={state}
-                      agreementId={agreement.id}
-                      actionFor={(tranche, milestone) =>
-                        milestone?.status === 'ready_for_review' ? (
-                          <ButtonLink
-                            href={href(`funding/${agreement.id}/milestones/${milestone.id}`)}
-                            size="pill-sm"
-                          >
-                            Review milestone
-                          </ButtonLink>
-                        ) : undefined
-                      }
-                    />
+            content:
+              agreements.length > 0 ? (
+                <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+                  <div className="flex flex-col gap-6 xl:col-span-2">
+                    {agreements.map((item) => (
+                      <React.Fragment key={item.id}>
+                        <Panel
+                          title={item.title}
+                          description={item.purpose}
+                          action={
+                            <span className="flex items-center gap-2">
+                              {agreements.length > 1 ? (
+                                <StatusBadge status={agreementStatus[item.status]} />
+                              ) : null}
+                              <ButtonLink href={href(`funding/${item.id}`)} variant="ghost" size="pill-sm">
+                                Details <ArrowRight data-icon="inline-end" />
+                              </ButtonLink>
+                            </span>
+                          }
+                        >
+                          <AgreementProgress state={state} agreement={item} />
+                        </Panel>
+                        <Panel title={agreements.length > 1 ? `Milestones · ${item.title}` : 'Milestones'}>
+                          <MilestoneTimelineFor
+                            state={state}
+                            agreementId={item.id}
+                            actionFor={(tranche, milestone) =>
+                              milestone?.status === 'ready_for_review' ? (
+                                <ButtonLink
+                                  href={href(`funding/${item.id}/milestones/${milestone.id}`)}
+                                  size="pill-sm"
+                                >
+                                  Review milestone
+                                </ButtonLink>
+                              ) : undefined
+                            }
+                          />
+                        </Panel>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                  <Panel title="Capital states" description="Never merged into one balance.">
+                    <CapitalStateList states={capital.states} />
                   </Panel>
                 </div>
-                <Panel title="Capital states" description="Never merged into one balance.">
-                  <CapitalStateList states={capital.states} />
-                </Panel>
-              </div>
-            ) : (
-              <EmptyState
-                title="No funding agreement yet"
-                description="Define the commitment, release schedule and milestones for this Agency."
-                action={
-                  <ButtonLink href={href(`funding/new?agency=${agency.id}`)} size="pill">
-                    Create funding agreement
-                  </ButtonLink>
-                }
-              />
-            ),
+              ) : (
+                <EmptyState
+                  title="No funding agreement yet"
+                  description="Define the commitment, release schedule and milestones for this Agency."
+                  action={
+                    <ButtonLink href={href(`funding/new?agency=${agency.id}`)} size="pill">
+                      Create funding agreement
+                    </ButtonLink>
+                  }
+                />
+              ),
           },
           {
             value: 'spending',

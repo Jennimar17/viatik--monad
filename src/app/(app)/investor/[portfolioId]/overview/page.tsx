@@ -18,11 +18,11 @@ import { HairlineGrid, PageHeader, Panel } from '@/components/viatik/layout'
 import { OrgAvatar } from '@/components/viatik/people'
 import { StatusBadge, Tag, type StatusDescriptor } from '@/components/viatik/status'
 import { useViatikState } from '@/data/react'
-import { percentOf, sum, ZERO, type Cents } from '@/domain/money'
-import { investorApprovals } from '@/domain/queries'
+import { percentOf, sum, type Cents } from '@/domain/money'
+import { agreementsOf, investorApprovals } from '@/domain/queries'
 import {
   agencyCapital,
-  agreementCapital,
+  agencyFunding,
   budgetUsage,
   capitalOverTime,
   portfolioCapital,
@@ -79,23 +79,29 @@ export default function InvestorOverviewPage() {
   }
 
   const rows: AgencyRow[] = agencies.map((agency) => {
-    const agreement = state.agreements.find((a) => a.agencyId === agency.id)
-    const released = agreement ? agreementCapital(state, agreement.id).released : ZERO
+    // An Agency can have several agreements: the row adds them up and shows the one that needs
+    // attention first (waiting for acceptance, then active).
+    const agreements = agreementsOf(state, agency.id)
+    const agreement = agreements[0]
+    const funding = agencyFunding(state, agency.id)
+    const released = funding.released
     const cap = agencyCapital(state, agency.id, now)
     const usage = state.budgets
       .filter((b) => b.agencyId === agency.id && b.status === 'active')
       .map((b) => budgetUsage(state, b, now))
     const limit = sum(usage, (u) => u.periodLimit)
     const used = sum(usage, (u) => u.committedThisPeriod)
+    const agreementIds = new Set(agreements.map((a) => a.id))
     const next = state.milestones
-      .filter((m) => m.agreementId === agreement?.id && m.status !== 'approved')
+      .filter((m) => agreementIds.has(m.agreementId) && m.status !== 'approved')
       .sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1))[0]
     return {
       id: agency.id,
       name: agency.name,
-      agreement: agreement?.title ?? 'No agreement',
+      agreement:
+        agreements.length > 1 ? `${agreements.length} agreements` : (agreement?.title ?? 'No agreement'),
       status: agreement ? agreementStatus[agreement.status] : { label: 'No agreement', tone: 'neutral' },
-      committed: agreement?.committed ?? ZERO,
+      committed: funding.committed,
       released,
       spentThisMonth: cap.spentThisPeriod,
       budgetUsed: used,

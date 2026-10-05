@@ -130,7 +130,12 @@ export function FormField({
 
 /** Form-height pill input (the base input is the compact toolbar size). */
 export function PillInput({ className, ...props }: React.ComponentProps<typeof Input>) {
-  return <Input className={cn('h-11 bg-input/30 px-5', className)} {...props} />
+  return (
+    <Input
+      className={cn('h-11 bg-input/30 px-5', props.type === 'date' && 'date-input', className)}
+      {...props}
+    />
+  )
 }
 
 /** Multi-select as toggle chips (categories, destinations). */

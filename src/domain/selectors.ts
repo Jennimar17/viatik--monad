@@ -248,6 +248,21 @@ export function agreementCapital(state: ViatikState, agreementId: Id) {
   }
 }
 
+/**
+ * What an Agency has been committed, funded and released across all its agreements (cancelled ones
+ * left out). An Agency can have several, so screens that show one row per Agency add them up.
+ */
+export function agencyFunding(state: ViatikState, agencyId: Id) {
+  const agreements = state.agreements.filter((a) => a.agencyId === agencyId && a.status !== 'cancelled')
+  const parts = agreements.map((a) => agreementCapital(state, a.id))
+  return {
+    count: agreements.length,
+    committed: sum(parts, (p) => p.committed),
+    funded: sum(parts, (p) => p.funded),
+    released: sum(parts, (p) => p.released),
+  }
+}
+
 export function agencyAccounts(state: ViatikState, agencyId: Id): Account[] {
   return state.accounts.filter((a) => a.agencyId === agencyId)
 }

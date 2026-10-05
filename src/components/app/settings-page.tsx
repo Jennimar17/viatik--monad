@@ -24,7 +24,7 @@ import { pseudoAddress } from '@/domain/ids'
 import { agencyTypeLabel, categoryLabel } from '@/domain/labels'
 import { formatUsd } from '@/domain/money'
 import { roleLabel } from '@/domain/permissions'
-import { activeAgreement, userName } from '@/domain/queries'
+import { activeAgreement, governingAgreement, userName } from '@/domain/queries'
 import { agreementStatus } from '@/domain/status'
 import { networkInfo } from '@/domain/verification'
 import { publicEnv } from '@/lib/env'
@@ -292,7 +292,7 @@ export function SettingsPage({
   }
 
   if (role === 'agency_admin' && agency) {
-    const agreement = activeAgreement(state, agency.id)
+    const agreement = governingAgreement(state, agency.id)
     const budgets = state.budgets.filter((b) => b.agencyId === agency.id && b.status !== 'closed')
     const destinations = [...state.destinations.filter((d) => d.agencyId === agency.id)].sort((a, b) =>
       a.name.localeCompare(b.name),

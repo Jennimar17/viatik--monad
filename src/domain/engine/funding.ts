@@ -280,7 +280,7 @@ export function createAgreement(tx: Tx, input: CreateAgreementInput): FundingAgr
     tx.holders('agency_admin', { agencyId: agency.id }),
     'New funding agreement',
     `${agreement.title} (${usdText(agreement.committed)}) is ready for your acceptance.`,
-    `/agency/${agency.id}/funding`,
+    `/agency/${agency.id}/funding?agreement=${agreement.id}`,
   )
   return agreement
 }
@@ -338,7 +338,7 @@ export function setAgreementPaused(tx: Tx, input: { agreementId: Id; paused: boo
     input.paused
       ? `${agreement.title} is paused. Tranche releases are on hold.`
       : `${agreement.title} is active again.`,
-    `/agency/${agreement.agencyId}/funding`,
+    `/agency/${agreement.agencyId}/funding?agreement=${agreement.id}`,
   )
   return agreement
 }
@@ -731,7 +731,7 @@ export function requestMilestoneChanges(tx: Tx, input: { milestoneId: Id; note: 
     tx.holders('agency_admin', { agencyId: agreement.agencyId }),
     input.reject ? 'Milestone rejected' : 'Changes requested',
     `${tx.actorName()}: ${note}`,
-    `/agency/${agreement.agencyId}/funding`,
+    `/agency/${agreement.agencyId}/funding?agreement=${agreement.id}`,
   )
   return milestone
 }

@@ -26,7 +26,7 @@ import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useViatikState } from '@/data/react'
 import { formatUsd } from '@/domain/money'
 import {
-  activeAgreement,
+  agreementsOf,
   actorName,
   adminApprovals,
   billState,
@@ -48,12 +48,25 @@ export default function AgencyOverviewPage() {
 
   const agency = state.agencies.find((a) => a.id === agencyId)
   const capital = agencyCapital(state, agencyId, now)
-  const agreement = activeAgreement(state, agencyId)
-  const investor = agreement ? state.portfolios.find((p) => p.id === agreement.portfolioId)?.name : undefined
-  const tranches = agreement
-    ? state.tranches.filter((t) => t.agreementId === agreement.id).sort((a, b) => a.index - b.index)
-    : []
-  const nextTranche = tranches.find((t) => t.status !== 'released' && t.status !== 'cancelled')
+  // Every agreement counts: the ones waiting for acceptance get a banner, and the next tranche is
+  // the one most in need of attention across the agreements that are running.
+  const agreements = agreementsOf(state, agencyId)
+  const awaiting = agreements.filter((a) => a.status === 'pending_acceptance')
+  const investor = agreements[0]
+    ? state.portfolios.find((p) => p.id === agreements[0]!.portfolioId)?.name
+    : undefined
+  const upcoming = agreements
+    .filter((a) => a.status === 'active' || a.status === 'paused')
+    .flatMap((a) => {
+      const tranche = state.tranches
+        .filter((t) => t.agreementId === a.id)
+        .sort((x, y) => x.index - y.index)
+        .find((t) => t.status !== 'released' && t.status !== 'cancelled' && t.status !== 'rejected')
+      return tranche ? [{ agreement: a, tranche }] : []
+    })
+  const next = upcoming.find((u) => u.tranche.status === 'under_review') ?? upcoming[0]
+  const agreement = next?.agreement
+  const nextTranche = next?.tranche
   const nextMilestone = nextTranche?.milestoneId
     ? state.milestones.find((m) => m.id === nextTranche.milestoneId)
     : undefined
@@ -108,6 +121,35 @@ export default function AgencyOverviewPage() {
       />
 
       <WelcomeCard />
+
+      {awaiting.length > 0 ? (
+        <section
+          aria-label="Funding agreements waiting for you"
+          className="flex flex-col gap-3 rounded-xl border border-warning/30 bg-warning-soft p-4"
+        >
+          <p className="text-sm font-medium">
+            {awaiting.length === 1
+              ? 'A funding agreement is waiting for your acceptance'
+              : `${awaiting.length} funding agreements are waiting for your acceptance`}
+          </p>
+          <ul className="flex flex-col gap-2">
+            {awaiting.map((a) => (
+              <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                <span className="flex flex-col">
+                  <span className="font-medium">{a.title}</span>
+                  <span className="text-muted-foreground">
+                    {formatUsd(a.committed)} committed ·{' '}
+                    {state.portfolios.find((p) => p.id === a.portfolioId)?.name}
+                  </span>
+                </span>
+                <ButtonLink href={href(`funding?agreement=${a.id}`)} variant="outline" size="pill-sm">
+                  Review and accept <ArrowRight data-icon="inline-end" />
+                </ButtonLink>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <div className="-mx-4 flex scrollbar-none gap-2 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0">
         {can('create_budget') ? (
@@ -174,22 +216,31 @@ export default function AgencyOverviewPage() {
               </div>
               <p className="text-sm text-pretty text-muted-foreground">
                 {nextTranche.status === 'under_review'
-                  ? `${investor} is reviewing your evidence. You will be notified when the funds are released.`
+                  ? `${investor} is reviewing your ${nextMilestone ? 'evidence' : 'request'}. You will be notified when the funds are released.`
                   : nextMilestone
                     ? `Submit evidence for “${nextMilestone.title}” to request this tranche. Due ${formatDate(nextMilestone.dueDate)}.`
                     : nextTranche.scheduledFor
-                      ? `Scheduled for ${formatDate(nextTranche.scheduledFor)}.`
+                      ? `Planned for ${formatDate(nextTranche.scheduledFor)}. The Investor releases it.`
                       : 'Request this tranche when you are ready.'}
               </p>
-              <ButtonLink href={href('funding')} variant="outline" size="pill-sm" className="w-fit">
+              <ButtonLink
+                href={href(`funding?agreement=${nextTranche.agreementId}`)}
+                variant="outline"
+                size="pill-sm"
+                className="w-fit"
+              >
                 Open funding <ArrowRight data-icon="inline-end" />
               </ButtonLink>
             </div>
           ) : (
             <EmptyState
               compact
-              title="No active funding agreement"
-              description="Once an Investor creates and activates an agreement, its tranches and milestones will appear here."
+              title={awaiting.length > 0 ? 'Accept an agreement to start' : 'No active funding agreement'}
+              description={
+                awaiting.length > 0
+                  ? 'Its tranches and milestones appear here once you accept it.'
+                  : 'Once an Investor creates and activates an agreement, its tranches and milestones will appear here.'
+              }
             />
           )}
         </Panel>

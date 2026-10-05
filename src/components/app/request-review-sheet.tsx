@@ -17,7 +17,7 @@ import { useCommand, useViatikState } from '@/data/react'
 import { categoryLabel, requestTypeLabel } from '@/domain/labels'
 import { formatUsd, ZERO } from '@/domain/money'
 import {
-  activeAgreement,
+  governingAgreement,
   actorName,
   budgetName,
   isException,
@@ -87,7 +87,7 @@ export function RequestReviewSheet({
     })
   const budget = state.budgets.find((b) => b.id === request.budgetId)
   const account = state.accounts.find((a) => a.id === budget?.sourceAccountId)
-  const agreement = activeAgreement(state, request.agencyId)
+  const agreement = governingAgreement(state, request.agencyId)
   const otherAdmins = state.memberships
     .filter(
       (m) =>

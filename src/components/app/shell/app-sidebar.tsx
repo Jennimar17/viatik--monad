@@ -129,6 +129,11 @@ export function useBadgeCounts() {
           ? adminApprovals(state, agencyId).mine.length
           : 0,
     bills: role === 'agency_admin' && agencyId ? openBills(state, agencyId, now).length : 0,
+    // Funding agreements the Agency has not accepted yet.
+    agreements:
+      role === 'agency_admin' && agencyId
+        ? state.agreements.filter((a) => a.agencyId === agencyId && a.status === 'pending_acceptance').length
+        : 0,
     requests:
       role === 'member'
         ? state.requests.filter(

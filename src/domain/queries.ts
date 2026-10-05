@@ -81,6 +81,19 @@ export function activeAgreement(state: ViatikState, agencyId: Id): FundingAgreem
 }
 
 /**
+ * Every agreement of an Agency that is still in play (not cancelled): the ones waiting for the
+ * Agency's acceptance first, then active, paused and the rest. Screens that show an Agency's
+ * funding list all of them; `activeAgreement` is for the places that need exactly one.
+ */
+export function agreementsOf(state: ViatikState, agencyId: Id): FundingAgreement[] {
+  const rank = (a: FundingAgreement) =>
+    a.status === 'pending_acceptance' ? 0 : a.status === 'active' ? 1 : a.status === 'paused' ? 2 : 3
+  return state.agreements
+    .filter((a) => a.agencyId === agencyId && a.status !== 'cancelled')
+    .sort((a, b) => rank(a) - rank(b))
+}
+
+/**
  * The agreement whose spending policy governs an Agency's payments: the
  * active one, or one the Investor paused (a pause must not lift its rules).
  */

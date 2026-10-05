@@ -35,7 +35,7 @@ export type NavItem<R extends Role = Role> = {
   icon: LucideIcon
   /** Rendered only when the subject can at least view this capability. */
   capability?: Capability
-  badge?: 'approvals' | 'bills' | 'requests'
+  badge?: 'approvals' | 'bills' | 'requests' | 'agreements'
 }
 
 export type RoleNavigation<R extends Role = Role> = {
@@ -64,7 +64,7 @@ export const NAVIGATION: { [R in Role]: RoleNavigation<R> } = {
   agency_admin: {
     primary: [
       { key: 'overview', label: 'Overview', path: 'overview', icon: LayoutDashboard },
-      { key: 'funding', label: 'Funding', path: 'funding', icon: HandCoins },
+      { key: 'funding', label: 'Funding', path: 'funding', icon: HandCoins, badge: 'agreements' },
       { key: 'accounts', label: 'Accounts', path: 'accounts', icon: Landmark, capability: 'view_treasury' },
       { key: 'budgets', label: 'Budgets', path: 'budgets', icon: PieChart },
       { key: 'payments', label: 'Payments', path: 'payments', icon: Send, capability: 'send_payment' },

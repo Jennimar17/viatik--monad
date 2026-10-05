@@ -20,7 +20,7 @@ import { useCommand, useViatikState } from '@/data/react'
 import { categoryLabel, paymentTypeLabel } from '@/domain/labels'
 import { formatUsd, ZERO, type Cents } from '@/domain/money'
 import { roleLabel } from '@/domain/permissions'
-import { accountName, activeAgreement, receiptFor, userName } from '@/domain/queries'
+import { accountName, governingAgreement, receiptFor, userName } from '@/domain/queries'
 import { accountBalance, budgetUsage } from '@/domain/selectors'
 import type { PaymentType, SpendingCategory } from '@/domain/types'
 import { formatDate, fromDateInput } from '@/lib/format'
@@ -53,7 +53,8 @@ export default function NewPaymentPage() {
     (m) => m.scope.kind === 'agency' && m.scope.agencyId === agencyId && m.status === 'active',
   )
   const budgets = state.budgets.filter((b) => b.agencyId === agencyId && b.status === 'active')
-  const agreement = activeAgreement(state, agencyId)
+  // The agreement whose exception threshold the engine and the contract apply.
+  const agreement = governingAgreement(state, agencyId)
 
   const [type, setType] = React.useState<PaymentType>('vendor')
   const [recipient, setRecipient] = React.useState<string | null>(null)

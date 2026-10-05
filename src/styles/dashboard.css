@@ -245,3 +245,29 @@
     }
   }
 }
+
+/*
+ * Date fields keep the browser's native picker (it works on phones and with a keyboard), dressed for
+ * the dark product: the popup calendar is dark, numbers line up, and the calendar button is easy to hit.
+ */
+input[type='date'].date-input {
+  color-scheme: dark;
+  font-variant-numeric: tabular-nums;
+}
+input[type='date'].date-input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.65;
+  padding: 0.25rem;
+  margin-right: -0.25rem;
+  border-radius: 9999px;
+  transition:
+    opacity 150ms,
+    background-color 150ms;
+}
+input[type='date'].date-input::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+  background-color: color-mix(in srgb, var(--brand-mist) 12%, transparent);
+}
+input[type='date'].date-input::-webkit-datetime-edit-fields-wrapper {
+  padding: 0;
+}

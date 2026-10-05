@@ -1,11 +1,12 @@
 'use client'
 
-import { CheckCircle2, CircleAlert, MessageSquareText, ShieldCheck } from 'lucide-react'
+import { CheckCircle2, MessageSquareText, ShieldCheck } from 'lucide-react'
 import Link from '@/components/viatik/link'
 import { useParams } from 'next/navigation'
 import * as React from 'react'
 
 import { ButtonLink } from '@/components/app/button-link'
+import { FundShortfall } from '@/components/app/fund-agreement-sheet'
 import { EvidenceList } from '@/components/app/funding-parts'
 import { ReceiptDetailsButton, trancheRequestRecord } from '@/components/app/receipt-details'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
@@ -29,7 +30,6 @@ import { accountName, receiptFor, userName } from '@/domain/queries'
 import { agreementCapital } from '@/domain/selectors'
 import { milestoneStatus, trancheStatus } from '@/domain/status'
 import { formatDate, formatDateTime } from '@/lib/format'
-import { cn } from '@/lib/utils'
 
 type ChangesMode = 'changes' | 'reject'
 
@@ -63,7 +63,9 @@ export default function MilestoneReviewPage() {
     !reviewable || canDecide
       ? null
       : agreement?.status !== 'active'
-        ? 'This agreement is paused. Resume it to release or return this milestone.'
+        ? agreement?.status === 'paused'
+          ? 'This agreement is paused. Resume it to release or return this milestone.'
+          : 'This agreement is not active yet, so this milestone cannot be decided.'
         : tranche?.requestedBy === userId
           ? 'You submitted this evidence as the Agency’s admin, so another Investor of the portfolio has to decide.'
           : 'You cannot decide on this milestone.'
@@ -127,23 +129,22 @@ export default function MilestoneReviewPage() {
         ) : null}
 
         {reviewable ? (
-          <div
-            className={cn(
-              'flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-sm',
-              covered ? 'border-success/30 bg-success-soft' : 'border-danger/35 bg-danger-soft',
-            )}
-          >
-            {covered ? (
+          covered ? (
+            <div className="flex items-start gap-2.5 rounded-lg border border-success/30 bg-success-soft px-3 py-2.5 text-sm">
               <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" />
-            ) : (
-              <CircleAlert className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden="true" />
-            )}
-            <span className="text-pretty text-muted-foreground">
-              {covered
-                ? `Funded capital covers this release. ${formatUsd(subtract(capital.inFundingVault, tranche.amount), { withCode: true })} stays in the Funding Vault afterwards.`
-                : `Released capital cannot exceed funded capital. Fund the agreement with at least ${formatUsd(subtract(add(capital.released, tranche.amount), capital.funded), { withCode: true })} first.`}
-            </span>
-          </div>
+              <span className="text-pretty text-muted-foreground">
+                Funded capital covers this release.{' '}
+                {formatUsd(subtract(capital.inFundingVault, tranche.amount), { withCode: true })} stays in the
+                Funding Vault afterwards.
+              </span>
+            </div>
+          ) : null
+        ) : null}
+        {reviewable && canDecide ? (
+          <FundShortfall
+            agreement={agreement}
+            needed={covered ? undefined : subtract(add(capital.released, tranche.amount), capital.funded)}
+          />
         ) : null}
 
         <fieldset className="flex flex-col gap-3" disabled={!canDecide}>

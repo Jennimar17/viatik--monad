@@ -84,7 +84,7 @@ export default function SubmitEvidencePage() {
           title="Evidence submitted"
           description={`${investor} will review “${milestone.title}”${tranche ? ` and decide on ${tranche.name}` : ''}. You will be notified when funds are released.`}
         />
-        <ButtonLink href={href('funding')} size="pill" className="w-fit">
+        <ButtonLink href={href(`funding?agreement=${agreement.id}`)} size="pill" className="w-fit">
           Back to funding
         </ButtonLink>
       </div>
@@ -95,7 +95,7 @@ export default function SubmitEvidencePage() {
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
       <PageHeader
         eyebrow={
-          <Link href={href('funding')} className="hover:text-foreground">
+          <Link href={href(`funding?agreement=${agreement.id}`)} className="hover:text-foreground">
             Funding
           </Link>
         }
@@ -212,7 +212,7 @@ export default function SubmitEvidencePage() {
         {missing && !busy ? (
           <p className="text-center text-xs text-subtle sm:mr-auto sm:pl-3 sm:text-left">{missing}</p>
         ) : null}
-        <Button variant="ghost" size="pill-sm" onClick={() => router.push(href('funding'))} disabled={busy}>
+        <Button variant="ghost" size="pill-sm" onClick={() => router.push(href(`funding?agreement=${agreement.id}`))} disabled={busy}>
           Cancel
         </Button>
         <Button

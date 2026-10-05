@@ -1,6 +1,8 @@
 'use client'
 
+import type { ColumnDef } from '@tanstack/react-table'
 import { ArrowRight, HandCoins, ShieldCheck } from 'lucide-react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import * as React from 'react'
 
 import { ButtonLink } from '@/components/app/button-link'
@@ -16,20 +18,37 @@ import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { Button } from '@/components/ui/button'
 import { Amount } from '@/components/viatik/amount'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
-import { EmptyState } from '@/components/viatik/feedback'
+import { DataTable } from '@/components/viatik/data-table'
+import { EmptyState, PageSkeleton } from '@/components/viatik/feedback'
+import { CapitalBar } from '@/components/viatik/finance'
 import { PageHeader, Panel } from '@/components/viatik/layout'
+import Link from '@/components/viatik/link'
+import { OrgAvatar } from '@/components/viatik/people'
 import { StatusBadge, Tag } from '@/components/viatik/status'
 import { VerifiedDetailsButton } from '@/components/viatik/verified-details-drawer'
 import { useCommand, useViatikState } from '@/data/react'
-import { activeAgreement, receiptFor } from '@/domain/queries'
+import { releaseModelLabel } from '@/domain/labels'
+import { agreementsOf, receiptFor } from '@/domain/queries'
+import { agreementCapital } from '@/domain/selectors'
 import { agreementStatus } from '@/domain/status'
-import type { MilestoneStatus } from '@/domain/types'
+import type { AgreementStatus, FundingAgreement, MilestoneStatus } from '@/domain/types'
 import { formatDate } from '@/lib/format'
 
 /** Milestones the Agency can (re)submit evidence for. */
 const SUBMITTABLE: ReadonlySet<MilestoneStatus> = new Set(['not_started', 'in_progress', 'changes_requested'])
 
+const CLOSED: ReadonlySet<AgreementStatus> = new Set(['completed', 'cancelled', 'expired'])
+
 export default function AgencyFundingPage() {
+  // useSearchParams needs a boundary for the static prerender.
+  return (
+    <React.Suspense fallback={<PageSkeleton />}>
+      <AgencyFunding />
+    </React.Suspense>
+  )
+}
+
+function AgencyFunding() {
   const { state } = useViatikState()
   const { scopeId: agencyId } = useRole()
   const href = useHref()
@@ -37,10 +56,19 @@ export default function AgencyFundingPage() {
   const accept = useCommand('acceptAgreement')
   const receipts = useReceiptDrawer()
   const [acceptOpen, setAcceptOpen] = React.useState(false)
+  const requested = useSearchParams().get('agreement')
 
-  const agreement = activeAgreement(state, agencyId)
+  // With several agreements the page is a list, like the Investor's Funding; a row opens one
+  // (`?agreement=<id>`). With a single agreement it opens straight onto it.
+  const agreements = agreementsOf(state, agencyId)
+  const agreement = requested
+    ? agreements.find((a) => a.id === requested)
+    : agreements.length === 1
+      ? agreements[0]
+      : undefined
   const investor = agreement ? state.portfolios.find((p) => p.id === agreement.portfolioId)?.name : undefined
 
+  if (!agreement && agreements.length > 1) return <AgreementList agencyId={agencyId} />
   if (!agreement) {
     return (
       <div className="flex flex-col gap-8">
@@ -65,7 +93,13 @@ export default function AgencyFundingPage() {
       <PageHeader
         eyebrow={
           <>
-            <Tag>Funding</Tag>
+            {agreements.length > 1 ? (
+              <Link href={href('funding')} className="hover:text-foreground">
+                Funding
+              </Link>
+            ) : (
+              <Tag>Funding</Tag>
+            )}
             <span>From {investor}</span>
           </>
         }
@@ -262,6 +296,147 @@ export default function AgencyFundingPage() {
         }}
       />
       {receipts.drawer}
+    </div>
+  )
+}
+
+/** The Agency's agreements as a table with tabs, like the Investor's Funding: a row opens the agreement. */
+function AgreementList({ agencyId }: { agencyId: string }) {
+  const { state } = useViatikState()
+  const href = useHref()
+  const router = useRouter()
+  const agreements = state.agreements.filter((a) => a.agencyId === agencyId)
+  const investorOf = (a: FundingAgreement) =>
+    state.portfolios.find((p) => p.id === a.portfolioId)?.name ?? 'Investor'
+  const nextTranche = (a: FundingAgreement) =>
+    state.tranches
+      .filter((t) => t.agreementId === a.id && t.status !== 'released' && t.status !== 'cancelled')
+      .sort((x, y) => x.index - y.index)[0]
+
+  const columns: ColumnDef<FundingAgreement, unknown>[] = [
+    {
+      id: 'agreement',
+      header: 'Agreement',
+      cell: ({ row }) => (
+        <span className="flex items-center gap-3">
+          <OrgAvatar name={investorOf(row.original)} size="sm" />
+          <span className="flex flex-col">
+            <span className="font-medium">{row.original.title}</span>
+            <span className="text-xs text-subtle">From {investorOf(row.original)}</span>
+          </span>
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'committed',
+      header: 'Committed',
+      meta: { align: 'right' },
+      cell: ({ row }) => <Amount value={row.original.committed} size="sm" />,
+    },
+    {
+      id: 'funded',
+      header: 'Funded',
+      meta: { align: 'right' },
+      cell: ({ row }) => <Amount value={agreementCapital(state, row.original.id).funded} size="sm" />,
+    },
+    {
+      id: 'released',
+      header: 'Released',
+      meta: { align: 'right' },
+      cell: ({ row }) => <Amount value={agreementCapital(state, row.original.id).released} size="sm" />,
+    },
+    {
+      id: 'remaining',
+      header: 'Remaining',
+      meta: { align: 'right' },
+      cell: ({ row }) => (
+        <Amount value={agreementCapital(state, row.original.id).remainingCommitment} size="sm" tone="muted" />
+      ),
+    },
+    {
+      id: 'model',
+      header: 'Release model',
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {releaseModelLabel[row.original.releaseModel].label}
+        </span>
+      ),
+    },
+    {
+      id: 'next',
+      header: 'Next tranche',
+      cell: ({ row }) => {
+        const next = nextTranche(row.original)
+        return (
+          <span className="text-sm text-muted-foreground">
+            {next
+              ? `${next.name}${next.scheduledFor ? ` · ${formatDate(next.scheduledFor)}` : ''}`
+              : 'All released'}
+          </span>
+        )
+      },
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      cell: ({ row }) => <StatusBadge status={agreementStatus[row.original.status]} />,
+    },
+  ]
+
+  const table = (rows: FundingAgreement[]) => (
+    <DataTable
+      data={rows}
+      columns={columns}
+      caption="Funding agreements"
+      searchPlaceholder="Search agreements"
+      searchText={(a) => `${a.title} ${investorOf(a)}`}
+      onRowClick={(a) => router.push(href(`funding?agreement=${a.id}`))}
+      empty={
+        <EmptyState
+          compact
+          icon={<HandCoins />}
+          title="No agreements here"
+          description="Agreements in this status will appear here."
+        />
+      }
+      renderMobile={(a) => {
+        const capital = agreementCapital(state, a.id)
+        return (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex flex-col">
+                <span className="text-sm font-medium">{a.title}</span>
+                <span className="text-xs text-subtle">From {investorOf(a)}</span>
+              </span>
+              <StatusBadge status={agreementStatus[a.status]} />
+            </div>
+            <CapitalBar committed={capital.committed} funded={capital.funded} released={capital.released} />
+          </div>
+        )
+      }}
+    />
+  )
+
+  const byStatus = (predicate: (status: AgreementStatus) => boolean) =>
+    agreements.filter((a) => predicate(a.status))
+  const active = byStatus((s) => s === 'active')
+  const pending = byStatus((s) => s === 'pending_acceptance')
+
+  return (
+    <div className="flex flex-col gap-8">
+      <PageHeader
+        title="Funding"
+        description="The funding agreements from your Investors. Open one to see its tranches, submit evidence or accept it."
+      />
+      <PageTabs
+        tabs={[
+          { value: 'all', label: 'All', content: table(agreements) },
+          { value: 'active', label: 'Active', count: active.length, content: table(active) },
+          { value: 'pending', label: 'Pending acceptance', count: pending.length, content: table(pending) },
+          { value: 'paused', label: 'Paused', content: table(byStatus((s) => s === 'paused')) },
+          { value: 'closed', label: 'Closed', content: table(byStatus((s) => CLOSED.has(s))) },
+        ]}
+      />
     </div>
   )
 }
