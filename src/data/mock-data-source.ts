@@ -6,8 +6,11 @@ import {
   type CommandResult,
 } from '@/domain/engine'
 import { createDemoState } from '@/domain/fixtures'
+import { invitationPreview, withVerifiedPerson } from '@/domain/identity'
 import { newId } from '@/domain/ids'
-import type { ViatikState } from '@/domain/types'
+import { hasStoredCopy } from '@/domain/evidence'
+import { findEvidence } from '@/domain/queries'
+import type { Evidence, ViatikState } from '@/domain/types'
 import { scopeStateForUser } from '@/domain/visibility'
 import { MockLedgerAdapter } from '@/ledger/mock'
 
@@ -18,34 +21,10 @@ import {
   type InvitationPreview,
   type LoadOptions,
   type OperationPhase,
-  type SessionProfile,
+  type UploadedFile,
 } from './data-source'
-import { planSettlement } from './settlement'
-
-/**
- * A real account the demo data has never seen (anyone but Elena, Maya and
- * Alex). They start with no memberships: they create a portfolio or accept an
- * invitation. Their profile comes from what the server verified; without a
- * verified name it stays empty until onboarding or the invitation fills it.
- */
-function withNewPerson(state: ViatikState, userId: string, profile: SessionProfile): ViatikState {
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-  return {
-    ...state,
-    users: [
-      ...state.users,
-      {
-        id: userId,
-        name: profile.name ?? '',
-        email: profile.email ?? '',
-        title: '',
-        timeZone,
-        locale: 'en-US',
-        createdAt: new Date().toISOString(),
-      },
-    ],
-  }
-}
+import { assertEvidenceFile, sha256Hex } from './evidence-files'
+import { applySettlement, planSettlement } from './settlement'
 
 const STORAGE_KEY = 'viatik:demo-state'
 const STATE_VERSION = 1
@@ -67,6 +46,8 @@ const PHASE_ORDER: OperationPhase[] = ['preparing', 'waiting_for_confirmation', 
 export class MockDataSource implements DataSource {
   readonly kind = 'mock' as const
   private state: ViatikState | null = null
+  /** Files added in this tab, by fingerprint. The demo stores nothing elsewhere. */
+  private files = new Map<string, string>()
 
   private read(): ViatikState {
     if (this.state) return this.state
@@ -101,46 +82,20 @@ export class MockDataSource implements DataSource {
 
   async load(userId: string, options: LoadOptions = {}): Promise<ViatikState> {
     await wait(jitter(300, 900))
-    const state = this.read()
-    const profile = options.profile
-    const known = state.users.find((u) => u.id === userId)
-    if (profile && !known) {
-      this.write(withNewPerson(state, userId, profile))
-    } else if (profile && known) {
-      // What the server verified wins, as it does in the database: the email
-      // (so invitations check the address the person proved) and a Google name
-      // for someone who has none yet. A name typed in Settings is kept.
-      const email = profile.email && known.email !== profile.email ? profile.email : known.email
-      const name = !known.name.trim() && profile.name ? profile.name : known.name
-      if (email !== known.email || name !== known.name) {
-        this.write({
-          ...state,
-          users: state.users.map((u) => (u.id === userId ? { ...u, email, name } : u)),
-        })
-      }
+    // A real account reading the device's demo data: the same rule the server applies.
+    if (options.profile) {
+      const next = withVerifiedPerson(this.read(), userId, options.profile, {
+        now: new Date().toISOString(),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      })
+      if (next) this.write(next)
     }
     return scopeStateForUser(this.read(), userId)
   }
 
   async lookupInvitation(code: string): Promise<InvitationPreview | null> {
     await wait(jitter(200, 500))
-    const state = this.read()
-    const invitation = state.invitations.find((i) => i.code === code)
-    if (!invitation) return null
-    const workspace =
-      invitation.scope.kind === 'agency'
-        ? state.agencies.find((a) => a.id === (invitation.scope as { agencyId: string }).agencyId)?.name
-        : state.portfolios.find((p) => p.id === (invitation.scope as { portfolioId: string }).portfolioId)
-            ?.name
-    return {
-      code: invitation.code,
-      name: invitation.name,
-      email: invitation.email,
-      role: invitation.role,
-      status: invitation.status,
-      workspace: workspace ?? 'Viatik',
-      invitedBy: state.users.find((u) => u.id === invitation.invitedBy)?.name ?? 'Your team',
-    }
+    return invitationPreview(this.read(), code)
   }
 
   async dispatch<N extends CommandName>(
@@ -149,7 +104,7 @@ export class MockDataSource implements DataSource {
     input: CommandInput<N>,
     options: DispatchOptions = {},
   ): Promise<CommandResult<N>> {
-    // Phases only move forward, even when settlement takes several ledger calls.
+    // Phases only move forward.
     let current = -1
     const emit = (phase: OperationPhase) => {
       if (phase === 'failed') return options.onPhase?.('failed')
@@ -170,33 +125,25 @@ export class MockDataSource implements DataSource {
     const before = this.read()
     let outcome: { state: ViatikState; result: CommandResult<N> }
     try {
-      outcome = runCommand(before, { actor, now }, name, input)
+      outcome = runCommand(before, { actor, now, idSeed: `${userId}:${idempotencyKey}` }, name, input)
     } catch (error) {
       emit('failed')
       if (error instanceof DomainError) throw new DataSourceError(error.message, error.code)
       throw new DataSourceError('Something went wrong. Nothing was changed.', 'unknown')
     }
 
-    const plan = planSettlement({
-      name,
-      input,
-      result: outcome.result,
-      before,
-      after: outcome.state,
-      actor,
-      idempotencyKey,
-    })
-
+    const plan = planSettlement({ before, after: outcome.state, actor })
     if (plan) {
-      const ledger = new MockLedgerAdapter({
-        latencyMs: LEDGER_LATENCY_MS,
-        now: () => now,
+      const ledger = new MockLedgerAdapter({ latencyMs: LEDGER_LATENCY_MS, now: () => now })
+      const settled = await ledger.settle(plan, {
+        before,
         onStatus: (status) => {
           // `completed` is emitted once the new state is saved.
           if (status !== 'completed') emit(status)
         },
       })
-      const settled = await plan.settle(ledger)
+      // What the ledger recorded (receipts, a request, a tranche request) joins the new state.
+      applySettlement(before, outcome.state, plan, settled)
       if (settled.status === 'failed') {
         if (plan.keepOnFailure) this.write(outcome.state)
         emit('failed')
@@ -212,7 +159,33 @@ export class MockDataSource implements DataSource {
     return outcome.result
   }
 
+  async uploadEvidence(file: File): Promise<UploadedFile> {
+    assertEvidenceFile(file)
+    const [sha256] = await Promise.all([sha256Hex(file), wait(jitter(250, 600))])
+    if (!this.files.has(sha256)) this.files.set(sha256, URL.createObjectURL(file))
+    return { kind: 'file', name: file.name.slice(0, 300), mimeType: file.type, sizeBytes: file.size, sha256 }
+  }
+
+  async evidenceLink(userId: string, evidenceId: string): Promise<string> {
+    const item = findEvidence(scopeStateForUser(this.read(), userId), evidenceId)
+    if (!item || item.kind !== 'file') throw new DataSourceError('This file is not available.', 'not_found')
+    const url = this.files.get(item.sha256)
+    if (!url) {
+      throw new DataSourceError(
+        'In the demo, a file only opens in the browser tab where it was added. Example files cannot be opened.',
+        'not_stored',
+      )
+    }
+    return url
+  }
+
+  canOpenEvidence(evidence: Evidence): boolean {
+    return hasStoredCopy(evidence) && this.files.has(evidence.sha256)
+  }
+
   async reset() {
+    for (const url of this.files.values()) URL.revokeObjectURL(url)
+    this.files.clear()
     this.write(createDemoState(new Date().toISOString()))
   }
 }

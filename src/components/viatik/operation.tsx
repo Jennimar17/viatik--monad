@@ -1,8 +1,21 @@
 'use client'
 
-import { ArrowUpRight, Check, CircleDashed, Copy, Loader2, ShieldCheck, X } from 'lucide-react'
+import {
+  ArrowUpRight,
+  Check,
+  ChevronDown,
+  CircleDashed,
+  Clock,
+  Copy,
+  Loader2,
+  ShieldCheck,
+  X,
+} from 'lucide-react'
 import * as React from 'react'
 
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { formatUsd } from '@/domain/money'
+import type { LedgerReason, VerifiedDetails } from '@/domain/types'
 import { formatDateTime, shortHash } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -20,16 +33,20 @@ const steps: { phase: Exclude<OperationPhase, 'idle' | 'failed'>; label: string 
 export function PendingOperation({
   phase,
   error,
+  steps: ownSteps,
   className,
 }: {
   phase: OperationPhase
   error?: string
+  /** This operation's steps in its own words, in place of the generic lifecycle. */
+  steps?: Step[]
   className?: string
 }) {
   const currentIndex = phase === 'failed' ? -1 : steps.findIndex((s) => s.phase === phase)
   return (
     <div className={cn('flex flex-col gap-3', className)} role="status" aria-live="polite">
-      <ol className="flex flex-col gap-2.5">
+      {ownSteps ? <Steps steps={ownSteps} /> : null}
+      <ol className={cn('flex flex-col gap-2.5', ownSteps && 'hidden')}>
         {steps.map((step, index) => {
           const done = phase === 'completed' || index < currentIndex
           const active = index === currentIndex && phase !== 'completed'
@@ -62,6 +79,12 @@ export function PendingOperation({
           <X className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden="true" />
           {error ?? 'The operation could not be completed. Nothing was moved.'}
         </p>
+      ) : error ? (
+        // Not a failure: it is on its way and shows up once it is final.
+        <p className="flex items-start gap-2 rounded-lg border border-border bg-muted p-3 text-sm text-foreground">
+          <Clock className="mt-0.5 size-4 shrink-0 text-subtle" aria-hidden="true" />
+          {error}
+        </p>
       ) : null}
     </div>
   )
@@ -76,6 +99,13 @@ const stepIcon: Record<StepState, React.ReactNode> = {
   current: <Loader2 className="size-3.5 animate-spin" />,
   upcoming: <CircleDashed className="size-3.5" />,
   failed: <X className="size-3.5" />,
+}
+
+const stepStateText: Record<StepState, string> = {
+  done: 'Done',
+  current: 'In progress',
+  upcoming: 'Not started',
+  failed: 'Failed',
 }
 
 const stepMarker: Record<StepState, string> = {
@@ -100,6 +130,7 @@ export function Steps({ steps, className }: { steps: Step[]; className?: string 
           >
             {stepIcon[step.state]}
           </span>
+          <span className="sr-only">{stepStateText[step.state]}: </span>
           <span className="flex min-w-0 flex-col">
             <span className={cn('text-sm font-medium', step.state === 'upcoming' && 'text-subtle')}>
               {step.label}
@@ -112,20 +143,44 @@ export function Steps({ steps, className }: { steps: Step[]; className?: string 
   )
 }
 
-/** Settlement record of one operation. The only place chain terms appear. */
-export type VerifiedDetails = {
-  status: 'confirmed' | 'pending'
-  network: string
-  chainId: number
-  account: string
-  transaction: string
-  block: number
-  timestamp: string
-  receiptHash: string
-  contractPolicy: string
-  explorerUrl: string
-  /** Produced by the mock ledger; not published onchain yet. */
-  simulated: boolean
+/** How the ledger names why it rejected a request (its `Reason`), shown under Advanced. */
+const REASON_NAME: Record<LedgerReason, string> = {
+  budget_paused: 'BudgetPaused',
+  destination_not_allowed: 'DestinationNotAllowed',
+  limit_exceeded: 'LimitExceeded',
+  insufficient_funds: 'InsufficientFunds',
+}
+
+const OUTCOME_LABEL: Record<NonNullable<VerifiedDetails['outcome']>, string> = {
+  executed: 'Paid',
+  pending: 'Sent for approval',
+  rejected: 'Rejected',
+}
+
+type Row = { label: string; value: string; copy?: string; mono?: boolean }
+
+const hashRow = (label: string, value: string, head = 10, tail = 8): Row => ({
+  label,
+  value: shortHash(value, head, tail),
+  copy: value,
+  mono: true,
+})
+
+function reasonText(reason: NonNullable<VerifiedDetails['reason']>) {
+  const name = REASON_NAME[reason.code]
+  if (reason.limit === undefined) return name
+  const amount = formatUsd(reason.limit, { withCode: true })
+  if (reason.code === 'limit_exceeded') return `${name} · limit ${amount}`
+  if (reason.code === 'insufficient_funds') return `${name} · available ${amount}`
+  return name
+}
+
+/** What the record says happened, in one line above the table. */
+function summary(details: VerifiedDetails) {
+  if (details.outcome === 'rejected') return 'Recorded on Monad and rejected under the budget rules.'
+  if (details.outcome === 'pending') return 'Recorded on Monad when it was sent for approval.'
+  if (!details.receiptHash) return 'Recorded on Monad.'
+  return 'This operation was settled and recorded on Monad.'
 }
 
 /** The verified details table, shown in a drawer on demand ("View verified details"). */
@@ -136,54 +191,53 @@ export function VerifiedDetailsList({
   details: VerifiedDetails
   className?: string
 }) {
-  const rows: { label: string; value: string; copy?: string; mono?: boolean }[] = [
+  const rows: Row[] = [
     { label: 'Status', value: details.status === 'confirmed' ? 'Confirmed' : 'Pending' },
     { label: 'Network', value: `${details.network} · chain ${details.chainId}` },
-    { label: 'Account', value: shortHash(details.account, 8, 6), copy: details.account, mono: true },
-    {
-      label: 'Transaction',
-      value: shortHash(details.transaction, 10, 8),
-      copy: details.transaction,
-      mono: true,
-    },
+    hashRow('Account', details.account, 8, 6),
+    hashRow('Transaction', details.transaction),
     { label: 'Block', value: details.block.toLocaleString('en-US'), mono: true },
     { label: 'Timestamp', value: `${formatDateTime(details.timestamp)} UTC` },
-    {
-      label: 'Receipt hash',
-      value: shortHash(details.receiptHash, 10, 8),
-      copy: details.receiptHash,
-      mono: true,
-    },
+    ...(details.receiptHash ? [hashRow('Receipt hash', details.receiptHash)] : []),
     { label: 'Contract policy', value: details.contractPolicy },
+  ]
+  // Raw ledger data, shown only when opened.
+  const advanced: Row[] = [
+    ...(details.outcome ? [{ label: 'Outcome', value: OUTCOME_LABEL[details.outcome] }] : []),
+    ...(details.reason ? [{ label: 'Reason', value: reasonText(details.reason) }] : []),
+    ...(details.evidenceHash
+      ? [hashRow('Evidence fingerprint', details.evidenceHash, 8, 6)]
+      : details.evidenceHash === null
+        ? [{ label: 'Evidence fingerprint', value: 'No documents attached' }]
+        : []),
+    ...(details.decisionHash ? [hashRow('Decision fingerprint', details.decisionHash, 8, 6)] : []),
+    ...(details.contract ? [hashRow('Contract', details.contract, 8, 6)] : []),
+    ...(details.operationRef ? [hashRow('Operation reference', details.operationRef, 8, 6)] : []),
   ]
   return (
     <div className={cn('flex flex-col gap-4', className)}>
       <p className="flex items-center gap-2 text-sm text-muted-foreground">
         <ShieldCheck className="size-4 text-sage" aria-hidden="true" />
-        This operation was settled and recorded on Monad.
+        {summary(details)}
       </p>
-      <dl className="overflow-hidden rounded-xl border border-border">
-        {rows.map((row) => (
-          <div
-            key={row.label}
-            className="flex items-center justify-between gap-4 border-t border-border px-4 py-3 first:border-t-0"
-          >
-            <dt className="text-sm text-muted-foreground">{row.label}</dt>
-            <dd
-              className={cn(
-                'flex min-w-0 items-center gap-1.5 text-right text-sm text-foreground',
-                row.mono && 'font-mono text-xs',
-              )}
-            >
-              <span className="truncate">{row.value}</span>
-              {row.copy ? <CopyButton value={row.copy} label={`Copy ${row.label.toLowerCase()}`} /> : null}
-            </dd>
-          </div>
-        ))}
-      </dl>
+      <DetailRows rows={rows} />
+      {advanced.length > 0 ? (
+        <Collapsible className="flex flex-col gap-2">
+          <CollapsibleTrigger className="group inline-flex w-fit items-center gap-1.5 rounded-md text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+            Advanced
+            <ChevronDown
+              className="size-4 transition-transform group-data-[panel-open]:rotate-180"
+              aria-hidden="true"
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <DetailRows rows={advanced} />
+          </CollapsibleContent>
+        </Collapsible>
+      ) : null}
       {details.simulated ? (
         <p className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-xs text-subtle">
-          Demo ledger: these details are simulated and are not published on Monad yet.
+          Simulated details: this operation is not published on Monad yet.
         </p>
       ) : null}
       {details.simulated ? (
@@ -206,6 +260,34 @@ export function VerifiedDetailsList({
         </a>
       )}
     </div>
+  )
+}
+
+function DetailRows({ rows }: { rows: Row[] }) {
+  return (
+    <dl className="overflow-hidden rounded-xl border border-border">
+      {rows.map((row) => (
+        <div
+          key={row.label}
+          className={cn(
+            'flex justify-between gap-4 border-t border-border px-4 py-3 first:border-t-0',
+            row.mono ? 'items-center' : 'items-start',
+          )}
+        >
+          <dt className="shrink-0 text-sm text-muted-foreground">{row.label}</dt>
+          <dd
+            className={cn(
+              'flex min-w-0 items-center gap-1.5 text-right text-sm text-foreground',
+              row.mono && 'font-mono text-xs',
+            )}
+          >
+            {/* Hashes are already shortened; a rule reads in full. */}
+            <span className={row.mono ? 'truncate' : 'text-pretty break-words'}>{row.value}</span>
+            {row.copy ? <CopyButton value={row.copy} label={`Copy ${row.label.toLowerCase()}`} /> : null}
+          </dd>
+        </div>
+      ))}
+    </dl>
   )
 }
 

@@ -34,7 +34,20 @@ export function formatDateTime(iso: string, locale = 'en-US') {
 
 /** A date input's "yyyy-mm-dd" as midnight UTC, matching how dates are displayed. */
 export function fromDateInput(value: string): string | undefined {
-  return value ? new Date(`${value}T00:00:00Z`).toISOString() : undefined
+  if (!value) return undefined
+  const date = new Date(`${value}T00:00:00Z`)
+  // A partly typed or out-of-range date (e.g. a five-digit year) is just not a date yet.
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
+}
+
+/**
+ * One quoted CSV cell. Text that a spreadsheet would run as a formula
+ * (names and notes other people typed) is prefixed so it stays text.
+ */
+export function csvCell(value: unknown): string {
+  let text = String(value ?? '')
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`
+  return `"${text.replace(/"/g, '""')}"`
 }
 
 /** "2 hours ago", "in 3 days", "yesterday". */

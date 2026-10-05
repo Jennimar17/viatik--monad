@@ -1,5 +1,7 @@
-import { newId, pseudoSha256 } from '../ids'
+import { evidenceSetHash } from '../evidence'
+import { newId } from '../ids'
 import { cents, sum, type Cents } from '../money'
+import { activeOperationsAccount } from '../queries'
 import { agreementCapital, vaultBalance } from '../selectors'
 import { assertTransition, canTransitionMilestone, canTransitionTranche } from '../status'
 import type {
@@ -15,7 +17,16 @@ import type {
   SpendingPolicy,
   Tranche,
 } from '../types'
-import { DomainError, requirePositive, requireText, usdText, type Tx } from './core'
+import {
+  DomainError,
+  evidenceFrom,
+  requirePositive,
+  requireText,
+  usdText,
+  type EvidenceDraft,
+  type Tx,
+} from './core'
+import { ensureOperationsAccount } from './operations'
 
 // ─── Portfolios ──────────────────────────────────────────────────────────────
 
@@ -202,6 +213,12 @@ export function createAgreement(tx: Tx, input: CreateAgreementInput): FundingAgr
 
   input.tranches.forEach((draft, index) => {
     requirePositive(draft.amount, `Tranche ${index + 1} amount`)
+    // The ledger only knows whether a tranche has a milestone; the two must agree.
+    if (Boolean(draft.milestone) !== (draft.releaseCondition === 'milestone'))
+      throw new DomainError(
+        'validation',
+        `Tranche ${index + 1}: a milestone release needs a milestone, and only milestone releases have one.`,
+      )
     const trancheId = newId('tr')
     let milestoneId: Id | undefined
     if (draft.milestone) {
@@ -285,6 +302,9 @@ export function acceptAgreement(tx: Tx, input: { agreementId: Id }) {
       agencyId: agreement.agencyId,
     },
   )
+  // Released funding needs somewhere to land. (Phase 8: the ledger must
+  // register accounts created as a side effect like this one.)
+  ensureOperationsAccount(tx, agreement.agencyId)
   tx.notify(
     tx.holders('investor', { portfolioId: agreement.portfolioId }),
     'Agreement accepted',
@@ -325,9 +345,17 @@ export function setAgreementPaused(tx: Tx, input: { agreementId: Id; paused: boo
 
 // ─── Capital into vaults ─────────────────────────────────────────────────────
 
+/** The settlement token mints at most 1,000,000 USD per deposit (TestUSD `MAX_MINT`). */
+export const MAX_DEPOSIT = cents(100_000_000)
+
 export function addFunds(tx: Tx, input: { portfolioId: Id; amount: Cents; source: string }) {
   tx.authorize('fund_agreement', { portfolioId: input.portfolioId })
   requirePositive(input.amount)
+  if (input.amount > MAX_DEPOSIT)
+    throw new DomainError(
+      'limit_exceeded',
+      `A single deposit can be up to ${usdText(MAX_DEPOSIT)}. Split it into several deposits.`,
+    )
   const vault = tx.state.vaults.find((v) => v.portfolioId === input.portfolioId && v.kind === 'portfolio')
   if (!vault) throw new DomainError('not_found', 'Portfolio Vault not found.')
   const operationId = newId('dep')
@@ -435,13 +463,7 @@ export function fundAgreement(tx: Tx, input: { agreementId: Id; amount: Cents })
 
 // ─── Milestones and tranches ─────────────────────────────────────────────────
 
-export type EvidenceDraft = {
-  kind: Evidence['kind']
-  name: string
-  url?: string
-  mimeType?: string
-  sizeBytes?: number
-}
+export type { EvidenceDraft } from './core'
 
 export function submitMilestoneEvidence(
   tx: Tx,
@@ -454,9 +476,7 @@ export function submitMilestoneEvidence(
     throw new DomainError('invalid_state', 'The agreement must be active to submit evidence.')
   if (input.evidence.length === 0)
     throw new DomainError('validation', 'Attach at least one piece of evidence.')
-  const account = tx.find('accounts', input.destinationAccountId, 'Account')
-  if (account.agencyId !== agreement.agencyId)
-    throw new DomainError('forbidden', 'The destination account belongs to another Agency.')
+  const account = destinationAccount(tx, input.destinationAccountId, agreement.agencyId)
 
   const next = milestone.status === 'not_started' ? 'in_progress' : milestone.status
   if (next !== 'in_progress' && next !== 'changes_requested') {
@@ -464,22 +484,13 @@ export function submitMilestoneEvidence(
   }
   assertTransition('Milestone', canTransitionMilestone, next, 'ready_for_review')
 
-  const evidence: Evidence[] = input.evidence.map((item) => {
-    const id = newId('ev')
-    return {
-      id,
-      ...item,
-      sha256: pseudoSha256(`${id}:${item.name}:${item.url ?? ''}`),
-      addedAt: tx.now,
-      addedBy: tx.userId,
-    }
-  })
+  const evidence: Evidence[] = input.evidence.map((item) => evidenceFrom(item, tx.userId, tx.now))
   milestone.evidence = [...milestone.evidence, ...evidence]
   milestone.status = 'ready_for_review'
   milestone.submittedAt = tx.now
   milestone.submittedBy = tx.userId
   milestone.submissionNote = input.note.trim()
-  milestone.evidenceHash = `0x${pseudoSha256(milestone.evidence.map((e) => e.sha256).join(''))}`
+  milestone.evidenceHash = evidenceSetHash(milestone.evidence)
   milestone.decision = undefined
 
   const tranche = tx.find('tranches', milestone.trancheId, 'Tranche')
@@ -517,6 +528,16 @@ export function submitMilestoneEvidence(
   return milestone
 }
 
+/** Where an Agency asks released funding to land: one of its own active accounts. */
+function destinationAccount(tx: Tx, accountId: Id, agencyId: Id) {
+  const account = tx.find('accounts', accountId, 'Account')
+  if (account.agencyId !== agencyId)
+    throw new DomainError('forbidden', 'The destination account belongs to another Agency.')
+  if (account.status !== 'active')
+    throw new DomainError('invalid_state', `${account.name} is not active. Choose another account.`)
+  return account
+}
+
 /** Tranches without milestones (scheduled/manual) are requested directly. */
 export function requestTranche(
   tx: Tx,
@@ -525,6 +546,8 @@ export function requestTranche(
   const tranche = tx.find('tranches', input.trancheId, 'Tranche')
   const agreement = tx.find('agreements', tranche.agreementId, 'Funding agreement')
   tx.authorize('request_tranche', { agencyId: agreement.agencyId })
+  if (agreement.status !== 'active')
+    throw new DomainError('invalid_state', 'The agreement must be active to request funding.')
   if (tranche.milestoneId) {
     throw new DomainError(
       'invalid_state',
@@ -534,9 +557,7 @@ export function requestTranche(
   if (tranche.status !== 'available' && tranche.status !== 'planned') {
     throw new DomainError('invalid_state', 'This tranche cannot be requested right now.')
   }
-  const account = tx.find('accounts', input.destinationAccountId, 'Account')
-  if (account.agencyId !== agreement.agencyId)
-    throw new DomainError('forbidden', 'The destination account belongs to another Agency.')
+  const account = destinationAccount(tx, input.destinationAccountId, agreement.agencyId)
   tranche.status = 'under_review'
   tranche.requestedAt = tx.now
   tranche.requestedBy = tx.userId
@@ -606,21 +627,18 @@ export function releaseTranche(tx: Tx, input: { trancheId: Id; checkedCriteria?:
       decidedBy: tx.userId,
     }
   } else {
-    assertTransition(
-      'Tranche',
-      canTransitionTranche,
-      tranche.status === 'available' ? 'approved' : tranche.status,
-      'released',
-    )
+    // Without a milestone, releasing is the Investor's approval of the Agency's
+    // request (under review) or of a tranche that is simply available.
+    const approvable = tranche.status === 'available' || tranche.status === 'under_review'
+    assertTransition('Tranche', canTransitionTranche, approvable ? 'approved' : tranche.status, 'released')
   }
 
   const agency = tx.find('agencies', agreement.agencyId, 'Agency')
-  const destinationId =
-    tranche.destinationAccountId ??
-    tx.state.accounts.find((a) => a.agencyId === agency.id && a.template === 'operations')?.id
-  if (!destinationId)
-    throw new DomainError('invalid_state', 'The Agency has no account to receive the funds.')
-  const destination = tx.find('accounts', destinationId, 'Account')
+  // The account chosen when the tranche was requested must still be usable.
+  const destination = tranche.destinationAccountId
+    ? destinationAccount(tx, tranche.destinationAccountId, agency.id)
+    : activeOperationsAccount(tx.state, agency.id)
+  if (!destination) throw new DomainError('invalid_state', 'The Agency has no account to receive the funds.')
   const fundingVault = tx.state.vaults.find((v) => v.kind === 'funding' && v.agreementId === agreement.id)!
 
   const receipt = tx.receipt({

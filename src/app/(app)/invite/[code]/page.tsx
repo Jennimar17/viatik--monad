@@ -10,7 +10,7 @@ import { ButtonLink } from '@/components/app/button-link'
 import { roleHome } from '@/components/app/nav'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { EmptyState } from '@/components/viatik/feedback'
+import { EmptyState, ErrorState } from '@/components/viatik/feedback'
 import { OrgAvatar, roleIcons } from '@/components/viatik/people'
 import { ViatikLogo } from '@/components/viatik/viatik-logo'
 import { getDataSource, type SessionMode } from '@/data'
@@ -38,6 +38,7 @@ export default function InvitePage() {
     enterDemo,
     signIn,
     signOut,
+    credentials,
   } = useSession()
   const { state, memberships } = useViatik()
   const queryClient = useQueryClient()
@@ -48,7 +49,12 @@ export default function InvitePage() {
   const real = accountsEnabled && mode !== 'demo'
   const source: SessionMode = real ? 'account' : 'demo'
 
-  const { data: invitation, isLoading } = useQuery({
+  const {
+    data: invitation,
+    isLoading,
+    isError: lookupFailed,
+    refetch: lookUpAgain,
+  } = useQuery({
     queryKey: ['invitation', source, code],
     queryFn: () => getDataSource(source).lookupInvitation(code),
   })
@@ -58,6 +64,21 @@ export default function InvitePage() {
       <main id="main" className="mx-auto flex min-h-svh max-w-md flex-col justify-center gap-6 px-4 py-12">
         <Skeleton className="h-10 w-32" />
         <Skeleton className="h-96 rounded-2xl" />
+      </main>
+    )
+  }
+
+  // Could not ask (offline, server down): not the same as an unknown link.
+  if (lookupFailed) {
+    return (
+      <main id="main" className="mx-auto flex min-h-svh max-w-md flex-col justify-center gap-6 px-4">
+        <ViatikLogo className="-ml-1" />
+        <ErrorState
+          titleAs="h1"
+          title="We could not open this invitation"
+          description="The link may be fine. Check your connection and try again."
+          onRetry={() => void lookUpAgain()}
+        />
       </main>
     )
   }
@@ -108,9 +129,12 @@ export default function InvitePage() {
     setError(null)
     try {
       if (real) {
-        const accepted = (await getDataSource('account').dispatch(userId as string, 'acceptInvitation', {
-          code,
-        })) as Invitation
+        const accepted = (await getDataSource('account').dispatch(
+          userId as string,
+          'acceptInvitation',
+          { code },
+          { credentials },
+        )) as Invitation
         await finish(userId as string, accepted)
       } else {
         // Demo: the invitee gets a new demo person of their own.

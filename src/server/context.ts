@@ -1,11 +1,15 @@
 import { createMiddleware } from 'hono/factory'
 
+import type { UserRow } from './db/schema'
+
 /** Values the middleware chain sets for route handlers. */
 export type AppEnv = {
   Variables: {
     requestId: string
     /** Privy DID of the caller, set only after the access token was verified. */
     privyUserId: string
+    /** The caller's product user, resolved from the verified Privy id (`requireUser`). */
+    user: UserRow
   }
 }
 

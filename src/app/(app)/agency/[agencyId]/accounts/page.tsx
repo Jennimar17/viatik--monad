@@ -4,6 +4,7 @@ import { ArrowLeftRight, Landmark, Plus } from 'lucide-react'
 import Link from '@/components/viatik/link'
 
 import { accountHistory, accountIcons, isHeldAccount } from '@/components/app/account-parts'
+import { BalanceCheckNote } from '@/components/app/balance-check'
 import { ButtonLink } from '@/components/app/button-link'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { Amount } from '@/components/viatik/amount'
@@ -12,7 +13,7 @@ import { EmptyState } from '@/components/viatik/feedback'
 import { KpiTile } from '@/components/viatik/finance'
 import { HairlineGrid, PageHeader } from '@/components/viatik/layout'
 import { Tag } from '@/components/viatik/status'
-import { useViatikState } from '@/data/react'
+import { useLedger, useViatikState } from '@/data/react'
 import { accountTemplate } from '@/domain/labels'
 import { sum } from '@/domain/money'
 import { accountBalance, agencyCapital, budgetBalance } from '@/domain/selectors'
@@ -20,6 +21,7 @@ import { pluralize } from '@/lib/format'
 
 export default function AccountsPage() {
   const { state, now } = useViatikState()
+  const { checks } = useLedger()
   const { scopeId: agencyId } = useRole()
   const href = useHref()
   const { can } = usePermissions()
@@ -97,7 +99,10 @@ export default function AccountsPage() {
                     {isHeldAccount(account) ? <Tag>Held</Tag> : null}
                     {account.status === 'frozen' ? <Tag>Frozen</Tag> : null}
                   </div>
-                  <Amount value={accountBalance(state, account.id)} size="lg" />
+                  <span className="flex flex-col gap-1">
+                    <Amount value={accountBalance(state, account.id)} size="lg" />
+                    <BalanceCheckNote check={checks?.check(account.id)} />
+                  </span>
                   <Sparkline data={history.map((h) => h.balance)} />
                   <div className="flex justify-between text-xs text-subtle">
                     <span>{pluralize(funded.length, 'budget')} funded</span>

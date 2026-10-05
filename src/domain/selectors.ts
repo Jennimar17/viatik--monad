@@ -87,6 +87,14 @@ const inWindow = (date: ISODate, window: Window) => date >= window.start && date
 
 // ─── Holds and budget usage ─────────────────────────────────────────────────
 
+/**
+ * When a request's money counts against limits: when it was approved, or
+ * when it was sent if it never waited. Approved in a new period, it counts there.
+ */
+export function committedAt(request: PaymentRequest): ISODate {
+  return request.decidedAt ?? request.createdAt
+}
+
 /** Requests whose money is held (approved, not yet captured). */
 export function isHold(request: PaymentRequest): boolean {
   return request.status === 'approved' || request.status === 'processing'
@@ -149,7 +157,7 @@ export function budgetUsage(state: ViatikState, budget: Budget, now: ISODate): B
   const balance = budgetBalance(state, budget.id)
   const spentThisPeriod = budgetSpent(state, budget.id, window)
   const reservedThisPeriod = sum(
-    state.requests.filter((r) => r.budgetId === budget.id && isHold(r) && inWindow(r.createdAt, window)),
+    state.requests.filter((r) => r.budgetId === budget.id && isHold(r) && inWindow(committedAt(r), window)),
     (r) => r.amount,
   )
   return {
@@ -185,7 +193,7 @@ export function holderSpentInPeriod(
         holderMatches(r, holder) &&
         countsAgainstLimits(r) &&
         r.status !== 'needs_approval' &&
-        inWindow(r.createdAt, window),
+        inWindow(committedAt(r), window),
     ),
     (r) => r.amount,
   )
@@ -199,7 +207,7 @@ export function agentSpentToday(state: ViatikState, agentId: Id, now: ISODate): 
         r.requester.kind === 'ai_agent' &&
         r.requester.agentId === agentId &&
         (isHold(r) || r.status === 'completed') &&
-        inWindow(r.createdAt, window),
+        inWindow(committedAt(r), window),
     ),
     (r) => r.amount,
   )

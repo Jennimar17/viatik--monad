@@ -1,4 +1,5 @@
 import { ShieldCheck } from 'lucide-react'
+import type * as React from 'react'
 
 import { formatUsd, type Cents } from '@/domain/money'
 import { formatDateTime } from '@/lib/format'
@@ -31,7 +32,8 @@ export function ReceiptView({
   /** From, To, Organization, Policy applied, Receipt hash… */
   rows: ReceiptRow[]
   /** Supporting documents; only their fingerprints are recorded onchain. */
-  evidence?: { name: string; fingerprint: string }[]
+  /** `name` may be a control that opens the document; `label` is its plain name. */
+  evidence?: { id: string; name: React.ReactNode; label: string; fingerprint: string }[]
   className?: string
 }) {
   return (
@@ -72,8 +74,8 @@ export function ReceiptView({
           <h2 className="mb-3 text-sm font-medium">Supporting evidence</h2>
           <ul className="flex flex-col gap-2">
             {evidence.map((item) => (
-              <li key={item.fingerprint} className="flex items-center justify-between gap-3 text-sm">
-                <span className="truncate">{item.name}</span>
+              <li key={item.id} className="flex items-center justify-between gap-3 text-sm">
+                <span className="min-w-0 truncate">{item.name}</span>
                 <span className="font-mono text-2xs text-muted-foreground">
                   {item.fingerprint.slice(0, 12)}…
                 </span>

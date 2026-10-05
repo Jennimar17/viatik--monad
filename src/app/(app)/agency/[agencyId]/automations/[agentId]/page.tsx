@@ -25,7 +25,7 @@ import { useCommand, useViatikState } from '@/data/react'
 import { formatUsd, sum, type Cents } from '@/domain/money'
 import { joinList } from '@/domain/policy'
 import { budgetName, destinationName, userName } from '@/domain/queries'
-import { agentSpentToday, lastMonths } from '@/domain/selectors'
+import { agentSpentToday, committedAt, lastMonths } from '@/domain/selectors'
 import { agentStatus } from '@/domain/status'
 import type { AgentDecision, PaymentRequest } from '@/domain/types'
 import { formatDate, formatDateTime, fromDateInput, pluralize } from '@/lib/format'
@@ -90,7 +90,7 @@ export default function AgentDetailPage() {
       day: dayLabel.format(new Date(start)),
       spent: sum(
         requests.filter((r) => {
-          const at = new Date(r.createdAt).getTime()
+          const at = new Date(committedAt(r)).getTime()
           return at >= start && at < end
         }),
         (r) => r.amount,
@@ -100,7 +100,7 @@ export default function AgentDetailPage() {
   const hasSpend = days.some((d) => d.spent > 0)
   const month = lastMonths(now, 1)[0]
   const monthTotal = sum(
-    requests.filter((r) => month && r.createdAt >= month.start && r.createdAt < month.end),
+    requests.filter((r) => month && committedAt(r) >= month.start && committedAt(r) < month.end),
     (r) => r.amount,
   )
   const denied = decisions.filter((d) => d.outcome === 'rejected').length

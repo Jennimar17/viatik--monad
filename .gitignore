@@ -28,3 +28,9 @@ Thumbs.db
 
 # logs
 *.log
+
+# contracts (Foundry): compiler cache and local-chain broadcasts; contracts/out is covered by out/ above
+contracts/cache/
+contracts/broadcast/*/31337/
+contracts/broadcast/**/dry-run/
+contracts/docs/

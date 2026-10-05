@@ -263,7 +263,18 @@ export function updateAgentPolicy(
 ) {
   const agent = tx.find('agents', input.agentId, 'Automation')
   tx.authorize('configure_ai_agent', { agencyId: agent.agencyId })
-  const { agentId: _agentId, ...changes } = input
+  // Only policy fields change; anything else a caller sends is ignored.
+  const changes: Partial<AiAgent> = {}
+  for (const key of [
+    'dailyCap',
+    'perOperationMax',
+    'allowedDestinationIds',
+    'expiresAt',
+    'workingBalanceLimit',
+    'purpose',
+  ] as const) {
+    if (input[key] !== undefined) Object.assign(changes, { [key]: input[key] })
+  }
   const next = { ...agent, ...changes }
   if (next.perOperationMax > next.dailyCap)
     throw new DomainError('validation', 'The per-operation maximum cannot be higher than the daily cap.')

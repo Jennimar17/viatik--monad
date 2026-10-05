@@ -6,10 +6,11 @@ import * as React from 'react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import type { Cents } from '@/domain/money'
+import type { VerifiedDetails } from '@/domain/types'
 import { useIsMobile } from '@/hooks/use-mobile'
 
 import { Amount } from './amount'
-import { VerifiedDetailsList, type VerifiedDetails } from './operation'
+import { VerifiedDetailsList } from './operation'
 
 export type VerifiedRecord = {
   /** e.g. "RCT-0042 · Vertex Cloud invoice". */
@@ -38,7 +39,7 @@ export function VerifiedDetailsDrawer({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side={mobile ? 'bottom' : 'right'}
-        className="max-h-[92svh] gap-0 overflow-y-auto p-0 data-[side=bottom]:rounded-t-2xl data-[side=right]:w-full data-[side=right]:sm:max-w-md"
+        className="max-h-[94svh] gap-0 overflow-y-auto p-0 data-[side=bottom]:rounded-t-2xl data-[side=right]:w-full data-[side=right]:sm:max-w-lg"
       >
         <SheetHeader className="border-b border-border px-5 py-4">
           <SheetTitle className="font-display text-xl font-medium">Verified details</SheetTitle>

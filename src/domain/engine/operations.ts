@@ -1,17 +1,14 @@
-import { newId, pseudoSha256 } from '../ids'
+import { newId } from '../ids'
 import { cents, sum, type Cents } from '../money'
-import { evaluatePolicy } from '../policy'
-import {
-  accountBalance,
-  agentSpentToday,
-  budgetBalance,
-  budgetUsage,
-  holderSpentInPeriod,
-} from '../selectors'
+import { evaluatePolicy, type PolicyRequest } from '../policy'
+import { accountTemplate } from '../labels'
+import { activeOperationsAccount, governingAgreement } from '../queries'
+import { accountBalance, agentSpentToday, budgetUsage, holderSpentInPeriod } from '../selectors'
 import { assertTransition, canTransitionRequest } from '../status'
 import type {
   Account,
   AccountTemplate,
+  Actor,
   AllowanceHolder,
   Bill,
   Budget,
@@ -25,13 +22,21 @@ import type {
   PaymentRecipient,
   PaymentRequest,
   PaymentType,
+  PolicyCheck,
   PolicyDecision,
   RequestType,
   SpendingAllowance,
   SpendingCategory,
 } from '../types'
-import { DomainError, requirePositive, requireText, usdText, type Tx } from './core'
-import type { EvidenceDraft } from './funding'
+import {
+  DomainError,
+  evidenceFrom,
+  requirePositive,
+  requireText,
+  usdText,
+  type EvidenceDraft,
+  type Tx,
+} from './core'
 
 // ─── Accounts ────────────────────────────────────────────────────────────────
 
@@ -72,6 +77,33 @@ export function createAccount(
     })
   }
   return account
+}
+
+/**
+ * The account released funding lands in by default. An Agency gets one when
+ * it accepts funding, so a new Agency can receive money without setting up
+ * accounts first. Opened by whoever accepts (an Agency Admin).
+ */
+export function ensureOperationsAccount(tx: Tx, agencyId: Id): Account {
+  return (
+    activeOperationsAccount(tx.state, agencyId) ??
+    createAccount(tx, {
+      agencyId,
+      template: 'operations',
+      name: accountTemplate.operations.label,
+      purpose: accountTemplate.operations.description,
+    })
+  )
+}
+
+/**
+ * Opens the Operations account from a form that needs one. If it already
+ * exists (another admin, another tab, or an agreement accepted meanwhile),
+ * the existing account is returned instead of a second one.
+ */
+export function openOperationsAccount(tx: Tx, input: { agencyId: Id }): Account {
+  tx.authorize('create_account', { agencyId: input.agencyId })
+  return ensureOperationsAccount(tx, input.agencyId)
 }
 
 export function transferFunds(
@@ -185,6 +217,18 @@ export function createBudget(tx: Tx, input: CreateBudgetInput): Budget {
   }
   tx.state.budgets.push(budget)
   const portfolioId = tx.portfolioOfAgency(input.agencyId)
+  // The ledger records the first allocation under the budget's own id.
+  const receipt = tx.receipt({
+    kind: 'allocation',
+    amount: input.allocation,
+    fromLabel: source.name,
+    toLabel: budget.name,
+    description: `Allocated to ${budget.name}`,
+    policyLabel: 'Budget allocation · Agency Admin authorization',
+    operationId: budget.id,
+    portfolioId,
+    agencyId: input.agencyId,
+  })
   tx.move(
     'allocate',
     input.allocation,
@@ -194,6 +238,7 @@ export function createBudget(tx: Tx, input: CreateBudgetInput): Budget {
       portfolioId,
       agencyId: input.agencyId,
       refId: budget.id,
+      receiptId: receipt.id,
     },
   )
   tx.activity(
@@ -218,10 +263,26 @@ export function allocateToBudget(
   tx.authorize('create_budget', { agencyId: budget.agencyId })
   requirePositive(input.amount)
   const portfolioId = tx.portfolioOfAgency(budget.agencyId)
+  // Its own operation id: the ledger already recorded the budget id for the first allocation.
+  const operationId = newId('alloc')
+  const source = tx.find('accounts', budget.sourceAccountId, 'Source account')
+  const receipt = (fromLabel: string, toLabel: string, description: string) =>
+    tx.receipt({
+      kind: 'allocation',
+      amount: input.amount,
+      fromLabel,
+      toLabel,
+      description,
+      policyLabel: 'Budget allocation · Agency Admin authorization',
+      operationId,
+      portfolioId,
+      agencyId: budget.agencyId,
+    })
   if (input.direction === 'allocate') {
     const available = accountBalance(tx.state, budget.sourceAccountId)
     if (available < input.amount)
       throw new DomainError('insufficient_funds', `The source account has ${usdText(available)} available.`)
+    const allocated = receipt(source.name, budget.name, `Allocated to ${budget.name}`)
     tx.move(
       'allocate',
       input.amount,
@@ -230,13 +291,15 @@ export function allocateToBudget(
       {
         portfolioId,
         agencyId: budget.agencyId,
-        refId: budget.id,
+        refId: operationId,
+        receiptId: allocated.id,
       },
     )
   } else {
     const usage = budgetUsage(tx.state, budget, tx.now)
     if (usage.available < input.amount)
       throw new DomainError('insufficient_funds', `Only ${usdText(usage.available)} is free to return.`)
+    const returned = receipt(budget.name, source.name, `Returned from ${budget.name}`)
     tx.move(
       'deallocate',
       input.amount,
@@ -245,7 +308,8 @@ export function allocateToBudget(
       {
         portfolioId,
         agencyId: budget.agencyId,
-        refId: budget.id,
+        refId: operationId,
+        receiptId: returned.id,
       },
     )
   }
@@ -282,7 +346,20 @@ export function updateBudgetRules(
 ) {
   const budget = tx.find('budgets', input.budgetId, 'Budget')
   tx.authorize('create_budget', { agencyId: budget.agencyId })
-  const { budgetId: _budgetId, ...changes } = input
+  // Only rule fields change; anything else a caller sends is ignored.
+  const changes: Partial<Budget> = {}
+  for (const key of [
+    'perOperationLimit',
+    'periodLimit',
+    'approvalThreshold',
+    'allowedCategories',
+    'allowedDestinationIds',
+    'expiresAt',
+    'name',
+    'purpose',
+  ] as const) {
+    if (input[key] !== undefined) Object.assign(changes, { [key]: input[key] })
+  }
   const next = { ...budget, ...changes }
   if (next.perOperationLimit > next.periodLimit)
     throw new DomainError('validation', 'The per-operation limit cannot be higher than the period limit.')
@@ -350,6 +427,10 @@ export function assignAllowance(tx: Tx, input: { budgetId: Id } & AllowanceDraft
         m.scope.agencyId === budget.agencyId,
     )
     if (!isMember) throw new DomainError('forbidden', 'Allowances can only go to people in this Agency.')
+  } else {
+    const agent = tx.find('agents', input.holder.agentId, 'Automation')
+    if (agent.agencyId !== budget.agencyId)
+      throw new DomainError('forbidden', 'Allowances can only go to automations in this Agency.')
   }
   const existing = tx.state.allowances.find(
     (a) =>
@@ -455,7 +536,26 @@ export function previewPolicy(
   input: Pick<RequestPaymentInput, 'budgetId' | 'amount' | 'category' | 'destinationId'>,
 ): PolicyDecision {
   const budget = tx.find('budgets', input.budgetId, 'Budget')
-  const actor = tx.actor
+  return policyForHolder(tx, budget, tx.actor, {
+    amount: input.amount,
+    category: input.category,
+    destinationId: input.destinationId,
+  })
+}
+
+/**
+ * The budget policy for whoever asks (`actor`), against current state. Pending
+ * requests are not counted, so a request waiting for approval can be checked
+ * again without counting itself. If pending requests start to count (M-14),
+ * the request being approved has to be left out here.
+ */
+function policyForHolder(
+  tx: Tx,
+  budget: Budget,
+  actor: Actor,
+  request: PolicyRequest,
+  holderName?: string,
+): PolicyDecision {
   const holder: AllowanceHolder | null =
     actor.kind === 'user'
       ? { kind: 'member', userId: actor.userId }
@@ -480,7 +580,7 @@ export function previewPolicy(
     budget,
     allowance: allowance ?? null,
     agent,
-    request: { amount: input.amount, category: input.category, destinationId: input.destinationId },
+    request,
     usage: {
       budgetAvailable: usage.available,
       holderSpentThisPeriod: holder ? holderSpentInPeriod(tx.state, budget, holder, tx.now) : cents(0),
@@ -488,6 +588,7 @@ export function previewPolicy(
       agentSpentToday: agent ? agentSpentToday(tx.state, agent.id, tx.now) : undefined,
     },
     now: tx.now,
+    holderName,
   })
 }
 
@@ -497,21 +598,38 @@ export function requestPayment(tx: Tx, input: RequestPaymentInput): PaymentReque
     throw new DomainError('forbidden', 'This budget belongs to another Agency.')
   tx.authorize('request_payment', { agencyId: input.agencyId })
   requirePositive(input.amount)
+  const destination = tx.find('destinations', input.destinationId, 'Payment destination')
+  if (destination.agencyId !== input.agencyId)
+    throw new DomainError('forbidden', 'This payment destination belongs to another Agency.')
 
-  const duplicate = tx.state.requests.find((r) => r.idempotencyKey === input.idempotencyKey)
+  // A retry with the same key returns the original request, but only to the
+  // person (or automation) who made it, in the same Agency: keys are not secrets.
+  const requester = tx.actorKey()
+  const duplicate = tx.state.requests.find(
+    (r) =>
+      r.idempotencyKey === input.idempotencyKey &&
+      r.agencyId === input.agencyId &&
+      tx.actorKey(r.requester) === requester,
+  )
   if (duplicate) return duplicate
 
-  const decision = previewPolicy(tx, input)
-  const attachments: Evidence[] = (input.attachments ?? []).map((item) => {
-    const id = newId('ev')
-    return {
-      id,
-      ...item,
-      sha256: pseudoSha256(`${id}:${item.name}`),
-      addedAt: tx.now,
-      addedBy: tx.actorKey(),
+  let decision = previewPolicy(tx, input)
+  // Above the Investor's exception threshold nothing approves itself, even within the
+  // budget's automatic limit: the Investor decides (M-1, the same rule as the contract).
+  const governing = governingAgreement(tx.state, input.agencyId)
+  const isException = governing ? input.amount > governing.spendingPolicy.exceptionThreshold : false
+  if (decision.outcome === 'approved' && governing && isException) {
+    const reason: PolicyCheck = {
+      rule: 'exception_threshold',
+      passed: false,
+      blocking: false,
+      message: `Above the Investor's exception threshold of ${usdText(governing.spendingPolicy.exceptionThreshold)}. The Investor decides.`,
     }
-  })
+    decision = { ...decision, outcome: 'needs_approval', checks: [...decision.checks, reason], reason }
+  }
+  const attachments: Evidence[] = (input.attachments ?? []).map((item) =>
+    evidenceFrom(item, requester, tx.now),
+  )
 
   const request: PaymentRequest = {
     id: newId('req'),
@@ -538,8 +656,7 @@ export function requestPayment(tx: Tx, input: RequestPaymentInput): PaymentReque
 
   const portfolioId = tx.portfolioOfAgency(input.agencyId)
   const subjectUserId = tx.actor.kind === 'user' ? tx.actor.userId : undefined
-  const destinationName =
-    tx.state.destinations.find((d) => d.id === input.destinationId)?.name ?? 'a payment destination'
+  const destinationName = destination.name
 
   if (tx.actor.kind === 'ai_agent') {
     tx.state.agentDecisions.unshift({
@@ -582,11 +699,14 @@ export function requestPayment(tx: Tx, input: RequestPaymentInput): PaymentReque
   )
 
   if (decision.outcome === 'needs_approval') {
+    // Exceptions are decided by the Investor, everything else by the Agency Admins.
     tx.notify(
-      tx.holders('agency_admin', { agencyId: input.agencyId }),
+      isException
+        ? tx.holders('investor', { portfolioId })
+        : tx.holders('agency_admin', { agencyId: input.agencyId }),
       'Request needs approval',
       `${tx.actorName()} requested ${usdText(input.amount)} for ${request.purpose}.`,
-      `/agency/${input.agencyId}/approvals`,
+      isException ? `/investor/${portfolioId}/approvals` : `/agency/${input.agencyId}/approvals`,
     )
     return request
   }
@@ -700,11 +820,21 @@ function capture(tx: Tx, request: PaymentRequest, destinationName: string) {
 /** Agency Admin (or Investor, for exceptions) approves a request that needed a decision. */
 export function approveRequest(tx: Tx, input: { requestId: Id }) {
   const request = tx.find('requests', input.requestId, 'Request')
-  const agreement = tx.state.agreements.find((a) => a.agencyId === request.agencyId && a.status === 'active')
+  const agreement = governingAgreement(tx.state, request.agencyId)
   const isException = agreement ? request.amount > agreement.spendingPolicy.exceptionThreshold : false
   tx.authorize('approve_payment', { agencyId: request.agencyId, createdBy: request.requester, isException })
-  const subject = tx.subject()
-  const isInvestor = subject.memberships.some((m) => m.role === 'investor' && m.status === 'active')
+  // Exceptions belong to the Investor of THIS Agency's portfolio, not to anyone
+  // who happens to be an Investor somewhere (e.g. of a portfolio they created).
+  const portfolioOfRequest = tx.portfolioOfAgency(request.agencyId)
+  const isInvestor = tx
+    .subject()
+    .memberships.some(
+      (m) =>
+        m.role === 'investor' &&
+        m.status === 'active' &&
+        m.scope.kind === 'portfolio' &&
+        m.scope.portfolioId === portfolioOfRequest,
+    )
   if (isException && !isInvestor) {
     throw new DomainError(
       'forbidden',
@@ -716,15 +846,31 @@ export function approveRequest(tx: Tx, input: { requestId: Id }) {
   const budget = tx.find('budgets', request.budgetId, 'Budget')
   if (budget.status !== 'active')
     throw new DomainError('invalid_state', 'The budget is paused. Resume it before approving.')
-  const available = budgetBalance(tx.state, budget.id)
-  if (available < request.amount)
-    throw new DomainError('insufficient_funds', `${budget.name} has ${usdText(available)} available.`)
+  // The rules are checked again now, not as they were when the request was
+  // sent: other payments may have used the limit since, or the budget changed.
+  const requesterName = tx.actorName(request.requester)
+  const recheck = policyForHolder(
+    tx,
+    budget,
+    request.requester,
+    {
+      amount: request.amount,
+      category: request.category,
+      destinationId: request.destination.kind === 'destination' ? request.destination.destinationId : null,
+    },
+    requesterName,
+  )
+  if (recheck.outcome === 'rejected' && recheck.reason) {
+    throw new DomainError(
+      recheck.reason.rule === 'budget_available' ? 'insufficient_funds' : 'policy_rejected',
+      `${recheck.reason.message} The request stays pending until it fits the rules or is declined.`,
+    )
+  }
 
   request.status = 'approved'
   request.approvedBy = tx.userId
   request.decidedAt = tx.now
   const portfolioId = tx.portfolioOfAgency(request.agencyId)
-  const requesterName = tx.actorName(request.requester)
   tx.activity(
     'payment_approved',
     `Approved ${requesterName}'s ${usdText(request.amount)} request`,
@@ -747,7 +893,7 @@ export function approveRequest(tx: Tx, input: { requestId: Id }) {
 
 export function declineRequest(tx: Tx, input: { requestId: Id; reason: string }) {
   const request = tx.find('requests', input.requestId, 'Request')
-  const agreement = tx.state.agreements.find((a) => a.agencyId === request.agencyId && a.status === 'active')
+  const agreement = governingAgreement(tx.state, request.agencyId)
   const isException = agreement ? request.amount > agreement.spendingPolicy.exceptionThreshold : false
   tx.authorize('approve_payment', { agencyId: request.agencyId, createdBy: request.requester, isException })
   assertTransition('Request', canTransitionRequest, request.status, 'declined')
@@ -811,6 +957,21 @@ export function sendPayment(tx: Tx, input: SendPaymentInput) {
   const account = tx.find('accounts', input.accountId, 'Account')
   if (account.agencyId !== input.agencyId)
     throw new DomainError('forbidden', 'The account belongs to another Agency.')
+  const recipient = input.recipient
+  if (recipient.kind === 'member') {
+    const inAgency = tx.state.memberships.some(
+      (m) =>
+        m.userId === recipient.userId &&
+        m.status === 'active' &&
+        m.scope.kind === 'agency' &&
+        m.scope.agencyId === input.agencyId,
+    )
+    if (!inAgency) throw new DomainError('forbidden', 'Payments can only go to people in this Agency.')
+  } else {
+    const destination = tx.find('destinations', recipient.destinationId, 'Payment destination')
+    if (destination.agencyId !== input.agencyId)
+      throw new DomainError('forbidden', 'This payment destination belongs to another Agency.')
+  }
   const portfolioId = tx.portfolioOfAgency(input.agencyId)
 
   let budget: Budget | undefined
@@ -835,7 +996,7 @@ export function sendPayment(tx: Tx, input: SendPaymentInput) {
     }
   }
 
-  const agreement = tx.state.agreements.find((a) => a.agencyId === input.agencyId && a.status === 'active')
+  const agreement = governingAgreement(tx.state, input.agencyId)
   if (agreement && input.amount > agreement.spendingPolicy.exceptionThreshold) {
     throw new DomainError(
       'limit_exceeded',
@@ -937,11 +1098,18 @@ export function sendTeamPayments(
   tx: Tx,
   input: { agencyId: Id; accountId: Id; budgetId?: Id; memo: string; items: { userId: Id; amount: Cents }[] },
 ) {
+  // Authorize before reading any balance: the error below states how much is available.
+  tx.authorize('pay_member', { agencyId: input.agencyId })
   if (input.items.length === 0) throw new DomainError('validation', 'Choose at least one team member.')
   const total = sum(input.items, (i) => i.amount)
   const account = tx.find('accounts', input.accountId, 'Account')
-  const available = input.budgetId
-    ? budgetUsage(tx.state, tx.find('budgets', input.budgetId, 'Budget'), tx.now).available
+  if (account.agencyId !== input.agencyId)
+    throw new DomainError('forbidden', 'The account belongs to another Agency.')
+  const budget = input.budgetId ? tx.find('budgets', input.budgetId, 'Budget') : undefined
+  if (budget && budget.agencyId !== input.agencyId)
+    throw new DomainError('forbidden', 'The budget belongs to another Agency.')
+  const available = budget
+    ? budgetUsage(tx.state, budget, tx.now).available
     : accountBalance(tx.state, account.id)
   if (available < total)
     throw new DomainError(
@@ -988,7 +1156,6 @@ export function addBill(tx: Tx, input: AddBillInput): Bill {
   const destination = tx.find('destinations', input.destinationId, 'Payment destination')
   if (destination.agencyId !== input.agencyId)
     throw new DomainError('forbidden', 'This vendor belongs to another Agency.')
-  const docId = newId('ev')
   const bill: Bill = {
     id: newId('bill'),
     agencyId: input.agencyId,
@@ -1001,13 +1168,7 @@ export function addBill(tx: Tx, input: AddBillInput): Bill {
     accountId: input.accountId,
     budgetId: input.budgetId,
     status: 'to_pay',
-    document: {
-      id: docId,
-      ...input.document,
-      sha256: pseudoSha256(`${docId}:${input.document.name}`),
-      addedAt: tx.now,
-      addedBy: tx.userId,
-    },
+    document: evidenceFrom(input.document, tx.userId, tx.now),
     notes: input.notes?.trim() || undefined,
     createdBy: tx.userId,
     createdAt: tx.now,
@@ -1035,6 +1196,12 @@ export function payBill(
   if (bill.status === 'paid' || bill.status === 'reconciled')
     throw new DomainError('invalid_state', 'This bill is already paid.')
   const destination = tx.find('destinations', bill.destinationId, 'Payment destination')
+  // Paying or rescheduling a scheduled bill replaces its scheduled payment;
+  // no money had moved for it yet.
+  const previous = bill.paymentId ? tx.state.payments.find((p) => p.id === bill.paymentId) : undefined
+  if (previous?.status === 'scheduled') {
+    tx.state.payments = tx.state.payments.filter((p) => p.id !== previous.id)
+  }
   const payment = sendPayment(tx, {
     agencyId: bill.agencyId,
     type: bill.category === 'contractors' ? 'contractor' : bill.category === 'cloud' ? 'vendor' : 'tool',
@@ -1068,11 +1235,20 @@ export function reconcile(tx: Tx, input: { agencyId: Id; paymentId: Id; billId?:
   let label = 'payment'
   if (input.billId) {
     const bill = tx.find('bills', input.billId, 'Bill')
+    if (bill.agencyId !== input.agencyId)
+      throw new DomainError('forbidden', 'This bill belongs to another Agency.')
     if (bill.amount !== payment.amount)
       throw new DomainError(
         'validation',
         `The bill is ${usdText(bill.amount)} but the payment is ${usdText(payment.amount)}.`,
       )
+    // The payment must be the one that paid this vendor for this bill.
+    const toVendor =
+      payment.recipient.kind === 'destination' && payment.recipient.destinationId === bill.destinationId
+    if (!toVendor) throw new DomainError('validation', 'This payment did not go to the vendor on the bill.')
+    if ((payment.billId && payment.billId !== bill.id) || (bill.paymentId && bill.paymentId !== payment.id)) {
+      throw new DomainError('validation', 'This payment belongs to another bill.')
+    }
     bill.status = 'reconciled'
     bill.paymentId = payment.id
     evidenceIds.push(bill.document.id)
@@ -1080,6 +1256,8 @@ export function reconcile(tx: Tx, input: { agencyId: Id; paymentId: Id; billId?:
   }
   if (input.expenseId) {
     const expense = tx.find('expenses', input.expenseId, 'Expense')
+    if (expense.agencyId !== input.agencyId)
+      throw new DomainError('forbidden', 'This expense belongs to another Agency.')
     if (expense.receipt) evidenceIds.push(expense.receipt.id)
     label = `${expense.merchant} expense`
   }
@@ -1125,18 +1303,7 @@ export function addExpense(
 ): Expense {
   tx.authorize('upload_receipt', { agencyId: input.agencyId, ownerUserId: tx.userId })
   requirePositive(input.amount)
-  const receipt = input.receipt
-    ? (() => {
-        const id = newId('ev')
-        return {
-          id,
-          ...input.receipt!,
-          sha256: pseudoSha256(`${id}:${input.receipt!.name}`),
-          addedAt: tx.now,
-          addedBy: tx.userId,
-        }
-      })()
-    : undefined
+  const receipt = input.receipt ? evidenceFrom(input.receipt, tx.userId, tx.now) : undefined
   const expense: Expense = {
     id: newId('exp'),
     agencyId: input.agencyId,
@@ -1168,14 +1335,9 @@ export function addExpense(
 export function attachReceipt(tx: Tx, input: { expenseId: Id; receipt: EvidenceDraft }) {
   const expense = tx.find('expenses', input.expenseId, 'Expense')
   tx.authorize('upload_receipt', { agencyId: expense.agencyId, ownerUserId: expense.userId })
-  const id = newId('ev')
-  expense.receipt = {
-    id,
-    ...input.receipt,
-    sha256: pseudoSha256(`${id}:${input.receipt.name}`),
-    addedAt: tx.now,
-    addedBy: tx.userId,
-  }
+  // A receipt, once attached, may already back a reconciliation: it is never replaced.
+  if (expense.receipt) throw new DomainError('invalid_state', 'This expense already has a receipt.')
+  expense.receipt = evidenceFrom(input.receipt, tx.userId, tx.now)
   return expense
 }
 
@@ -1230,9 +1392,7 @@ export function returnUnusedFunds(tx: Tx, input: { agencyId: Id; amount: Cents }
       `You can return up to ${usdText(cents(Math.max(0, received)))} received from this Agency.`,
     )
   }
-  const operations = tx.state.accounts.find(
-    (a) => a.agencyId === input.agencyId && a.template === 'operations',
-  )
+  const operations = activeOperationsAccount(tx.state, input.agencyId)
   if (!operations) throw new DomainError('not_found', 'The Agency has no operations account.')
   const portfolioId = tx.portfolioOfAgency(input.agencyId)
   const operationId = newId('ret')

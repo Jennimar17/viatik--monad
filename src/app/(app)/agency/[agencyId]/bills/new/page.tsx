@@ -4,18 +4,26 @@ import Link from '@/components/viatik/link'
 import { useRouter } from 'next/navigation'
 import * as React from 'react'
 
-import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
+import { FormField, PillInput, SimpleSelect, useChoice } from '@/components/app/form-controls'
+import { AddDestinationButton, CreateOperationsAccount } from '@/components/app/money-setup'
 import { useHref, useRole } from '@/components/app/role-context'
 import { useBottomBar } from '@/components/app/shell/app-shell'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { EvidenceUploader, FormActions, MoneyInput, type DraftFile } from '@/components/viatik/forms'
+import {
+  EvidenceUploader,
+  FormActions,
+  MoneyInput,
+  pendingUploads,
+  toEvidence,
+  type DraftFile,
+} from '@/components/viatik/forms'
 import { PageHeader, Panel } from '@/components/viatik/layout'
 import { PendingOperation } from '@/components/viatik/operation'
-import { useCommand, useViatikState } from '@/data/react'
+import { useCommand, useEvidenceFiles, useViatikState } from '@/data/react'
 import { categoryLabel } from '@/domain/labels'
 import type { Cents } from '@/domain/money'
-import type { SpendingCategory } from '@/domain/types'
+import type { PaymentDestination, SpendingCategory } from '@/domain/types'
 import { fromDateInput } from '@/lib/format'
 
 const NO_BUDGET = 'none'
@@ -26,6 +34,7 @@ export default function NewBillPage() {
   const href = useHref()
   const router = useRouter()
   const add = useCommand('addBill', { success: 'Bill added.' })
+  const evidenceFiles = useEvidenceFiles()
   useBottomBar()
 
   const destinations = state.destinations.filter((d) => d.agencyId === agencyId && d.status === 'approved')
@@ -37,8 +46,9 @@ export default function NewBillPage() {
   const [dueDate, setDueDate] = React.useState('')
   const [amount, setAmount] = React.useState<Cents | null>(null)
   const [category, setCategory] = React.useState<SpendingCategory>('software')
-  const [accountId, setAccountId] = React.useState<string | null>(
-    accounts.find((a) => a.template === 'vendors')?.id ?? accounts[0]?.id ?? null,
+  const [accountId, setAccountId] = useChoice(
+    accounts.map((a) => a.id),
+    accounts.find((a) => a.template === 'vendors')?.id ?? accounts[0]?.id,
   )
   const [budgetId, setBudgetId] = React.useState(NO_BUDGET)
   const [notes, setNotes] = React.useState('')
@@ -51,7 +61,7 @@ export default function NewBillPage() {
   const document = files[0]
 
   const errors = {
-    file: document ? undefined : 'Upload the bill.',
+    file: document ? (pendingUploads(files) ?? undefined) : 'Upload the bill.',
     destination: destinationId ? undefined : 'Choose the vendor.',
     number: number.trim() ? undefined : 'Enter the bill number.',
     dueDate: !dueDate
@@ -64,10 +74,14 @@ export default function NewBillPage() {
   }
   const valid = !Object.values(errors).some(Boolean)
 
+  // The bill takes the vendor's category, whether picked from the list or just added.
+  const selectVendor = (vendor: PaymentDestination) => {
+    setDestinationId(vendor.id)
+    setCategory(vendor.category)
+  }
   const chooseVendor = (id: string) => {
-    setDestinationId(id)
     const vendor = destinations.find((d) => d.id === id)
-    if (vendor) setCategory(vendor.category)
+    if (vendor) selectVendor(vendor)
   }
 
   const submit = async () => {
@@ -85,7 +99,7 @@ export default function NewBillPage() {
       category,
       accountId,
       budgetId: budgetId === NO_BUDGET ? undefined : budgetId,
-      document,
+      document: toEvidence(document),
       notes: notes.trim() || undefined,
     })
     if (bill) router.push(href(`bills/${bill.id}`))
@@ -109,7 +123,9 @@ export default function NewBillPage() {
       >
         <EvidenceUploader
           files={files}
-          onChange={(next) => setFiles(next.slice(-1))}
+          onChange={setFiles}
+          onUpload={evidenceFiles.upload}
+          maxFiles={1}
           allowLinks={false}
           label="Drop the bill here or browse"
         />
@@ -128,18 +144,22 @@ export default function NewBillPage() {
             error={touched ? errors.destination : undefined}
             hint="Only approved payment destinations can be paid."
           >
-            <SimpleSelect
-              id="vendor"
-              value={destinationId}
-              onValueChange={chooseVendor}
-              invalid={touched && Boolean(errors.destination)}
-              options={destinations.map((d) => ({
-                value: d.id,
-                label: d.name,
-                description: d.settlementLabel,
-              }))}
-              placeholder="Choose a vendor"
-            />
+            <div className="flex flex-col gap-2">
+              <SimpleSelect
+                id="vendor"
+                value={destinationId}
+                onValueChange={chooseVendor}
+                invalid={touched && Boolean(errors.destination)}
+                options={destinations.map((d) => ({
+                  value: d.id,
+                  label: d.name,
+                  description: d.settlementLabel,
+                }))}
+                placeholder="Choose a vendor"
+                empty="No vendors yet"
+              />
+              <AddDestinationButton agencyId={agencyId} onAdded={selectVendor} label="Add a vendor" />
+            </div>
           </FormField>
           <FormField label="Bill number" htmlFor="number" error={touched ? errors.number : undefined}>
             <PillInput
@@ -191,13 +211,25 @@ export default function NewBillPage() {
               }))}
             />
           </FormField>
-          <FormField label="Account" htmlFor="account" error={touched ? errors.account : undefined}>
-            <SimpleSelect
-              id="account"
-              value={accountId}
-              onValueChange={setAccountId}
-              options={accounts.map((a) => ({ value: a.id, label: a.name }))}
-            />
+          <FormField
+            label="Account"
+            htmlFor={accounts.length > 0 ? 'account' : undefined}
+            error={touched ? errors.account : undefined}
+          >
+            {accounts.length === 0 ? (
+              <CreateOperationsAccount
+                agencyId={agencyId}
+                description="Bills are paid from an Agency account."
+                onCreated={setAccountId}
+              />
+            ) : (
+              <SimpleSelect
+                id="account"
+                value={accountId}
+                onValueChange={setAccountId}
+                options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+              />
+            )}
           </FormField>
           <FormField
             label="Budget"

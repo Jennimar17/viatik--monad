@@ -54,9 +54,12 @@ function Transfer() {
   const from = accounts.find((a) => a.id === fromId)
   const to = accounts.find((a) => a.id === toId)
   const available = from ? accountBalance(state, from.id) : ZERO
+  // With no money in any account, say where it comes from instead of an error.
+  const nothingToMove = accounts.every((a) => accountBalance(state, a.id) === 0)
+  const elsewhere = accounts.some((a) => a.id !== fromId && accountBalance(state, a.id) > 0)
   const error =
-    amount !== null && amount > available
-      ? `${from?.name ?? 'The source account'} has ${formatUsd(available, { withCode: true })} available.`
+    !nothingToMove && amount !== null && amount > available
+      ? `${from?.name ?? 'The source account'} has ${formatUsd(available, { withCode: true })} available.${elsewhere ? ' Choose another source account.' : ''}`
       : undefined
   const options = accounts.map((a) => ({
     value: a.id,
@@ -114,7 +117,21 @@ function Transfer() {
               />
             </FormField>
           </div>
-          <FormField label="Amount" htmlFor="amount" error={error}>
+          <FormField
+            label="Amount"
+            htmlFor="amount"
+            error={error}
+            hint={
+              nothingToMove ? (
+                <>
+                  No account holds money yet. Released funding lands in the Operations account first.{' '}
+                  <Link href={href('funding')} className="text-foreground underline-offset-4 hover:underline">
+                    Go to Funding
+                  </Link>
+                </>
+              ) : undefined
+            }
+          >
             <MoneyInput
               id="amount"
               value={amount}
@@ -140,7 +157,7 @@ function Transfer() {
         </Button>
         <Button
           size="pill-sm"
-          disabled={!amount || !from || !to || Boolean(error)}
+          disabled={!amount || !from || !to || Boolean(error) || amount > available}
           onClick={() => setOpen(true)}
         >
           Review transfer

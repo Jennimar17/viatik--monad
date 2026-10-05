@@ -63,9 +63,21 @@ const serverEnvSchema = z.object({
   /** Dashboard verification key: verifies access tokens without calling Privy. */
   PRIVY_JWT_VERIFICATION_KEY: z.string().min(1).optional(),
   DEMO_ACCOUNTS: demoAccounts,
+  /** Enables POST /api/v1/admin/seed (restores the demo story); without it the route does not exist. */
+  ADMIN_SEED_TOKEN: z.string().min(24).optional(),
   MONAD_RPC_URL: z.url().optional(),
   /** Deployed ViatikLedger contract. While unset, operations settle on the mock ledger. */
   VIATIK_LEDGER_ADDRESS: address.optional(),
+  /** Settlement token the ledger was deployed with (TestUSD on testnet). Must equal the ledger's TOKEN(). */
+  TEST_USD_ADDRESS: address.optional(),
+  /** Block of the ledger's deployment: the earliest block worth scanning for its events. */
+  LEDGER_DEPLOY_BLOCK: z.coerce.bigint().nonnegative().optional(),
+  /** Signs role permits and runs the genesis. Server only; on testnet, the deployer's key. */
+  LEDGER_REGISTRAR_PRIVATE_KEY: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{64}$/, 'Expected a 0x-prefixed private key.')
+    .transform((value) => value as `0x${string}`)
+    .optional(),
   DATABASE_URL: z.string().min(1).optional(),
   SUPABASE_URL: z.url().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),

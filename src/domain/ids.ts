@@ -1,3 +1,5 @@
+import { sha256, stringToHex } from 'viem'
+
 /**
  * Deterministic helpers for ids and demo-only hashes. Real hashes come from
  * the ledger adapter; these exist so seeded data and the mock ledger are
@@ -67,8 +69,39 @@ export function createIdFactory() {
   }
 }
 
-/** Random id for records created at runtime (client or server). */
+/** Invitation codes are bearer secrets: never derived from a seed someone else may know. */
+const ALWAYS_RANDOM = new Set(['join'])
+
+let seeded: ((prefix: string) => string) | null = null
+
+/**
+ * Runs `run` with ids derived from `seed` (a person and an idempotency key):
+ * running the same command twice on the same state creates the same ids, so
+ * a transaction prepared from one run is confirmed by the next. Counters are
+ * per prefix, so `pay_` stays stable even when a command notifies more people.
+ */
+export function withSeededIds<T>(seed: string | undefined, run: () => T): { result: T; created: string[] } {
+  if (!seed) return { result: run(), created: [] }
+  const previous = seeded
+  const counters = new Map<string, number>()
+  const created: string[] = []
+  seeded = (prefix) => {
+    const next = (counters.get(prefix) ?? 0) + 1
+    counters.set(prefix, next)
+    const id = `${prefix}_${sha256(stringToHex(`${seed}:${prefix}:${next}`)).slice(2, 14)}`
+    created.push(id)
+    return id
+  }
+  try {
+    return { result: run(), created }
+  } finally {
+    seeded = previous
+  }
+}
+
+/** Id for records created at runtime (client or server); seeded inside a command. */
 export function newId(prefix: string): string {
+  if (seeded && !ALWAYS_RANDOM.has(prefix)) return seeded(prefix)
   const random =
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
       ? crypto.randomUUID().replace(/-/g, '').slice(0, 12)

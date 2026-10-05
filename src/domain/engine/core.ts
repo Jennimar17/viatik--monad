@@ -1,10 +1,12 @@
-import { newId } from '../ids'
+import { linkFingerprint, noteFingerprint, standInFingerprint } from '../evidence'
+import { newId, withSeededIds } from '../ids'
 import { formatUsd, type Cents } from '../money'
 import { decide, type Capability, type PermissionContext, type Subject } from '../permissions'
 import type {
   Activity,
   ActivityType,
   Actor,
+  Evidence,
   Id,
   ISODate,
   Location,
@@ -25,6 +27,8 @@ export type DomainErrorCode =
   | 'insufficient_funds'
   | 'policy_rejected'
   | 'limit_exceeded'
+  /** The same person and idempotency key already applied this command. */
+  | 'already_applied'
 
 /** Errors carry product-language messages that can be shown as-is. */
 export class DomainError extends Error {
@@ -49,6 +53,8 @@ export type CommandContext = {
   actor: Actor
   now: ISODate
   verify?: (input: VerifyInput) => Receipt['verified']
+  /** Person and idempotency key: the same command on the same state creates the same ids. */
+  idSeed?: string
 }
 
 export class Tx {
@@ -144,8 +150,9 @@ export class Tx {
       id: newId('rcpt'),
       number: `VTK-${new Date(this.now).getUTCFullYear()}-${String(sequence).padStart(6, '0')}`,
       issuedAt: this.now,
-      evidenceIds: input.evidenceIds ?? [],
       ...input,
+      // After the spread: a release without a milestone passes `undefined`.
+      evidenceIds: input.evidenceIds ?? [],
       verified: verify({
         operationId: input.operationId,
         account: this.actorKey(),
@@ -212,6 +219,55 @@ export function requirePositive(amount: Cents, label = 'Amount') {
   }
 }
 
+/** What a person attaches: a file's metadata, a link or a note. */
+export type EvidenceDraft = Pick<Evidence, 'kind' | 'name' | 'url' | 'mimeType' | 'sizeBytes'> & {
+  /** SHA-256 of an uploaded file's content (hex). The API only accepts it for files it has verified. */
+  sha256?: string
+}
+
+const SHA256_HEX = /^[0-9a-f]{64}$/
+
+/**
+ * A stored piece of evidence. Only the known draft fields are copied, so a
+ * caller can never choose the record id or add fields of its own; links must
+ * be http(s) because they are rendered as anchors for other people.
+ */
+export function evidenceFrom(draft: EvidenceDraft, addedBy: Id, now: ISODate): Evidence {
+  const id = newId('ev')
+  const name = requireText(draft.name, 'Document name', 300)
+  const isFile = draft.kind === 'file'
+  // Only links have a URL, and only files have a type, a size and an uploaded fingerprint.
+  const url = draft.url?.trim() || undefined
+  if (draft.kind === 'link') {
+    if (!url || !/^https?:\/\//i.test(url)) {
+      throw new DomainError('validation', 'Links must start with http:// or https://.')
+    }
+  } else if (url) {
+    throw new DomainError('validation', 'Only links can point to a web address.')
+  }
+  if (draft.sha256 !== undefined && (!isFile || !SHA256_HEX.test(draft.sha256))) {
+    throw new DomainError('validation', 'This file could not be verified. Upload it again.')
+  }
+  const sha256 =
+    draft.sha256 ??
+    (draft.kind === 'link'
+      ? linkFingerprint(url as string)
+      : draft.kind === 'note'
+        ? noteFingerprint(name)
+        : standInFingerprint(id, name))
+  return {
+    id,
+    kind: draft.kind,
+    name,
+    url: draft.kind === 'link' ? url : undefined,
+    mimeType: isFile ? draft.mimeType : undefined,
+    sizeBytes: isFile ? draft.sizeBytes : undefined,
+    sha256,
+    addedAt: now,
+    addedBy,
+  }
+}
+
 export function requireText(value: string | undefined, label: string, max = 280): string {
   const trimmed = (value ?? '').trim()
   if (!trimmed) throw new DomainError('validation', `${label} is required.`)
@@ -228,6 +284,26 @@ export function execute<R>(
 ): { state: ViatikState; result: R } {
   const draft = structuredClone(state)
   const tx = new Tx(draft, ctx)
-  const result = command(tx)
+  const { result, created } = withSeededIds(ctx.idSeed, () => command(tx))
+  // A seed reused after its key expired would recreate records that already exist.
+  if (created.length > 0) {
+    const taken = idsIn(state)
+    if (created.some((id) => taken.has(id)))
+      throw new DomainError('already_applied', 'This operation was already applied. Refresh to see it.')
+  }
   return { state: draft, result }
+}
+
+/** Every record id in the state, evidence included. */
+function idsIn(state: ViatikState): Set<Id> {
+  const ids = new Set<Id>()
+  for (const value of Object.values(state)) {
+    if (!Array.isArray(value)) continue
+    for (const item of value as { id?: unknown }[]) if (typeof item?.id === 'string') ids.add(item.id)
+  }
+  for (const milestone of state.milestones) for (const item of milestone.evidence) ids.add(item.id)
+  for (const request of state.requests) for (const item of request.attachments) ids.add(item.id)
+  for (const bill of state.bills) ids.add(bill.document.id)
+  for (const expense of state.expenses) if (expense.receipt) ids.add(expense.receipt.id)
+  return ids
 }

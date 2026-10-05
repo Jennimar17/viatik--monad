@@ -273,8 +273,11 @@ const verifiedRecord: VerifiedRecord = {
     timestamp: '2026-09-22T14:32:00.000Z',
     receiptHash: '0x4e6a8c0b2d4f6a8c0e2b4d6f8a0c2e4b6d8f0a2c4e6b8d0f2a4c6e8b0d2f4a6c',
     contractPolicy: 'Product Delivery · up to 500.00 USD per operation',
-    explorerUrl: 'https://testnet.monadexplorer.com',
+    explorerUrl:
+      'https://testnet.monadvision.com/tx/0x9b1e4c7a2d6f80e35a1c9b7d4e2f6a8c0b3d5e7f9a1c2b4d6e8f0a2c4e6b8d0f',
     simulated: true,
+    outcome: 'executed',
+    evidenceHash: '0x7c2e9a4b6d8f0a1c3e5b7d9f1a3c5e7b9d0f2a4c6e8b0d2f4a6c8e0b2d4f6a8c',
   },
 }
 

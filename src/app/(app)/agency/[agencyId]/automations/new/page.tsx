@@ -4,7 +4,9 @@ import Link from '@/components/viatik/link'
 import { useRouter } from 'next/navigation'
 import * as React from 'react'
 
+import { ButtonLink } from '@/components/app/button-link'
 import { ChipSelect, FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
+import { AddDestinationButton } from '@/components/app/money-setup'
 import { useHref, useRole } from '@/components/app/role-context'
 import { useBottomBar } from '@/components/app/shell/app-shell'
 import { Button } from '@/components/ui/button'
@@ -121,11 +123,20 @@ export default function NewAgentPage() {
               aria-invalid={Boolean(shown('purpose')) || undefined}
             />
           </FormField>
-          <FormField label="Budget it spends from" htmlFor="agent-budget" error={shown('budget')}>
+          <FormField
+            label="Budget it spends from"
+            htmlFor={budgets.length > 0 ? 'agent-budget' : undefined}
+            error={shown('budget')}
+          >
             {budgets.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Create a budget first. The agent needs one to spend from.
-              </p>
+              <div className="flex flex-col items-start gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Create a budget first. The agent needs one to spend from.
+                </p>
+                <ButtonLink href={href('budgets/new')} size="pill-sm" variant="outline">
+                  Create a budget
+                </ButtonLink>
+              </div>
             ) : (
               <SimpleSelect
                 id="agent-budget"
@@ -164,18 +175,29 @@ export default function NewAgentPage() {
             <MoneyInput id="agent-balance" value={balance} onChange={setBalance} />
           </FormField>
           <FormField label="Allowed providers" className="sm:col-span-3" error={shown('providers')}>
-            {destinations.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Add a payment destination in Settings first. Agents only pay approved providers.
-              </p>
-            ) : (
-              <ChipSelect
-                ariaLabel="Allowed providers"
-                value={providers}
-                onChange={setProviders}
-                options={destinations.map((d) => ({ value: d.id, label: d.name }))}
+            <div className="flex flex-col gap-2">
+              {destinations.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Agents only pay approved providers. Add the first one to continue.
+                </p>
+              ) : (
+                <ChipSelect
+                  ariaLabel="Allowed providers"
+                  value={providers}
+                  onChange={setProviders}
+                  options={destinations.map((d) => ({ value: d.id, label: d.name }))}
+                />
+              )}
+              <AddDestinationButton
+                agencyId={agencyId}
+                label="Add a provider"
+                onAdded={(destination) =>
+                  setProviders((current) =>
+                    current.includes(destination.id) ? current : [...current, destination.id],
+                  )
+                }
               />
-            )}
+            </div>
           </FormField>
           <FormField label="Expires on" htmlFor="agent-expires" error={shown('expires')}>
             <PillInput

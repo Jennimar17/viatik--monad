@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, FileText, Link2, Paperclip, Upload, X } from 'lucide-react'
+import { Check, CircleAlert, FileText, Link2, Loader2, Paperclip, Upload, X } from 'lucide-react'
 import * as React from 'react'
 
 import { formatUsd, parseUsdInput, toInputString, type Cents } from '@/domain/money'
@@ -93,52 +93,186 @@ export type DraftFile = {
   url?: string
   mimeType?: string
   sizeBytes?: number
+  /** SHA-256 of the stored content, once the file is uploaded. */
+  sha256?: string
+  /** Identifies a file while it belongs to the form. */
+  key?: string
+  /** Set while the file is uploading or after it failed; absent when it is ready. */
+  upload?: 'uploading' | 'failed'
+  /** Why the upload failed, in product language. */
+  uploadError?: string
+  /** False when trying again cannot help (an unsupported or empty file). */
+  retryable?: boolean
 }
 
+/** What a stored file becomes: the fields a command attaches. */
+export type StoredFile = Pick<DraftFile, 'kind' | 'name' | 'mimeType' | 'sizeBytes' | 'sha256'>
+
+/** The fields a command attaches, without the form's own bookkeeping. */
+export const toEvidence = (file: DraftFile) => ({
+  kind: file.kind,
+  name: file.name,
+  url: file.url,
+  mimeType: file.mimeType,
+  sizeBytes: file.sizeBytes,
+  sha256: file.sha256,
+})
+
+/** Why a form must wait for its files, or null when every file is ready. */
+export function pendingUploads(files: DraftFile[]): string | null {
+  if (files.some((f) => f.upload === 'uploading')) return 'Wait for the files to finish uploading.'
+  if (files.some((f) => f.upload === 'failed')) return 'Retry or remove the files that did not upload.'
+  return null
+}
+
+const MAX_FILE_BYTES = 10 * 1024 * 1024
+/** The types the private evidence store accepts. */
+const FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/heic']
+
+const newKey = () =>
+  globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`
+
 /**
- * Evidence and receipt upload: drag and drop, browse, or add a link. Files
- * stay private in the product; only their fingerprints are recorded onchain.
+ * Evidence and receipt upload: drag and drop, browse, or add a link. With
+ * `onUpload`, each file is stored as soon as it is added and the list shows
+ * its progress; files stay private and only their fingerprints are recorded.
  */
 export function EvidenceUploader({
   files,
   onChange,
+  onUpload,
   allowLinks = true,
-  accept = 'application/pdf,image/*',
+  accept = FILE_TYPES.join(','),
   label = 'Drop files here or browse',
-  hint = 'PDF or images, up to 10 MB each. Files stay private — only a fingerprint is recorded.',
+  hint = 'PDF, PNG, JPG, WEBP or HEIC, up to 10 MB each. Files stay private; only a fingerprint is recorded.',
+  maxFiles = 10,
   className,
 }: {
   files: DraftFile[]
-  onChange: (files: DraftFile[]) => void
+  /** A state setter: uploads finish later and update the list as it is then. */
+  onChange: React.Dispatch<React.SetStateAction<DraftFile[]>>
+  /** Stores a file and returns what the operation attaches. Without it, files stay as metadata only. */
+  onUpload?: (file: File) => Promise<StoredFile>
   allowLinks?: boolean
   accept?: string
   label?: string
   hint?: string
+  /** How many items the operation accepts (the server enforces the same cap). */
+  maxFiles?: number
   className?: string
 }) {
   const hintId = React.useId()
+  const errorId = React.useId()
   const [dragging, setDragging] = React.useState(false)
   const [link, setLink] = React.useState('')
+  const [problem, setProblem] = React.useState<string | null>(null)
+  const full = files.length >= maxFiles
+  const fullMessage =
+    maxFiles === 1 ? 'Only one file can be attached.' : `You can attach up to ${maxFiles} files.`
+
+  // Uploads finish after later renders, so they patch the list as it is then
+  // (functional updates), and stop once the form is gone. Files are kept
+  // until stored, so a failure can be retried.
+  const alive = React.useRef(false)
+  React.useEffect(() => {
+    alive.current = true
+    return () => {
+      alive.current = false
+    }
+  }, [])
+  const sources = React.useRef(new Map<string, File>())
+  const update = (key: string, patch: (file: DraftFile) => DraftFile) => {
+    if (!alive.current) return
+    // A file removed meanwhile is not brought back.
+    onChange((list) =>
+      list.some((f) => f.key === key) ? list.map((f) => (f.key === key ? patch(f) : f)) : list,
+    )
+  }
+  const startUpload = (key: string, file: File) => {
+    if (!onUpload) return
+    onUpload(file).then(
+      (stored) => {
+        sources.current.delete(key)
+        update(key, () => ({ ...stored, key }))
+      },
+      (error: unknown) => {
+        const code = (error as { code?: unknown } | null)?.code
+        update(key, (f) => ({
+          ...f,
+          upload: 'failed',
+          uploadError: error instanceof Error ? error.message : `${file.name} could not be uploaded.`,
+          retryable: code !== 'invalid_file' && code !== 'insecure_context',
+        }))
+      },
+    )
+  }
 
   const addFiles = (list: FileList | null) => {
     if (!list) return
-    const next = Array.from(list).map((file) => ({
-      kind: 'file' as const,
-      name: file.name,
-      mimeType: file.type,
-      sizeBytes: file.size,
-    }))
-    onChange([...files, ...next])
+    const problems: string[] = []
+    const accepted = Array.from(list).filter((file) => {
+      if (file.size === 0) {
+        problems.push(`${file.name} is empty.`)
+        return false
+      }
+      if (file.size > MAX_FILE_BYTES) {
+        problems.push(`${file.name} is larger than 10 MB.`)
+        return false
+      }
+      // Drops bypass the picker's filter, so the type is checked here too.
+      if (!FILE_TYPES.includes(file.type)) {
+        problems.push(`${file.name} is not a PDF, PNG, JPG, WEBP or HEIC file.`)
+        return false
+      }
+      return true
+    })
+    const room = Math.max(0, maxFiles - files.length)
+    if (accepted.length > room) problems.push(fullMessage)
+    const added = accepted.slice(0, room).map((file) => {
+      const key = newKey()
+      sources.current.set(key, file)
+      const draft: DraftFile = {
+        kind: 'file',
+        name: file.name.slice(0, 300),
+        mimeType: file.type,
+        sizeBytes: file.size,
+        key,
+        upload: onUpload ? 'uploading' : undefined,
+      }
+      return { file, key, draft }
+    })
+    setProblem(problems[0] ?? null)
+    if (added.length === 0) return
+    onChange((list) => [...list, ...added.map((a) => a.draft)])
+    for (const { file, key } of added) startUpload(key, file)
+  }
+
+  const retry = (key: string) => {
+    const file = sources.current.get(key)
+    if (!file) return
+    update(key, (f) => ({ ...f, upload: 'uploading', uploadError: undefined }))
+    startUpload(key, file)
+  }
+
+  const remove = (removed: DraftFile) => {
+    if (removed.key) sources.current.delete(removed.key)
+    setProblem(null)
+    onChange((list) =>
+      list.filter((f) => f !== removed && (removed.key === undefined || f.key !== removed.key)),
+    )
   }
 
   return (
     <div className={cn('flex flex-col gap-3', className)}>
       {/* The label is the drop zone: clicking it opens the picker and the
           (visually hidden) file input keeps native keyboard and screen-reader support. */}
+      {/* When full it stays a drop target: a file dropped on it is refused
+          with a message instead of the browser opening it over the form. */}
       <label
         onDragOver={(event) => {
           event.preventDefault()
-          setDragging(true)
+          if (full) event.dataTransfer.dropEffect = 'none'
+          else setDragging(true)
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={(event) => {
@@ -147,24 +281,42 @@ export function EvidenceUploader({
           addFiles(event.dataTransfer.files)
         }}
         className={cn(
-          'flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-border px-6 py-8 text-center transition-colors hover:border-foreground/40 hover:bg-muted/30 focus-within:ring-2 focus-within:ring-ring',
+          'flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-border px-6 py-8 text-center transition-colors focus-within:ring-2 focus-within:ring-ring hover:border-foreground/40 hover:bg-muted/30',
           dragging && 'border-foreground/60 bg-muted/40',
+          full && 'cursor-not-allowed opacity-50 hover:border-border hover:bg-transparent',
         )}
       >
         <Upload className="size-5 text-subtle" aria-hidden="true" />
         <span className="block text-sm font-medium text-foreground">{label}</span>
         <span id={hintId} className="block max-w-sm text-xs text-pretty text-subtle">
-          {hint}
+          {full ? (maxFiles === 1 ? 'Remove the file to choose another.' : `Up to ${maxFiles} files.`) : hint}
         </span>
+        {/* Not `disabled` when full: that would drop keyboard focus right after
+            the last file is chosen. The picker just does not open. */}
         <input
           type="file"
-          multiple
+          multiple={maxFiles > 1}
           accept={accept}
-          aria-describedby={hintId}
+          aria-disabled={full || undefined}
+          aria-describedby={problem ? `${hintId} ${errorId}` : hintId}
           className="sr-only"
-          onChange={(event) => addFiles(event.target.files)}
+          onClick={(event) => {
+            if (!full) return
+            event.preventDefault()
+            setProblem(fullMessage)
+          }}
+          onChange={(event) => {
+            addFiles(event.target.files)
+            // Choosing the same file again after removing it must fire a change.
+            event.target.value = ''
+          }}
         />
       </label>
+      {problem ? (
+        <p id={errorId} role="alert" className="text-xs text-destructive">
+          {problem}
+        </p>
+      ) : null}
 
       {allowLinks ? (
         <div className="flex gap-2">
@@ -180,9 +332,12 @@ export function EvidenceUploader({
           </div>
           <button
             type="button"
-            disabled={!/^https?:\/\/\S+\.\S+/.test(link)}
+            disabled={full || !/^https?:\/\/\S+\.\S+/.test(link.trim()) || link.trim().length > 2000}
             onClick={() => {
-              onChange([...files, { kind: 'link', name: link.replace(/^https?:\/\//, ''), url: link }])
+              const url = link.trim()
+              // The shown name is the link without its scheme, kept to the 300 characters a name allows.
+              const name = url.replace(/^https?:\/\//i, '').slice(0, 300)
+              onChange((list) => [...list, { kind: 'link', name, url, key: newKey() }])
               setLink('')
             }}
             className="h-10 rounded-full border border-border px-4 text-sm font-medium transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-40"
@@ -193,28 +348,53 @@ export function EvidenceUploader({
       ) : null}
 
       {files.length > 0 ? (
-        <ul className="flex flex-col divide-y divide-border rounded-xl border border-border">
+        <ul
+          className="flex flex-col divide-y divide-border rounded-xl border border-border"
+          aria-live="polite"
+        >
           {files.map((file, index) => (
-            <li key={`${file.name}-${index}`} className="flex items-center gap-3 px-4 py-2.5">
-              {file.kind === 'link' ? (
-                <Link2 className="size-4 shrink-0 text-subtle" />
-              ) : file.kind === 'note' ? (
-                <Paperclip className="size-4 shrink-0 text-subtle" />
-              ) : (
-                <FileText className="size-4 shrink-0 text-subtle" />
-              )}
-              <span className="min-w-0 flex-1 truncate text-sm">{file.name}</span>
-              {file.sizeBytes ? (
-                <span className="text-xs text-subtle">{formatBytes(file.sizeBytes)}</span>
+            <li key={file.key ?? `${file.name}-${index}`} className="flex flex-col gap-1 px-4 py-2.5">
+              <div className="flex items-center gap-3">
+                {file.upload === 'uploading' ? (
+                  <Loader2 className="size-4 shrink-0 animate-spin text-subtle" aria-hidden="true" />
+                ) : file.upload === 'failed' ? (
+                  <CircleAlert className="size-4 shrink-0 text-destructive" aria-hidden="true" />
+                ) : file.kind === 'link' ? (
+                  <Link2 className="size-4 shrink-0 text-subtle" />
+                ) : file.kind === 'note' ? (
+                  <Paperclip className="size-4 shrink-0 text-subtle" />
+                ) : (
+                  <FileText className="size-4 shrink-0 text-subtle" />
+                )}
+                <span className="min-w-0 flex-1 truncate text-sm">{file.name}</span>
+                {file.upload === 'uploading' ? (
+                  <span className="text-xs text-subtle">Uploading…</span>
+                ) : file.sizeBytes ? (
+                  <span className="text-xs text-subtle">{formatBytes(file.sizeBytes)}</span>
+                ) : null}
+                {file.upload === 'failed' && file.key && file.retryable !== false ? (
+                  <button
+                    type="button"
+                    onClick={() => retry(file.key as string)}
+                    className="rounded-full px-2 py-1 text-xs font-medium text-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
+                    Retry
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  aria-label={`Remove ${file.name}`}
+                  onClick={() => remove(file)}
+                  className="inline-flex size-7 items-center justify-center rounded-full text-subtle hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+              {file.upload === 'failed' ? (
+                <p className="pl-7 text-xs text-pretty text-destructive">
+                  {file.uploadError ?? 'This file could not be uploaded.'}
+                </p>
               ) : null}
-              <button
-                type="button"
-                aria-label={`Remove ${file.name}`}
-                onClick={() => onChange(files.filter((_, i) => i !== index))}
-                className="inline-flex size-7 items-center justify-center rounded-full text-subtle hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              >
-                <X className="size-3.5" />
-              </button>
             </li>
           ))}
         </ul>

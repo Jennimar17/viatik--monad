@@ -7,7 +7,7 @@ import * as React from 'react'
 
 import { ButtonLink } from '@/components/app/button-link'
 import { EvidenceList } from '@/components/app/funding-parts'
-import { ReceiptDetailsButton } from '@/components/app/receipt-details'
+import { ReceiptDetailsButton, trancheRequestRecord } from '@/components/app/receipt-details'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
 import { useBottomBar } from '@/components/app/shell/app-shell'
@@ -22,6 +22,7 @@ import { FormActions } from '@/components/viatik/forms'
 import { KeyValueList, PageHeader, Panel } from '@/components/viatik/layout'
 import { PersonAvatar } from '@/components/viatik/people'
 import { StatusBadge } from '@/components/viatik/status'
+import { VerifiedDetailsButton } from '@/components/viatik/verified-details-drawer'
 import { useCommand, useViatikState } from '@/data/react'
 import { add, formatUsd, subtract } from '@/domain/money'
 import { accountName, receiptFor, userName } from '@/domain/queries'
@@ -34,7 +35,7 @@ type ChangesMode = 'changes' | 'reject'
 
 export default function MilestoneReviewPage() {
   const { agreementId, milestoneId } = useParams<{ agreementId: string; milestoneId: string }>()
-  const { state } = useViatikState()
+  const { state, userId } = useViatikState()
   const { portfolioId } = useRole()
   const href = useHref()
   const { can } = usePermissions()
@@ -53,9 +54,19 @@ export default function MilestoneReviewPage() {
   const reviewable = milestone?.status === 'ready_for_review'
   const canDecide =
     reviewable &&
+    agreement?.status === 'active' &&
     can('release_tranche', {
       createdBy: tranche?.requestedBy ? { kind: 'user', userId: tranche.requestedBy } : undefined,
     })
+  // Reviewable but not decidable: say why instead of showing a form with no buttons.
+  const blockedReason =
+    !reviewable || canDecide
+      ? null
+      : agreement?.status !== 'active'
+        ? 'This agreement is paused. Resume it to release or return this milestone.'
+        : tranche?.requestedBy === userId
+          ? 'You submitted this evidence as the Agency’s admin, so another Investor of the portfolio has to decide.'
+          : 'You cannot decide on this milestone.'
   // The action bar sits at the bottom on phones while a decision is open.
   useBottomBar(canDecide)
   if (!milestone || !agreement || !tranche) {
@@ -71,13 +82,16 @@ export default function MilestoneReviewPage() {
   const agencyLabel = agency?.name ?? 'the Agency'
   const capital = agreementCapital(state, agreement.id)
   const covered = capital.released + tranche.amount <= capital.funded
+  // The Agency picks the account when it submits evidence; until then there is none.
   const destination = tranche.destinationAccountId
     ? accountName(state, tranche.destinationAccountId)
-    : 'Operations'
+    : undefined
   // A decided milestone shows the criteria the Investor confirmed at the time.
   const checked = milestone.decision ? milestone.decision.checkedCriteria : draftChecked
   const allChecked = checked.length === milestone.acceptanceCriteria.length
   const releaseReceipt = receiptFor(state, tranche.receiptId)
+  // What the ledger recorded when the evidence was submitted with the tranche request.
+  const submission = milestone.submissionVerified ? trancheRequestRecord(state, tranche) : undefined
   const rejecting = (changesMode ?? lastChangesMode) === 'reject'
 
   const openChanges = (mode: ChangesMode) => {
@@ -91,7 +105,9 @@ export default function MilestoneReviewPage() {
       description={
         reviewable
           ? 'Check the criteria against the evidence, then decide.'
-          : 'This milestone has been decided.'
+          : milestone.decision
+            ? 'This milestone has been decided.'
+            : 'Waiting for the Agency to submit evidence.'
       }
     >
       <div className="flex flex-col gap-5">
@@ -99,9 +115,16 @@ export default function MilestoneReviewPage() {
           <span className="text-xs text-subtle">{tranche.name} · release amount</span>
           <Amount value={tranche.amount} size="xl" />
           <span className="text-sm text-muted-foreground">
-            To {agencyLabel} · {destination}
+            To {agencyLabel}
+            {destination ? ` · ${destination}` : ''}
           </span>
         </div>
+
+        {blockedReason ? (
+          <p className="rounded-lg border border-warning/30 bg-warning-soft px-3 py-2.5 text-sm text-pretty">
+            {blockedReason}
+          </p>
+        ) : null}
 
         {reviewable ? (
           <div
@@ -123,7 +146,7 @@ export default function MilestoneReviewPage() {
           </div>
         ) : null}
 
-        <fieldset className="flex flex-col gap-3" disabled={!reviewable}>
+        <fieldset className="flex flex-col gap-3" disabled={!canDecide}>
           <legend className="mb-2 text-sm font-medium">Acceptance criteria</legend>
           {milestone.acceptanceCriteria.map((criterion, index) => {
             const id = `criterion-${index}`
@@ -132,7 +155,7 @@ export default function MilestoneReviewPage() {
                 <Checkbox
                   id={id}
                   checked={checked.includes(index)}
-                  disabled={!reviewable}
+                  disabled={!canDecide}
                   onCheckedChange={(value) =>
                     setDraftChecked((prev) => (value ? [...prev, index] : prev.filter((i) => i !== index)))
                   }
@@ -152,7 +175,7 @@ export default function MilestoneReviewPage() {
           </p>
         </fieldset>
 
-        {reviewable ? (
+        {canDecide ? (
           <div className="flex flex-col gap-2">
             <Label htmlFor="decision-note">Note to the Agency (optional)</Label>
             <Textarea
@@ -268,6 +291,9 @@ export default function MilestoneReviewPage() {
                 Evidence fingerprint {milestone.evidenceHash.slice(0, 18)}…
               </p>
             ) : null}
+            {submission ? (
+              <VerifiedDetailsButton record={submission} label="Verified submission" className="mt-3 w-fit" />
+            ) : null}
           </Panel>
 
           <Panel title="Agreement status">
@@ -278,7 +304,10 @@ export default function MilestoneReviewPage() {
                 { label: 'Released so far', value: <Amount value={capital.released} size="sm" /> },
                 { label: 'In the Funding Vault', value: <Amount value={capital.inFundingVault} size="sm" /> },
                 { label: 'Requested by', value: userName(state, tranche.requestedBy) },
-                { label: 'Destination account', value: destination },
+                {
+                  label: 'Destination account',
+                  value: destination ?? 'Chosen by the Agency when it submits evidence',
+                },
               ]}
             />
           </Panel>
@@ -309,10 +338,10 @@ export default function MilestoneReviewPage() {
         title="Release tranche"
         description={`${tranche.name} · ${milestone.title}`}
         summary={{
-          what: `The milestone is approved and ${tranche.name} moves from the Funding Vault to ${agencyLabel}’s ${destination} account.`,
+          what: `The milestone is approved and ${tranche.name} moves from the Funding Vault to ${agencyLabel}’s ${destination ?? 'Operations'} account.`,
           amount: tranche.amount,
           from: `${agencyLabel} Funding Vault`,
-          to: `${agencyLabel} · ${destination}`,
+          to: `${agencyLabel} · ${destination ?? 'Operations'}`,
           reversible:
             'Cannot be undone from Viatik. Once released, the capital is available for the Agency to operate.',
           policy:
@@ -324,7 +353,7 @@ export default function MilestoneReviewPage() {
         onConfirm={() => release.run({ trancheId: tranche.id, checkedCriteria: checked, note })}
         success={{
           title: 'Funding released',
-          body: `${formatUsd(tranche.amount, { withCode: true })} is now available in the ${agencyLabel} ${destination} account.`,
+          body: `${formatUsd(tranche.amount, { withCode: true })} is now available in the ${agencyLabel} ${destination ?? 'Operations'} account.`,
           actions: (
             <>
               <ButtonLink href={href(`funding/${agreement.id}`)} size="pill-sm">

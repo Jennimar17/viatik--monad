@@ -9,5 +9,5 @@ export type NetworkInfo = { name: string; chainId: number; explorer: string }
 
 export const MONAD_NETWORKS: Record<MonadNetwork, NetworkInfo> = {
   mainnet: { name: 'Monad', chainId: 143, explorer: 'https://monadscan.com' },
-  testnet: { name: 'Monad Testnet', chainId: 10_143, explorer: 'https://testnet.monadexplorer.com' },
+  testnet: { name: 'Monad Testnet', chainId: 10_143, explorer: 'https://testnet.monadvision.com' },
 }

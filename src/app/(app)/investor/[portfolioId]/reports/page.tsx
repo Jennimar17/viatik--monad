@@ -25,7 +25,7 @@ import {
 } from '@/domain/selectors'
 import type { SpendingCategory } from '@/domain/types'
 import { seriesColor, seriesKey } from '@/lib/chart-colors'
-import { pluralize } from '@/lib/format'
+import { csvCell, pluralize } from '@/lib/format'
 
 const RANGE_OPTIONS = [
   { value: '3', label: 'Last 3 months' },
@@ -129,9 +129,7 @@ export default function ReportsPage() {
       r.onTime,
       String(r.budgetUse),
     ])
-    const csv = [header, ...lines]
-      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-      .join('\r\n')
+    const csv = [header, ...lines].map((row) => row.map(csvCell).join(',')).join('\r\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
     const link = document.createElement('a')
     link.href = url

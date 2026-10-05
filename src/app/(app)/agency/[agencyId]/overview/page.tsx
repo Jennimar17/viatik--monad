@@ -77,6 +77,7 @@ export default function AgencyOverviewPage() {
     now,
     6,
   )
+  const hasSpend = spend.some((row) => budgetSeries.some((s) => Number(row[s.key] ?? 0) > 0))
   const monthSpendTrend = spend.map((row) =>
     budgetSeries.reduce((sum, s) => sum + Number(row[s.key] ?? 0), 0),
   )
@@ -279,7 +280,26 @@ export default function AgencyOverviewPage() {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Panel className="xl:col-span-2" title="Spending by budget" description="Last six months.">
-          <MoneyBarChart data={spend} series={budgetSeries} className="h-72" />
+          {hasSpend ? (
+            <MoneyBarChart data={spend} series={budgetSeries} className="h-72" />
+          ) : (
+            <EmptyState
+              compact
+              title="No spending yet"
+              description={
+                budgets.length === 0
+                  ? 'Create a budget to start tracking spend by month.'
+                  : 'Payments from your budgets will show here by month.'
+              }
+              action={
+                budgets.length === 0 && can('create_budget') ? (
+                  <ButtonLink href={href('budgets/new')} size="pill-sm" variant="outline">
+                    Create budget
+                  </ButtonLink>
+                ) : undefined
+              }
+            />
+          )}
         </Panel>
         <Panel
           title="Budget health"

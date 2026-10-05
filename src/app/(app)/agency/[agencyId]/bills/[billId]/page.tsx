@@ -9,6 +9,7 @@ import { ActivityList } from '@/components/app/activity'
 import { ButtonLink } from '@/components/app/button-link'
 import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
 import { receiptHref } from '@/components/app/nav'
+import { OpenFileButton } from '@/components/app/open-file'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
 import { useHref, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
@@ -79,6 +80,10 @@ export default function BillDetailPage() {
   const payingNow = when === 'now'
   const scheduledIso = fromDateInput(scheduledFor)
   const insufficient = available < bill.amount
+  // Whether any source could pay it; if none can, point to where money comes from.
+  const anyCovers =
+    accounts.some((a) => accountBalance(state, a.id) >= bill.amount) ||
+    budgets.some((b) => budgetUsage(state, b, now).available >= bill.amount)
   const scheduleError =
     !payingNow && scheduledIso && scheduledIso <= now ? 'Choose a date in the future.' : undefined
 
@@ -100,9 +105,10 @@ export default function BillDetailPage() {
           </>
         }
         actions={
-          bill.status === 'to_pay' ? (
+          bill.status === 'to_pay' || bill.status === 'scheduled' ? (
             <Button size="pill" onClick={() => setSheet('pay')}>
-              <Send data-icon="inline-start" /> Pay bill
+              <Send data-icon="inline-start" />{' '}
+              {bill.status === 'scheduled' ? 'Pay now or reschedule' : 'Pay bill'}
             </Button>
           ) : bill.status === 'paid' ? (
             <Button size="pill" onClick={() => setSheet('reconcile')}>
@@ -153,6 +159,11 @@ export default function BillDetailPage() {
               {bill.document.name} · fingerprint {bill.document.sha256.slice(0, 16)}…
             </p>
           </div>
+          {bill.document.kind === 'file' ? (
+            <OpenFileButton evidence={bill.document} className="mt-3 text-sm font-medium text-foreground">
+              Open the original document
+            </OpenFileButton>
+          ) : null}
         </Panel>
 
         <div className="flex flex-col gap-6">
@@ -242,7 +253,8 @@ export default function BillDetailPage() {
             : 'Agency account payment, authorized by an Agency Admin.',
         }}
         confirmLabel={payingNow ? 'Pay bill' : 'Schedule payment'}
-        disabled={!accountId || (payingNow ? insufficient : !scheduledIso || Boolean(scheduleError))}
+        // A scheduled payment needs the money too: nothing pays it later if it is not there.
+        disabled={!accountId || insufficient || (!payingNow && (!scheduledIso || Boolean(scheduleError)))}
         phase={pay.phase}
         error={pay.error}
         onConfirm={() =>
@@ -270,11 +282,23 @@ export default function BillDetailPage() {
             label="Pay from budget"
             htmlFor="bill-budget"
             error={
-              payingNow && insufficient
+              insufficient && anyCovers
                 ? `Only ${formatUsd(available, { withCode: true })} available. Choose another source.`
                 : undefined
             }
-            hint={`${formatUsd(available, { withCode: true })} available`}
+            hint={
+              insufficient ? (
+                <>
+                  No account or budget holds {formatUsd(bill.amount, { withCode: true })} yet. Released
+                  funding lands in the Operations account first.{' '}
+                  <Link href={href('funding')} className="text-foreground underline-offset-4 hover:underline">
+                    Go to Funding
+                  </Link>
+                </>
+              ) : (
+                `${formatUsd(available, { withCode: true })} available`
+              )
+            }
           >
             <SimpleSelect
               id="bill-budget"

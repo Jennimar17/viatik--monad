@@ -1,3 +1,4 @@
+import { evidenceSetHash } from '../evidence'
 import { budgetTemplate } from '../labels'
 import { cents, usd, type Cents } from '../money'
 import { evaluatePolicy } from '../policy'
@@ -1755,7 +1756,7 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
       }),
     ],
   })
-  m2.evidenceHash = `0x${m2.evidence.map((e) => e.sha256.slice(0, 8)).join('')}`.slice(0, 66)
+  m2.evidenceHash = evidenceSetHash(m2.evidence)
   Object.assign(tranche(DEMO.tranches.arc2), {
     status: 'under_review',
     requestedAt: submittedAt,

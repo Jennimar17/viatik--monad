@@ -4,6 +4,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { ArrowUpRight, Info, Landmark, Lock, Plus, ShieldCheck, Vault as VaultIcon } from 'lucide-react'
 import * as React from 'react'
 
+import { BalanceCheckNote } from '@/components/app/balance-check'
 import { ButtonLink } from '@/components/app/button-link'
 import { locationLabel, movementLabel } from '@/components/app/capital-trail-panel'
 import { useReceiptDrawer } from '@/components/app/receipt-details'
@@ -18,7 +19,7 @@ import { KpiTile } from '@/components/viatik/finance'
 import { HairlineGrid, KeyValueList, PageHeader, Panel } from '@/components/viatik/layout'
 import { CopyButton } from '@/components/viatik/operation'
 import { StatusBadge, Tag } from '@/components/viatik/status'
-import { useViatikState } from '@/data/react'
+import { useLedger, useViatik, useViatikState } from '@/data/react'
 import { pseudoAddress } from '@/domain/ids'
 import { vaultKindLabel } from '@/domain/labels'
 import { percentOf, sum, ZERO } from '@/domain/money'
@@ -42,6 +43,7 @@ export default function VaultsPage() {
   const { portfolioId } = useRole()
   const href = useHref()
   const receipts = useReceiptDrawer()
+  const { checks } = useLedger()
   const [assetVault, setAssetVault] = React.useState<Vault | null>(null)
   const [assetOpen, setAssetOpen] = React.useState(false)
 
@@ -151,6 +153,7 @@ export default function VaultsPage() {
             action={<Tag>{portfolioVault.asset}</Tag>}
           >
             <Amount value={available ?? ZERO} size="xl" />
+            <BalanceCheckNote check={checks?.check(portfolioVault.id)} className="mt-2" />
             <KeyValueList
               className="mt-4"
               dense
@@ -208,6 +211,7 @@ export default function VaultsPage() {
               action={<VaultIcon className="size-4 text-subtle" aria-hidden="true" />}
             >
               <Amount value={vaultBalance(state, v.id)} size="lg" />
+              <BalanceCheckNote check={checks?.check(v.id)} className="mt-1" />
               <p className="mt-2 text-xs text-subtle">
                 {capital
                   ? `${percentOf(capital.funded, capital.committed)}% of the commitment funded · ${percentOf(capital.released, capital.committed)}% released`
@@ -326,9 +330,28 @@ function VaultAssetSheet({
   onOpenChange: (open: boolean) => void
 }) {
   const mobile = useIsMobile()
+  const { mode } = useViatik()
+  const { view, checks } = useLedger()
   const network = networkInfo(publicEnv.NEXT_PUBLIC_MONAD_NETWORK)
   if (!vault) return null
-  const address = pseudoAddress(`vault:${vault.id}`)
+  // On Monad every vault is a balance inside the ledger contract, under its own ledger id. The demo
+  // shows a stand-in address; real accounts on the demo ledger have no address yet. While a real
+  // account's ledger status is loading (or failed), nothing is claimed either way.
+  const monad = view?.settlement === 'monad' ? view : null
+  const unknown = mode === 'account' && !view
+  const address = monad ? monad.contract : mode === 'demo' ? pseudoAddress(`vault:${vault.id}`) : null
+  const onLedger = monad?.locations.find((location) => location.id === vault.id)
+  const check = checks?.check(vault.id)
+  const link = (path: string, text: string) => (
+    <a
+      href={`${network.explorer}/${path}`}
+      target="_blank"
+      rel="noreferrer"
+      className="underline-offset-4 hover:underline"
+    >
+      {text}
+    </a>
+  )
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -342,22 +365,82 @@ function VaultAssetSheet({
         <div className="flex flex-col gap-5 p-5">
           <KeyValueList
             items={[
-              { label: 'Asset', value: `${vault.asset} (6 decimals)` },
-              { label: 'Network', value: `${network.name} · chain ${network.chainId}` },
               {
-                label: 'Vault address',
-                value: (
-                  <span className="inline-flex items-center gap-1 font-mono text-xs">
-                    {shortHash(address, 10, 6)}
-                    <CopyButton value={address} label="Copy vault address" />
+                label: 'Asset',
+                value: monad ? (
+                  <span className="inline-flex items-center gap-1">
+                    TestUSD (6 decimals, no value)
+                    {monad.token ? (
+                      <span className="font-mono text-xs">
+                        · {link(`address/${monad.token}`, shortHash(monad.token, 8, 4))}
+                      </span>
+                    ) : null}
                   </span>
+                ) : (
+                  `${vault.asset} (6 decimals)`
                 ),
               },
+              { label: 'Network', value: `${network.name} · chain ${network.chainId}` },
+              {
+                label: monad ? 'Ledger contract' : 'Vault address',
+                value: address ? (
+                  <span className="inline-flex items-center gap-1 font-mono text-xs">
+                    {monad
+                      ? link(`address/${address}`, shortHash(address, 10, 6))
+                      : shortHash(address, 10, 6)}
+                    <CopyButton
+                      value={address}
+                      label={monad ? 'Copy ledger contract address' : 'Copy vault address'}
+                    />
+                  </span>
+                ) : unknown ? (
+                  'Loading…'
+                ) : monad ? (
+                  'Not configured on this deployment'
+                ) : (
+                  'Assigned when settlement on Monad is switched on'
+                ),
+              },
+              ...(onLedger
+                ? [
+                    {
+                      label: 'Ledger id',
+                      value: (
+                        <span className="inline-flex items-center gap-1 font-mono text-xs">
+                          {shortHash(onLedger.ledgerId, 10, 6)}
+                          <CopyButton value={onLedger.ledgerId} label="Copy ledger id" />
+                        </span>
+                      ),
+                    },
+                  ]
+                : []),
               {
                 label: 'Custody',
-                value: 'Smart contract vault; only funding contracts can move capital out',
+                value: monad
+                  ? 'A balance inside the ledger contract; only its rules move capital out. Tokens sent to the contract directly are not credited: deposits go through Add funds'
+                  : 'Smart contract vault; only funding contracts can move capital out',
               },
-              { label: 'Ledger', value: 'Simulated in this demo; the Monad deployment follows' },
+              {
+                label: 'Ledger',
+                value: monad
+                  ? `Settled on ${network.name}: every movement is a transaction you can open from its receipt`
+                  : unknown
+                    ? 'Loading…'
+                    : mode === 'demo'
+                      ? 'Simulated in this demo; the Monad deployment follows'
+                      : 'Test environment: limits are enforced by Viatik; settlement on Monad testnet comes next',
+              },
+              ...(check
+                ? [
+                    {
+                      label: 'Balance',
+                      value:
+                        check.status === 'verified'
+                          ? `Matches Monad${check.block !== null ? ` at block ${check.block.toLocaleString('en-US')}` : ''}`
+                          : 'Pending verification: Monad has not confirmed it yet',
+                    },
+                  ]
+                : []),
               {
                 label: 'Explorer',
                 value: (
@@ -374,7 +457,9 @@ function VaultAssetSheet({
             ]}
           />
           <p className="text-xs text-pretty text-subtle">
-            Amounts everywhere else in Viatik are shown in USD. USDC settles them one to one.
+            {monad
+              ? 'Amounts everywhere else in Viatik are shown in USD. On testnet, TestUSD stands in for USDC one to one.'
+              : 'Amounts everywhere else in Viatik are shown in USD. USDC settles them one to one.'}
           </p>
         </div>
       </SheetContent>

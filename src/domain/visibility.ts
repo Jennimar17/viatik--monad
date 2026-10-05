@@ -77,6 +77,10 @@ export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
     if (portfolioIds.has(m.portfolioId)) return true
     if (m.agencyId && memberOnly(m.agencyId)) {
       if (m.refId && paymentIds.has(m.refId)) return true
+      // Money the Member received or sent back themselves (e.g. returning unused funds).
+      const mine = (end: typeof m.from) =>
+        end.kind === 'recipient' && end.recipient.kind === 'member' && end.recipient.userId === userId
+      if (mine(m.from) || mine(m.to)) return true
       if (m.from.kind === 'budget' && budgetIds.has(m.from.budgetId)) return true
       if (m.to.kind === 'budget' && budgetIds.has(m.to.budgetId)) return true
     }
@@ -132,7 +136,8 @@ export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
     reconciliations: state.reconciliations.filter((r) => fullAgencyIds.has(r.agencyId)),
     receipts: state.receipts.filter(
       (r) =>
-        receiptIds.has(r.id) ||
+        // Budget allocations name the Agency's accounts, which a Member does not see.
+        (receiptIds.has(r.id) && !(r.kind === 'allocation' && memberOnly(r.agencyId))) ||
         (r.agencyId !== undefined && fullAgencyIds.has(r.agencyId)) ||
         (!r.agencyId && portfolioIds.has(r.portfolioId)),
     ),

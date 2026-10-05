@@ -35,6 +35,8 @@ export type PolicyInput = {
   request: PolicyRequest
   usage: PolicyUsage
   now: ISODate
+  /** Who the request is for, when someone else reads the result (an approver); otherwise it is worded for the requester. */
+  holderName?: string
 }
 
 const fmt = (value: Cents) => formatUsd(value, { withCode: true })
@@ -45,7 +47,8 @@ const fmt = (value: Cents) => formatUsd(value, { withCode: true })
  * answer before anything is submitted.
  */
 export function evaluatePolicy(input: PolicyInput): PolicyDecision {
-  const { budget, allowance, agent, request, usage, now } = input
+  const { budget, allowance, agent, request, usage, now, holderName } = input
+  const whose = holderName ? `${holderName}'s` : 'your'
   const checks: PolicyCheck[] = []
   const push = (check: PolicyCheck) => checks.push(check)
 
@@ -73,8 +76,8 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
     passed: hasAccess,
     blocking: true,
     message: hasAccess
-      ? 'You have spending access to this budget.'
-      : 'You do not have spending access to this budget.',
+      ? `${holderName ? `${holderName} has` : 'You have'} spending access to this budget.`
+      : `${holderName ? `${holderName} does` : 'You do'} not have spending access to this budget.`,
   })
 
   if (agent) {
@@ -117,23 +120,27 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
     passed: withinPerOperation,
     blocking: true,
     message: withinPerOperation
-      ? `Within your per-operation limit of ${fmt(perOperationLimit)}.`
-      : `The amount exceeds your per-operation limit of ${fmt(perOperationLimit)}. Reduce the amount or request a budget change.`,
+      ? `Within ${whose} per-operation limit of ${fmt(perOperationLimit)}.`
+      : `The amount exceeds ${whose} per-operation limit of ${fmt(perOperationLimit)}.${holderName ? '' : ' Reduce the amount or request a budget change.'}`,
   })
 
   if (allowance) {
-    const afterRequest = usage.holderSpentThisPeriod + request.amount
-    const withinPeriod =
-      afterRequest <= allowance.periodLimit &&
-      usage.budgetSpentThisPeriod + request.amount <= budget.periodLimit
-    const remaining = Math.max(0, allowance.periodLimit - usage.holderSpentThisPeriod) as Cents
+    const withinHolder = usage.holderSpentThisPeriod + request.amount <= allowance.periodLimit
+    const withinBudget = usage.budgetSpentThisPeriod + request.amount <= budget.periodLimit
+    const holderLeft = Math.max(0, allowance.periodLimit - usage.holderSpentThisPeriod) as Cents
+    const budgetLeft = Math.max(0, budget.periodLimit - usage.budgetSpentThisPeriod) as Cents
+    const noun = periodNoun(budget.period)
+    // Say which limit ran out: the holder's allowance or the whole budget's.
     push({
       rule: 'period_limit',
-      passed: withinPeriod,
+      passed: withinHolder && withinBudget,
       blocking: true,
-      message: withinPeriod
-        ? `Within your ${periodNoun(budget.period)} limit. ${fmt(remaining)} left before this request.`
-        : `The amount exceeds what is left of your ${periodNoun(budget.period)} limit (${fmt(remaining)}).`,
+      message:
+        withinHolder && withinBudget
+          ? `Within ${whose} ${noun} limit. ${fmt(holderLeft)} left before this request.`
+          : !withinHolder
+            ? `The amount exceeds what is left of ${whose} ${noun} limit (${fmt(holderLeft)}).`
+            : `The amount exceeds what is left of the budget's ${noun} limit (${fmt(budgetLeft)}).`,
     })
   }
 
@@ -193,8 +200,9 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
   return { outcome, checks, reason, evaluatedAt: now }
 }
 
+/** An allowance without a per-operation limit of its own (unset or 0) follows the budget's, as onchain. */
 function minDefined(a: Cents, b: Cents | undefined): Cents {
-  return b === undefined ? a : (Math.min(a, b) as Cents)
+  return !b ? a : (Math.min(a, b) as Cents)
 }
 
 export function periodNoun(period: Budget['period']): string {

@@ -1,9 +1,10 @@
 import { cents, clampToZero, sum } from './money'
-import { budgetUsage } from './selectors'
+import { budgetUsage, committedAt } from './selectors'
 import type {
   Actor,
   AllowanceHolder,
   Bill,
+  Evidence,
   FundingAgreement,
   Id,
   PaymentRecipient,
@@ -32,6 +33,28 @@ export const accountName = (state: ViatikState, id: Id | undefined) =>
 export const destinationName = (state: ViatikState, id: Id | undefined) =>
   state.destinations.find((d) => d.id === id)?.name ?? 'Payment destination'
 
+/** A piece of evidence by id, wherever it is attached (milestones, bills, expenses, requests). */
+export function findEvidence(state: ViatikState, evidenceId: Id): Evidence | undefined {
+  for (const milestone of state.milestones) {
+    const found = milestone.evidence.find((e) => e.id === evidenceId)
+    if (found) return found
+  }
+  for (const bill of state.bills) if (bill.document.id === evidenceId) return bill.document
+  for (const expense of state.expenses) if (expense.receipt?.id === evidenceId) return expense.receipt
+  for (const request of state.requests) {
+    const found = request.attachments.find((e) => e.id === evidenceId)
+    if (found) return found
+  }
+  return undefined
+}
+
+/** The account released funding and returned money land in by default: the Agency's active Operations account. */
+export function activeOperationsAccount(state: ViatikState, agencyId: Id) {
+  return state.accounts.find(
+    (a) => a.agencyId === agencyId && a.template === 'operations' && a.status === 'active',
+  )
+}
+
 export function actorName(state: ViatikState, actor: Actor): string {
   if (actor.kind === 'user') return userName(state, actor.userId)
   if (actor.kind === 'ai_agent') return state.agents.find((a) => a.id === actor.agentId)?.name ?? 'Automation'
@@ -57,9 +80,19 @@ export function activeAgreement(state: ViatikState, agencyId: Id): FundingAgreem
   )
 }
 
+/**
+ * The agreement whose spending policy governs an Agency's payments: the
+ * active one, or one the Investor paused (a pause must not lift its rules).
+ */
+export function governingAgreement(state: ViatikState, agencyId: Id): FundingAgreement | undefined {
+  return state.agreements.find(
+    (a) => a.agencyId === agencyId && (a.status === 'active' || a.status === 'paused'),
+  )
+}
+
 /** Above the agreement's exception threshold → the Investor decides. */
 export function isException(state: ViatikState, request: PaymentRequest): boolean {
-  const agreement = state.agreements.find((a) => a.agencyId === request.agencyId && a.status === 'active')
+  const agreement = governingAgreement(state, request.agencyId)
   return agreement ? request.amount > agreement.spendingPolicy.exceptionThreshold : false
 }
 
@@ -111,8 +144,8 @@ export function memberBudgets(state: ViatikState, agencyId: Id, userId: Id, now:
             r.requester.kind === 'user' &&
             r.requester.userId === userId &&
             (r.status === 'completed' || r.status === 'approved' || r.status === 'processing') &&
-            r.createdAt >= window.start &&
-            r.createdAt < window.end,
+            committedAt(r) >= window.start &&
+            committedAt(r) < window.end,
         ),
         (r) => r.amount,
       )

@@ -18,7 +18,7 @@ import { budgetPeriodLabel, budgetPeriodUnit, categoryLabel } from '@/domain/lab
 import { formatUsd, sum } from '@/domain/money'
 import { describeBudgetPolicy } from '@/domain/policy'
 import { destinationName, memberBudgets, recipientName } from '@/domain/queries'
-import { lastMonths } from '@/domain/selectors'
+import { committedAt, lastMonths } from '@/domain/selectors'
 import { budgetStatus, requestStatus } from '@/domain/status'
 import type { RequestStatus } from '@/domain/types'
 import { formatDate, formatRelative, pluralize } from '@/lib/format'
@@ -51,7 +51,7 @@ export default function MemberBudgetDetailPage() {
   const spend = lastMonths(now, 6).map((month) => ({
     month: month.label,
     spent: sum(
-      spent.filter((r) => r.createdAt >= month.start && r.createdAt < month.end),
+      spent.filter((r) => committedAt(r) >= month.start && committedAt(r) < month.end),
       (r) => r.amount,
     ),
   }))

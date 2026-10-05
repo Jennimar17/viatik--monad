@@ -3,6 +3,7 @@
 import { FileText, Link2 } from 'lucide-react'
 import type * as React from 'react'
 
+import { OpenFileButton } from '@/components/app/open-file'
 import { Amount } from '@/components/viatik/amount'
 import {
   FundingProgress,
@@ -206,6 +207,8 @@ export function EvidenceList({ milestone }: { milestone: Milestone }) {
               >
                 {item.name}
               </a>
+            ) : item.kind === 'file' ? (
+              <OpenFileButton evidence={item} className="text-sm font-medium" />
             ) : (
               <span className="truncate text-sm font-medium">{item.name}</span>
             )}

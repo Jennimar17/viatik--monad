@@ -7,6 +7,7 @@ import * as React from 'react'
 
 import { FormField, SimpleSelect } from '@/components/app/form-controls'
 import { HolderAvatar, holderFromKey, holderOptions } from '@/components/app/holders'
+import { AddDestinationButton, EmptySourceHint } from '@/components/app/money-setup'
 import { PaymentsTable } from '@/components/app/payments-table'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
@@ -31,7 +32,7 @@ import { budgetPeriodLabel, budgetPeriodUnit, categoryLabel } from '@/domain/lab
 import { formatUsd, usd, ZERO, type Cents } from '@/domain/money'
 import { describeBudgetPolicy } from '@/domain/policy'
 import { accountName, actorName, destinationName, holderName } from '@/domain/queries'
-import { budgetUsage, holderSpentInPeriod, isHold, spendByMonth } from '@/domain/selectors'
+import { accountBalance, budgetUsage, holderSpentInPeriod, isHold, spendByMonth } from '@/domain/selectors'
 import { budgetStatus, requestStatus } from '@/domain/status'
 import { seriesColor, seriesKey } from '@/lib/chart-colors'
 import { formatDate, formatRelative, pluralize } from '@/lib/format'
@@ -69,6 +70,7 @@ export default function BudgetDetailPage() {
   const usage = budgetUsage(state, budget, now)
   const unit = budgetPeriodUnit[budget.period]
   const source = accountName(state, budget.sourceAccountId)
+  const sourceAvailable = accountBalance(state, budget.sourceAccountId)
   const allowances = state.allowances.filter((a) => a.budgetId === budget.id && a.status === 'active')
   const payments = state.payments.filter((p) => p.budgetId === budget.id)
   const holds = state.requests.filter((r) => r.budgetId === budget.id && isHold(r))
@@ -289,7 +291,17 @@ export default function BudgetDetailPage() {
         </Panel>
         <Panel title="Allowed destinations">
           {budget.allowedDestinationIds.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Any approved payment destination of the Agency.</p>
+            state.destinations.some((d) => d.agencyId === budget.agencyId && d.status === 'approved') ? (
+              <p className="text-sm text-muted-foreground">Any approved payment destination of the Agency.</p>
+            ) : (
+              <div className="flex flex-col items-start gap-2">
+                <p className="text-sm text-pretty text-muted-foreground">
+                  The Agency has no payment destinations yet. Nobody can pay from this budget until you add
+                  one.
+                </p>
+                {can('send_payment') ? <AddDestinationButton agencyId={budget.agencyId} /> : null}
+              </div>
+            )
           ) : (
             <ul className="flex flex-col gap-2">
               {budget.allowedDestinationIds.map((id) => {
@@ -431,7 +443,7 @@ export default function BudgetDetailPage() {
           policy: 'Budgets are funded only from accounts of the same Agency.',
         }}
         confirmLabel="Add funds"
-        disabled={!fundAmount}
+        disabled={!fundAmount || fundAmount > sourceAvailable}
         phase={fund.phase}
         error={fund.error}
         onConfirm={() =>
@@ -442,8 +454,27 @@ export default function BudgetDetailPage() {
           body: `${formatUsd(fundAmount ?? ZERO, { withCode: true })} was added to ${budget.name}.`,
         }}
       >
-        <FormField label="Amount" htmlFor="fund-amount">
-          <MoneyInput id="fund-amount" value={fundAmount} onChange={setFundAmount} />
+        <FormField
+          label="Amount"
+          htmlFor="fund-amount"
+          error={
+            fundAmount && fundAmount > sourceAvailable && sourceAvailable > 0
+              ? `${source} has ${formatUsd(sourceAvailable, { withCode: true })} available.`
+              : undefined
+          }
+          hint={
+            sourceAvailable === 0 ? (
+              <EmptySourceHint name={source} fundingHref={href('funding')} />
+            ) : undefined
+          }
+        >
+          <MoneyInput
+            id="fund-amount"
+            value={fundAmount}
+            onChange={setFundAmount}
+            available={sourceAvailable}
+            invalid={Boolean(fundAmount && fundAmount > sourceAvailable)}
+          />
         </FormField>
       </ApprovalSheet>
 
