@@ -14,7 +14,7 @@ import { EmptyState, ErrorState } from '@/components/viatik/feedback'
 import { OrgAvatar, roleIcons } from '@/components/viatik/people'
 import { ViatikLogo } from '@/components/viatik/viatik-logo'
 import { getDataSource, type SessionMode } from '@/data'
-import { STATE_KEY, useViatik } from '@/data/react'
+import { STATE_KEY, useCommand, useViatik } from '@/data/react'
 import type { Invitation } from '@/domain/types'
 import { roleDescription, roleLabel } from '@/domain/permissions'
 import { useSession } from '@/lib/session'
@@ -38,12 +38,14 @@ export default function InvitePage() {
     enterDemo,
     signIn,
     signOut,
-    credentials,
   } = useSession()
   const { state, memberships } = useViatik()
   const queryClient = useQueryClient()
   const [accepting, setAccepting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  // A real account accepts through the command pipeline: on a world settled on Monad the join is a
+  // transaction the person signs, and a retry (or a reload) keeps the same operation key.
+  const acceptCommand = useCommand('acceptInvitation', { silent: true })
 
   // Real accounts, unless this device is exploring as one of the demo people.
   const real = accountsEnabled && mode !== 'demo'
@@ -129,12 +131,12 @@ export default function InvitePage() {
     setError(null)
     try {
       if (real) {
-        const accepted = (await getDataSource('account').dispatch(
-          userId as string,
-          'acceptInvitation',
-          { code },
-          { credentials },
-        )) as Invitation
+        const accepted = (await acceptCommand.run({ code })) as Invitation | undefined
+        if (!accepted) {
+          // The reason is in `acceptCommand.error`; the button is ready for another try.
+          setAccepting(false)
+          return
+        }
         await finish(userId as string, accepted)
       } else {
         // Demo: the invitee gets a new demo person of their own.
@@ -246,9 +248,9 @@ export default function InvitePage() {
             Demo: accepting creates a new account for {invitation.name}.
           </p>
         )}
-        {error ? (
+        {(error ?? acceptCommand.error) ? (
           <p className="text-sm text-danger" role="alert">
-            {error}
+            {error ?? acceptCommand.error}
           </p>
         ) : null}
         <div className="flex flex-col gap-3" aria-live="polite">
