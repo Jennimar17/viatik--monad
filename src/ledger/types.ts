@@ -225,6 +225,8 @@ export type Balances = {
   /** Block the balances were read at; absent on the mock. */
   block?: number
   readAt: ISODate
+  /** Location ids, and `agencyId|userId` for Members, whose amount on Monad is not a whole number of cents. */
+  inexact?: string[]
 }
 
 /** Optional progress hook so the UI can show Preparing → Processing → Completed. */

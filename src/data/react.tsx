@@ -16,10 +16,12 @@ import { subjectFor } from '@/domain/permissions'
 import type { Evidence, Membership, User, ViatikState } from '@/domain/types'
 
 import { canonical } from './canonical'
+import { ledgerChecks } from './ledger-check'
 import {
   DataSourceError,
   getDataSource,
   type CredentialsProvider,
+  type LedgerView,
   type OperationPhase,
   type SendCall,
   type SessionMode,
@@ -51,6 +53,11 @@ const ViatikContext = React.createContext<ViatikContextValue | null>(null)
 
 /** Prefix of every Viatik state query; invalidate it to reload what screens show. */
 export const STATE_KEY = ['viatik', 'state'] as const
+
+/** Prefix of the ledger view queries. Under `STATE_KEY`, so whatever reloads the state reloads them too. */
+export const LEDGER_KEY = [...STATE_KEY, 'ledger'] as const
+
+const DEMO_LEDGER: LedgerView = { settlement: 'demo' }
 
 /** One query cache for the product: the session and the Viatik state both live in it. */
 export function QueryProvider({ children }: { children: React.ReactNode }) {
@@ -111,6 +118,15 @@ export function ViatikProvider({
   // Operations signed on this device but not confirmed (the page reloaded, or the tab closed after
   // signing): confirm them once the person's data is in, then refresh what screens show.
   const queryClient = useQueryClient()
+
+  // Someone's operation changed the state (a poll brought it): Monad's balances were read again
+  // right after it, so the balance checks reload too. An unchanged poll keeps the same object.
+  const shownState = React.useRef(state)
+  React.useEffect(() => {
+    if (shownState.current === state) return
+    shownState.current = state
+    void queryClient.invalidateQueries({ queryKey: LEDGER_KEY })
+  }, [state, queryClient])
   const loaded = Boolean(query.data)
   const resumedFor = React.useRef<string | null>(null)
   React.useEffect(() => {
@@ -252,6 +268,56 @@ export function useCommand<N extends CommandName>(
     error: mutation.error instanceof Error ? mutation.error.message : undefined,
     isPending: mutation.isPending,
     reset,
+  }
+}
+
+/**
+ * Where the signed-in person's workspaces settle and Monad's balances for
+ * them, compared with what the screens show (`checks`, null on the demo
+ * ledger). `refresh` reads Monad again.
+ */
+export function useLedger() {
+  const { state, userId, mode, credentials } = useViatik()
+  const queryClient = useQueryClient()
+  // While a balance is pending (someone's operation landed and its read is on the way, or the
+  // read failed), ask again every few seconds; the server reads Monad again when its last read is
+  // for an older state.
+  const [pending, setPending] = React.useState(false)
+  const query = useQuery({
+    queryKey: [...LEDGER_KEY, mode, userId],
+    queryFn: () => {
+      const source = getDataSource(mode as SessionMode)
+      return source.ledger ? source.ledger(userId as string, { credentials }) : DEMO_LEDGER
+    },
+    enabled: Boolean(userId && mode),
+    staleTime: 10_000,
+    refetchInterval: pending ? 15_000 : false,
+  })
+  const refresh = useMutation({
+    mutationFn: () => {
+      if (!userId || !mode) throw new DataSourceError('Sign in to continue.', 'unauthenticated')
+      const source = getDataSource(mode)
+      return source.ledger
+        ? source.ledger(userId, { credentials, refresh: true })
+        : Promise.resolve(DEMO_LEDGER)
+    },
+    networkMode: 'always',
+    onSuccess: (view) => queryClient.setQueryData([...LEDGER_KEY, mode, userId], view),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Monad could not be read.'),
+  })
+  const view = query.data
+  const checks = React.useMemo(() => (state ? ledgerChecks(state, view) : null), [state, view])
+  const somethingPending = Boolean(checks && checks.differences.length > 0)
+  if (somethingPending !== pending) setPending(somethingPending)
+  const { refetch } = query
+  return {
+    view,
+    checks,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    retry: React.useCallback(() => void refetch(), [refetch]),
+    refresh: refresh.mutate,
+    refreshing: refresh.isPending,
   }
 }
 

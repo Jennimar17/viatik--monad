@@ -35,7 +35,8 @@ export type WorldLedger = {
   accounts?: Record<Id, Address>
   /** When the genesis ran, and its transactions. */
   genesis?: { at: string; transactions: string[] }
-  balances?: Balances
+  /** The last read of Monad's balances, and the state version whose ids it read. */
+  balances?: Balances & { version?: number }
 }
 
 /** The whole product state as one document (row id `main`), versioned on every write. */

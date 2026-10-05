@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
 import { AddDestinationSheet, destinationKindLabel } from '@/components/app/money-setup'
 import { PageTabs, type PageTab } from '@/components/app/page-tabs'
+import { LedgerPanel } from '@/components/app/ledger-panel'
 import { PasskeysPanel } from '@/components/app/passkeys-panel'
 import { SponsorshipCheck } from '@/components/app/sponsorship-check'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
@@ -18,7 +19,7 @@ import { KeyValueList, PageHeader, Panel } from '@/components/viatik/layout'
 import { CopyButton } from '@/components/viatik/operation'
 import { OrgAvatar, PersonAvatar } from '@/components/viatik/people'
 import { StatusBadge, Tag } from '@/components/viatik/status'
-import { useCommand, useViatikState } from '@/data/react'
+import { useCommand, useLedger, useViatikState } from '@/data/react'
 import { pseudoAddress } from '@/domain/ids'
 import { agencyTypeLabel, categoryLabel } from '@/domain/labels'
 import { formatUsd } from '@/domain/money'
@@ -109,6 +110,7 @@ export function SettingsPage({
   const { can } = usePermissions()
   const profile = useCommand('updateProfile', { success: 'Profile saved.' })
   const [preferences, updatePreferences] = usePreferences(userId)
+  const ledger = useLedger()
   const [name, setName] = React.useState(user?.name ?? '')
   const [jobTitle, setJobTitle] = React.useState(user?.title ?? '')
   const [timeZone, setTimeZone] = React.useState(user?.timeZone ?? 'UTC')
@@ -538,7 +540,7 @@ export function SettingsPage({
       content: (
         <Panel
           title="Developer mode"
-          description="Network details for integrators. Blockchain terms appear only here and in Verified details."
+          description="Network details for integrators. Elsewhere, blockchain terms appear only in Add funds, Vault asset details and Verified details."
         >
           <div className="flex flex-col gap-5">
             <label className="flex items-center justify-between gap-4 text-sm">
@@ -552,7 +554,13 @@ export function SettingsPage({
               <KeyValueList
                 items={[
                   { label: 'Network', value: `${network.name} · chain ${network.chainId}` },
-                  { label: 'Settlement asset', value: 'USDC (6 decimals)' },
+                  {
+                    label: 'Settlement asset',
+                    value:
+                      ledger.view?.settlement === 'monad'
+                        ? 'TestUSD (6 decimals), standing in for USDC on testnet'
+                        : 'USDC (6 decimals)',
+                  },
                   {
                     label: realAccount ? 'Your account' : 'Your account (demo)',
                     value: address ? (
@@ -567,9 +575,14 @@ export function SettingsPage({
                   { label: 'Gas', value: 'Sponsored. You never need MON.' },
                   {
                     label: 'Ledger',
-                    value: realAccount
-                      ? 'Test environment: limits are enforced by Viatik; settlement on Monad testnet comes next.'
-                      : 'Simulated in this demo; the Monad deployment follows.',
+                    value:
+                      ledger.view?.settlement === 'monad'
+                        ? `Settled on ${network.name}.`
+                        : !realAccount
+                          ? 'Simulated in this demo; the Monad deployment follows.'
+                          : !ledger.view
+                            ? 'Loading…'
+                            : 'Test environment: limits are enforced by Viatik; settlement on Monad testnet comes next.',
                   },
                   {
                     label: 'Explorer',
@@ -590,6 +603,7 @@ export function SettingsPage({
             {preferences.developer && realAddress ? (
               <SponsorshipCheck address={realAddress} chainId={network.chainId} explorer={network.explorer} />
             ) : null}
+            {preferences.developer && realAccount ? <LedgerPanel /> : null}
           </div>
         </Panel>
       ),

@@ -576,7 +576,12 @@ export const commands = new Hono<AppEnv>()
             prepared: previous.prepared,
             preparedAt: previous.preparedAt,
           })
-          if ('found' in earlier) return respond(await settleConfirmation(caller, earlier.found))
+          if ('found' in earlier) {
+            const answer = await settleConfirmation(caller, earlier.found)
+            if (earlier.found.landed)
+              await saveBalancesAfter(monad, chain, earlier.found.block, caller.requestId)
+            return respond(answer)
+          }
           if ('waiting' in earlier) {
             throw new ApiError(
               503,

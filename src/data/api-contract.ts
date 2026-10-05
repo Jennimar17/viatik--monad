@@ -94,3 +94,60 @@ export type VerifiedUpload = {
 
 /** `GET /v1/evidence/:evidenceId/link`: a short-lived link to open a file the caller may see. */
 export type EvidenceLink = { url: string }
+
+// ─── The ledger panel ────────────────────────────────────────────────────────
+
+/** Where a balance lives on the ledger. */
+export type LedgerLocationKind = 'portfolio_vault' | 'funding_vault' | 'account' | 'budget'
+
+/**
+ * `GET /v1/ledger` (and `POST /v1/ledger/refresh`, which reads Monad first):
+ * where the caller's workspaces settle and what Monad held at the last read,
+ * for what the caller may see. The browser compares it with what its screens
+ * show, so a balance is "verified" only when both agree.
+ */
+export type LedgerView =
+  | { settlement: 'demo' }
+  | {
+      settlement: 'monad'
+      /** This deployment can reach Monad; without it nothing settles. */
+      available: boolean
+      /** The ViatikLedger contract: every vault, account and budget is a balance inside it. */
+      contract: Hex | null
+      token: Hex | null
+      /** The epoch of ledger ids since the last reset. */
+      namespace: string
+      genesis: { at: string; transactions: Hex[] } | null
+      /** The last read of Monad's balances; null before the first one. */
+      balances: { block: number | null; readAt: string } | null
+      /**
+       * `chain`: what Monad held at that read, in whole cents; null when the
+       * location did not exist yet. `inexact`: Monad holds a fraction of a cent more.
+       */
+      locations: {
+        id: string
+        kind: LedgerLocationKind
+        ledgerId: Hex
+        chain: number | null
+        inexact?: true
+      }[]
+      /**
+       * What a Member holds in a workspace (`memberBalance`): the caller's own, and
+       * everyone's in the workspaces the caller runs or invests in.
+       */
+      members: { agencyId: string; userId: string; chain: number | null; inexact?: true }[]
+      /** The caller's operations Monad recorded differently from what Viatik prepared (flagged for review). */
+      diverged: {
+        key: string
+        command: string
+        txHash: Hex | null
+        at: string
+        amount: number | null
+        /** Prepared before the last reset. */
+        earlierReset: boolean
+      }[]
+      /** The caller's operations prepared or signed and not settled yet. */
+      open: number
+      /** People in the caller's workspaces who signed in with another account since the last reset. */
+      needsReseed: string[]
+    }

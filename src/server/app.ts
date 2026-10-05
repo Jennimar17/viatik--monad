@@ -12,6 +12,7 @@ import { toErrorResponse } from './errors'
 import { evidence } from './evidence'
 import { session } from './session'
 import { getMonadLedger } from './ledger'
+import { ledgerView } from './ledger-view'
 import { invitations, state } from './state'
 
 /** The ledger check, kept for a minute: the endpoint is public and each check costs four RPC calls. */
@@ -83,6 +84,7 @@ export const app = new Hono<AppEnv>()
   .route('/v1/invitations', invitations)
   .route('/v1/commands', commands)
   .route('/v1/evidence', evidence)
+  .route('/v1/ledger', ledgerView)
   .route('/v1/admin', admin)
 
 app.notFound((c) =>

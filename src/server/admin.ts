@@ -13,7 +13,7 @@ import type { AppEnv } from './context'
 import { getDb } from './db/client'
 import { operations, users, type WorldLedger } from './db/schema'
 import { ApiError } from './errors'
-import { getMonadLedger } from './ledger'
+import { chainContextFor, getMonadLedger, saveBalancesAfter } from './ledger'
 import { resetWorld, withWorld } from './repository'
 
 function sameSecret(given: string, expected: string) {
@@ -53,6 +53,7 @@ export const admin = new Hono<AppEnv>().post('/seed', async (c) => {
   const state = createDemoState(new Date().toISOString())
   const monad = c.req.query('ledger') === 'off' ? null : getMonadLedger()
   let ledger: WorldLedger | null = null
+  let genesisBlock = 0
   if (monad) {
     // The accounts of the story's people who signed in; everyone else gets a placeholder.
     const ids = state.users.map((u) => u.id)
@@ -106,6 +107,7 @@ export const admin = new Hono<AppEnv>().post('/seed', async (c) => {
         `The genesis stopped at "${run.failedAt}" (${run.problem}). Viatik was not reset.`,
       )
     }
+    genesisBlock = Math.max(0, ...run.transactions.map((t) => t.block ?? 0))
     ledger = {
       namespace,
       placeholders: genesis.placeholders,
@@ -148,6 +150,12 @@ export const admin = new Hono<AppEnv>().post('/seed', async (c) => {
       'seed_not_saved',
       `The genesis landed (namespace ${ledger.namespace}, ${ledger.genesis?.transactions.join(', ')}) but Viatik could not switch to it. Viatik is unchanged: run the seed again.`,
     )
+  }
+  // The first read of Monad's balances, so screens show them verified from the start (best effort:
+  // the seed is done either way, and the Ledger panel can read them again).
+  if (monad && ledger) {
+    const chain = await chainContextFor(ledger).catch(() => null)
+    if (chain) await saveBalancesAfter(monad, chain, genesisBlock, c.get('requestId'))
   }
   return c.json({
     status: 'seeded',

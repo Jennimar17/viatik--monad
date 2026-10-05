@@ -176,6 +176,16 @@ export class MonadLedgerAdapter implements LedgerAdapter {
     return Boolean(this.config.ledgerAddress)
   }
 
+  /** The ViatikLedger deployment; every vault, account and budget is a balance inside it. */
+  get address(): Address | undefined {
+    return this.config.ledgerAddress
+  }
+
+  /** The settlement token (TestUSD on testnet), when it is configured. */
+  get tokenAddress(): Address | undefined {
+    return this.config.tokenAddress
+  }
+
   private get ledger(): Address {
     if (!this.config.ledgerAddress) throw new Error('The ledger address is not configured.')
     return this.config.ledgerAddress
@@ -729,15 +739,25 @@ export class MonadLedgerAdapter implements LedgerAdapter {
             }),
           ),
         ])
-    const toCents = (units: unknown) => unitsToCents(units as bigint).cents
     const balances: Balances = { ...empty, block: Number(blockNumber) }
-    let i = 0
-    for (const accountId of input.accountIds) balances.accounts[accountId] = toCents(results[i++])
-    for (const budgetId of input.budgetIds) balances.budgets[budgetId] = toCents(results[i++])
-    for (const vaultId of input.vaultIds) balances.vaults[vaultId] = toCents(results[i++])
-    for (const m of members) {
-      balances.members[m.agencyId] = { ...balances.members[m.agencyId], [m.userId]: toCents(results[i++]) }
+    const inexact: string[] = []
+    // Whole cents, and the ids where Monad holds a fraction of a cent more (nothing Viatik moves does).
+    const toCents = (units: unknown, id: string) => {
+      const { cents, dust } = unitsToCents(units as bigint)
+      if (dust !== 0n) inexact.push(id)
+      return cents
     }
+    let i = 0
+    for (const accountId of input.accountIds) balances.accounts[accountId] = toCents(results[i++], accountId)
+    for (const budgetId of input.budgetIds) balances.budgets[budgetId] = toCents(results[i++], budgetId)
+    for (const vaultId of input.vaultIds) balances.vaults[vaultId] = toCents(results[i++], vaultId)
+    for (const m of members) {
+      balances.members[m.agencyId] = {
+        ...balances.members[m.agencyId],
+        [m.userId]: toCents(results[i++], `${m.agencyId}|${m.userId}`),
+      }
+    }
+    if (inexact.length > 0) balances.inexact = inexact
     return balances
   }
 

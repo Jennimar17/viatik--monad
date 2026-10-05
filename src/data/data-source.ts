@@ -4,7 +4,7 @@ import type { Evidence, ViatikState } from '@/domain/types'
 import type { LedgerStatus } from '@/ledger/types'
 
 import type { ApiCredentials } from './api'
-import type { PendingCall } from './api-contract'
+import type { LedgerView, PendingCall } from './api-contract'
 
 /** Human operation lifecycle shown while a command settles. */
 export type OperationPhase = LedgerStatus
@@ -65,7 +65,13 @@ export type UploadedFile = { kind: 'file'; name: string; mimeType: string; sizeB
 
 export type EvidenceOptions = { credentials?: CredentialsProvider }
 
-export type { InvitationPreview }
+export type LedgerOptions = {
+  credentials?: CredentialsProvider
+  /** Read Monad's balances again before answering. */
+  refresh?: boolean
+}
+
+export type { InvitationPreview, LedgerView }
 
 /**
  * The only way screens read or change data. Swapping the implementation
@@ -94,6 +100,8 @@ export interface DataSource {
   openOperations?(userId: string): OpenOperation[]
   /** Confirms one of them. */
   resume?(operation: OpenOperation, options?: DispatchOptions): Promise<ResumeOutcome>
+  /** Where the person's workspaces settle and Monad's balances for them; without it, the demo ledger. */
+  ledger?(userId: string, options?: LedgerOptions): Promise<LedgerView>
 }
 
 /** Endings that are not failures: the operation may still settle, and shows up when it does. */

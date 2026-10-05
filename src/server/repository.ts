@@ -80,16 +80,23 @@ export async function withWorld<R>(
 }
 
 /**
- * Keeps the balances last read from Monad with the world, if it is still in
- * the same namespace and no newer read is there. The state and its version
- * do not change.
+ * Keeps the balances last read from Monad with the world, with the state
+ * version they were read for, if the world is still in the same namespace and
+ * no newer read is there: neither a later block nor a later state (a read
+ * that started before a confirm must not replace the confirm's own read). The
+ * state and its version do not change.
  */
-export async function saveLedgerBalances(balances: Balances, namespace: string): Promise<void> {
+export async function saveLedgerBalances(
+  balances: Balances,
+  namespace: string,
+  version: number,
+): Promise<void> {
+  const read = JSON.stringify({ ...balances, version })
   await getDb()
     .update(worldState)
-    .set({ ledger: sql`jsonb_set(${worldState.ledger}, '{balances}', ${JSON.stringify(balances)}::jsonb)` })
+    .set({ ledger: sql`jsonb_set(${worldState.ledger}, '{balances}', ${read}::jsonb)` })
     .where(
-      sql`${worldState.id} = ${WORLD} and ${worldState.ledger}->>'namespace' = ${namespace} and coalesce((${worldState.ledger}->'balances'->>'block')::bigint, -1) <= ${balances.block ?? 0}`,
+      sql`${worldState.id} = ${WORLD} and ${worldState.ledger}->>'namespace' = ${namespace} and coalesce((${worldState.ledger}->'balances'->>'block')::bigint, -1) <= ${balances.block ?? 0} and coalesce((${worldState.ledger}->'balances'->>'version')::int, -1) <= ${version}`,
     )
 }
 

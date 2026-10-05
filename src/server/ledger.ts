@@ -7,8 +7,9 @@ import { genesisContext } from '@/ledger/genesis'
 import { MonadLedgerAdapter } from '@/ledger/monad'
 import { decodeLedgerError } from '@/ledger/revert'
 import { ledgerSnapshot } from '@/ledger/snapshot'
-import type { ChainContext } from '@/ledger/types'
+import type { Balances, ChainContext } from '@/ledger/types'
 import { publicEnv, readServerEnv } from '@/lib/env'
+import { withTimeout } from '@/lib/timeout'
 
 import { getDb } from './db/client'
 import { users, type WorldLedger } from './db/schema'
@@ -81,10 +82,45 @@ export async function chainContextFor(ledger: WorldLedger, db: DbTx | ReturnType
 }
 
 /**
- * Reads every balance of the world from Monad at the block a transaction
- * landed in and keeps it with the world, for the Ledger panel to compare with
- * the app. Best effort: a failed read is only logged.
+ * Reads every balance of the world from Monad and keeps it with the world,
+ * for screens and the Ledger panel to compare with what the app shows. It
+ * reads the latest block (never one before `atLeast`, in case the node
+ * answering is behind the transaction just confirmed), so the last read saved
+ * always describes Monad after every operation Viatik applied before it.
  */
+export async function refreshBalances(
+  monad: MonadLedgerAdapter,
+  chain: ChainContext,
+  atLeast?: number,
+): Promise<Balances> {
+  const { state, version } = await readWorld()
+  const snapshot = ledgerSnapshot(state)
+  const of = (kind: string) => [...snapshot.places].filter(([, p]) => p.kind === kind).map(([id]) => id)
+  const input = {
+    accountIds: of('account'),
+    budgetIds: of('budget'),
+    vaultIds: [...of('portfolio_vault'), ...of('funding_vault')],
+    members: [...snapshot.members.keys()].map((key) => {
+      const [agencyId, userId] = key.split('|') as [Id, Id]
+      return { agencyId, userId }
+    }),
+    chain,
+  }
+  let balances = await monad.readBalances(input)
+  if (atLeast !== undefined && (balances.block ?? 0) < atLeast)
+    balances = await monad.readBalances({ ...input, block: atLeast })
+  await saveLedgerBalances(balances, chain.namespace, version)
+  return balances
+}
+
+/**
+ * How long an answer waits for the balance read after an operation (or a
+ * seed) is already saved. A slow RPC must not push the route past its
+ * `maxDuration`; the read carries on, and the next one catches up.
+ */
+const BALANCES_WAIT_MS = 6_000
+
+/** `refreshBalances` after a transaction landed. Best effort: a failed or slow read is only logged. */
 export async function saveBalancesAfter(
   monad: MonadLedgerAdapter,
   chain: ChainContext,
@@ -92,21 +128,7 @@ export async function saveBalancesAfter(
   requestId: string,
 ) {
   try {
-    const { state } = await readWorld()
-    const snapshot = ledgerSnapshot(state)
-    const of = (kind: string) => [...snapshot.places].filter(([, p]) => p.kind === kind).map(([id]) => id)
-    const balances = await monad.readBalances({
-      accountIds: of('account'),
-      budgetIds: of('budget'),
-      vaultIds: [...of('portfolio_vault'), ...of('funding_vault')],
-      members: [...snapshot.members.keys()].map((key) => {
-        const [agencyId, userId] = key.split('|') as [Id, Id]
-        return { agencyId, userId }
-      }),
-      chain,
-      block,
-    })
-    await saveLedgerBalances(balances, chain.namespace)
+    await withTimeout(refreshBalances(monad, chain, block), BALANCES_WAIT_MS)
   } catch (error) {
     // The short message only: viem's full error repeats the RPC URL, which may carry a provider key.
     console.error(`[api] ${requestId} ledger balances: ${decodeLedgerError(error).raw}`)

@@ -6,6 +6,7 @@ import Link from '@/components/viatik/link'
 import { useParams } from 'next/navigation'
 
 import { accountHistory } from '@/components/app/account-parts'
+import { BalanceCheckNote } from '@/components/app/balance-check'
 import { ButtonLink } from '@/components/app/button-link'
 import { locationLabel, movementLabel } from '@/components/app/capital-trail-panel'
 import { useReceiptDrawer } from '@/components/app/receipt-details'
@@ -18,7 +19,7 @@ import { EmptyState } from '@/components/viatik/feedback'
 import { KpiTile } from '@/components/viatik/finance'
 import { HairlineGrid, PageHeader, Panel } from '@/components/viatik/layout'
 import { StatusBadge, Tag } from '@/components/viatik/status'
-import { useViatikState } from '@/data/react'
+import { useLedger, useViatikState } from '@/data/react'
 import { accountTemplate } from '@/domain/labels'
 import { cents, sum } from '@/domain/money'
 import { receiptFor } from '@/domain/queries'
@@ -30,6 +31,7 @@ import { formatDateTime, pluralize } from '@/lib/format'
 export default function AccountDetailPage() {
   const { accountId } = useParams<{ accountId: string }>()
   const { state, now } = useViatikState()
+  const { checks } = useLedger()
   const { scopeId: agencyId } = useRole()
   const href = useHref()
   const { can } = usePermissions()
@@ -140,7 +142,12 @@ export default function AccountDetailPage() {
       />
 
       <HairlineGrid className="grid-cols-2 lg:grid-cols-4">
-        <KpiTile label="Balance" value={accountBalance(state, account.id)} emphasis />
+        <KpiTile
+          label="Balance"
+          value={accountBalance(state, account.id)}
+          hint={<BalanceCheckNote check={checks?.check(account.id)} />}
+          emphasis
+        />
         <KpiTile label="Money in" value={inflow} hint="All time" />
         <KpiTile label="Money out" value={outflow} hint="All time" />
         <KpiTile
