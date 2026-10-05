@@ -4,7 +4,7 @@ import { faq } from '@/components/site/content/landing-content'
 
 export function FaqSection() {
   return (
-    <Section id="faq" aria-labelledby="faq-heading" className="theme-light">
+    <Section id="faq" aria-labelledby="faq-heading" className="grain bg-background text-foreground">
       <Container className="grid gap-10 lg:grid-cols-12 lg:gap-16">
         <div className="flex flex-col gap-5 lg:sticky lg:top-28 lg:col-span-4 lg:self-start">
           <Eyebrow>FAQ</Eyebrow>

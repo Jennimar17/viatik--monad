@@ -1,0 +1,240 @@
+/*
+ * Landing-only layer: the iridescent illustration palette, surfaces for
+ * isometric scenes and photographs, the frame that hosts real product
+ * components, and the motion used by the hero, the capital stack and
+ * Monad's pace.
+ *
+ * The iridescent palette is derived from the brand tokens in tokens.css, not
+ * added beside them. Each colour keeps a brand hue in OKLCH and only lifts its
+ * chroma, so the gradients read as the brand catching light:
+ *   lilac       stone hue (312.5), chroma ×3.2
+ *   rose        stone hue +28, chroma ×3
+ *   mint        sage hue (146.6), chroma ×2.6
+ *   periwinkle  mist hue (286.2), chroma 0.08
+ *   pearl       mist
+ *   haze / dusk / deep  plum hue (314.9), lightness raised
+ * These colours decorate illustrations only. Interface states keep using the
+ * status tokens.
+ */
+
+:root {
+  --iri-lilac: #c09bd6;
+  --iri-rose: #d89dc3;
+  --iri-mint: #a4dda8;
+  --iri-periwinkle: #b9b7f0;
+  --iri-pearl: var(--brand-mist);
+  --iri-paper: var(--brand-paper);
+  --iri-haze: #836a8f;
+  --iri-dusk: #543f5d;
+  --iri-deep: #3c1f49;
+  --iri-night: var(--brand-plum);
+  --iri-edge: color-mix(in srgb, var(--brand-mist) 38%, transparent);
+}
+
+@layer components {
+  /*
+   * Frosted glass for the use-case figures: a translucent mist fill that blurs
+   * the coloured orbs behind it, a bright top edge and a soft drop shadow.
+   */
+  .glass-shape {
+    border: 1px solid color-mix(in srgb, var(--brand-mist) 30%, transparent);
+    background: linear-gradient(
+      150deg,
+      color-mix(in srgb, var(--brand-mist) 22%, transparent),
+      color-mix(in srgb, var(--brand-mist) 6%, transparent) 62%
+    );
+    box-shadow:
+      0 30px 60px -30px rgb(0 0 0 / 0.6),
+      inset 0 1px 0 color-mix(in srgb, #fff 40%, transparent);
+    backdrop-filter: blur(14px) saturate(1.4);
+  }
+
+  /*
+   * A wide, soft haze of iridescent light behind glass. The blur is large
+   * enough that the pools read as colour rather than as circles.
+   */
+  .glow-orb {
+    position: absolute;
+    border-radius: 9999px;
+    opacity: 0.45;
+    filter: blur(70px);
+    pointer-events: none;
+  }
+
+  /* A stronger film grain for illustrated surfaces (pairs with `.grain`). */
+  .grain-strong::after {
+    opacity: 0.42;
+  }
+
+  /*
+   * Hosts real product components on the landing. The product's denser
+   * caption, monospace face and status hues are switched on here only, so the
+   * components look exactly as they do in the app (see dashboard.css, where
+   * the same variables switch for the whole document under `.app-theme`).
+   * Pair with `theme-dark`.
+   */
+  .product-frame {
+    --v-text-xs: 0.75rem;
+    --v-font-mono: var(--font-jetbrains), ui-monospace, 'SFMono-Regular', Menlo, monospace;
+    --v-warning: #e5c48f;
+    --v-danger: #eda3a8;
+    border: 1px solid color-mix(in srgb, var(--brand-mist) 14%, transparent);
+    border-radius: 1.25rem;
+    background:
+      radial-gradient(
+        36rem 18rem at 0% 0%,
+        color-mix(in srgb, var(--brand-stone) 12%, transparent),
+        transparent 70%
+      ),
+      var(--brand-plum);
+    color: var(--v-text);
+    box-shadow:
+      0 40px 90px -40px rgb(0 0 0 / 0.6),
+      inset 0 1px 0 color-mix(in srgb, var(--brand-mist) 10%, transparent);
+  }
+
+  /* Product frame on glass, for frames that sit over a photograph. */
+  .product-frame-glass {
+    border-color: color-mix(in srgb, var(--brand-mist) 21%, transparent);
+    background: color-mix(in srgb, var(--brand-plum) 72%, transparent);
+    backdrop-filter: blur(20px);
+  }
+
+  /* Photographs dimmed and toned towards the brand (pairs with `.grain`). */
+  .photo-dim img {
+    filter: saturate(0.75) brightness(0.86);
+  }
+  .photo-dim::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: color-mix(in srgb, var(--brand-plum) 30%, transparent);
+    pointer-events: none;
+  }
+
+  /* Iridescent fill for the closing wordmark. */
+  .wordmark-iri {
+    background-image: linear-gradient(
+      100deg,
+      var(--iri-periwinkle),
+      var(--iri-lilac) 28%,
+      var(--iri-rose) 48%,
+      var(--iri-pearl) 64%,
+      var(--iri-mint) 86%
+    );
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Hero steps arrive one after another (delays are set inline). */
+  .hero-step {
+    animation: editorial-arrive 1s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+
+  .scene-fade {
+    transition: opacity 600ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+
+  /* Capital stack: the selected layer lifts; capital drips down its edge. */
+  .stack-layer {
+    transition: transform 700ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .capital-drop {
+    animation: capital-drop 3.2s cubic-bezier(0.5, 0, 0.75, 0) infinite;
+  }
+
+  /*
+   * Monad's pace: a payment crosses the line in 0.8 s (the first 26.7% of a
+   * 3 s loop), the "Final" mark lights up, holds, and the loop starts again.
+   */
+  .pace-fill {
+    transform-origin: left center;
+    animation: pace-fill 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+  .pace-dot {
+    animation: pace-dot 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+  .pace-final {
+    animation: pace-final 3s ease infinite;
+  }
+
+  @keyframes capital-drop {
+    0% {
+      opacity: 0;
+      transform: translateY(0);
+    }
+    12% {
+      opacity: 1;
+    }
+    88% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(var(--drop, 120px));
+    }
+  }
+  @keyframes pace-fill {
+    0% {
+      transform: scaleX(0);
+      opacity: 1;
+    }
+    26.7%,
+    88% {
+      transform: scaleX(1);
+      opacity: 1;
+    }
+    100% {
+      transform: scaleX(1);
+      opacity: 0;
+    }
+  }
+  @keyframes pace-dot {
+    0% {
+      left: 0%;
+      opacity: 0;
+    }
+    4% {
+      opacity: 1;
+    }
+    26.7%,
+    88% {
+      left: 100%;
+      opacity: 1;
+    }
+    100% {
+      left: 100%;
+      opacity: 0;
+    }
+  }
+  @keyframes pace-final {
+    0%,
+    24% {
+      opacity: 0.4;
+    }
+    30%,
+    88% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0.4;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-step,
+    .capital-drop,
+    .pace-fill,
+    .pace-dot,
+    .pace-final {
+      animation: none;
+    }
+    .capital-drop {
+      opacity: 0;
+    }
+    .pace-dot {
+      left: 100%;
+    }
+  }
+}

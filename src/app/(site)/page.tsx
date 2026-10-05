@@ -1,16 +1,12 @@
 import { HeroSection } from '@/components/site/hero/hero-section'
-import { AgencyOperationsSection } from '@/components/site/sections/agency-operations-section'
-import { AutomationSection } from '@/components/site/sections/automation-section'
-import { CapitalFlowSection } from '@/components/site/sections/capital-flow-section'
+import { IsoDefs } from '@/components/site/illustrations/iso'
+import { ControlsSection } from '@/components/site/sections/controls-section'
 import { FaqSection } from '@/components/site/sections/faq-section'
-import { FinalCta } from '@/components/site/sections/final-cta'
-import { FundingAgreementSection } from '@/components/site/sections/funding-agreement-section'
+import { HowItWorksSection } from '@/components/site/sections/how-it-works-section'
 import { MonadSection } from '@/components/site/sections/monad-section'
-import { ProductPrinciples } from '@/components/site/sections/product-principles'
-import { ReconciliationSection } from '@/components/site/sections/reconciliation-section'
-import { RoleProductStory } from '@/components/site/sections/role-product-story'
-import { SecuritySection } from '@/components/site/sections/security-section'
-import { TrustStatement } from '@/components/site/sections/trust-statement'
+import { RoleStackSection } from '@/components/site/sections/role-stack'
+import { ShowcaseSection } from '@/components/site/sections/showcase-section'
+import { UseCasesSection } from '@/components/site/sections/use-cases-section'
 import { AnnouncementBar } from '@/components/site/chrome/announcement-bar'
 import { SiteFooter } from '@/components/site/chrome/site-footer'
 import { SiteHeader } from '@/components/site/chrome/site-header'
@@ -22,19 +18,15 @@ export default function LandingPage() {
       <AnnouncementBar />
       <SiteHeader />
       <main id="main">
+        <IsoDefs />
         <HeroSection />
-        <TrustStatement />
-        <CapitalFlowSection />
-        <RoleProductStory />
-        <FundingAgreementSection />
-        <AgencyOperationsSection />
-        <ReconciliationSection />
-        <AutomationSection />
+        <ShowcaseSection />
+        <HowItWorksSection />
+        <RoleStackSection />
+        <UseCasesSection />
+        <ControlsSection />
         <MonadSection />
-        <SecuritySection />
-        <ProductPrinciples />
         <FaqSection />
-        <FinalCta />
       </main>
       <SiteFooter />
       <MotionEnhancements />

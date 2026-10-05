@@ -3,17 +3,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 
-import { Container, Section, SectionIntro } from '@/components/site/chrome/section'
-import { capitalFlow } from '@/components/site/content/landing-content'
+import { Container, Eyebrow, Lede, Section } from '@/components/site/chrome/section'
+import { StageScene } from '@/components/site/illustrations/scenes'
+import { howItWorks } from '@/components/site/content/landing-content'
 
-const STAGES = capitalFlow.stages
+const STAGES = howItWorks.stages
 const DESKTOP = '(min-width: 1024px)'
 
 /**
- * Horizontal journey on desktop, vertical on mobile. The active stage follows
- * the reader's scroll position; every stage stays fully legible regardless.
+ * The problem statement and the five-stage answer in one section. Horizontal
+ * journey on desktop, vertical on mobile. The active stage follows the
+ * reader's scroll position; every stage stays fully legible regardless.
  */
-export function CapitalFlowSection() {
+export function HowItWorksSection() {
   const sectionRef = useRef<HTMLElement>(null)
   const stageRefs = useRef<(HTMLLIElement | null)[]>([])
   const [active, setActive] = useState(0)
@@ -64,14 +66,22 @@ export function CapitalFlowSection() {
       id="how-it-works"
       ref={sectionRef}
       aria-labelledby="flow-heading"
-      className="grain bg-background text-foreground"
+      className="theme-light pt-0 md:pt-0"
     >
       <Container>
-        <SectionIntro
-          eyebrow="How it works"
-          heading={<span id="flow-heading">{capitalFlow.heading}</span>}
-          body={capitalFlow.body}
-        />
+        <div className="grid items-end gap-8 border-t border-border pt-16 md:pt-20 lg:grid-cols-12">
+          <div className="flex flex-col gap-5 lg:col-span-7">
+            <Eyebrow>{howItWorks.eyebrow}</Eyebrow>
+            <h2
+              id="flow-heading"
+              className="font-display text-3xl leading-[1.14] font-medium tracking-[-0.035em] text-balance text-foreground md:text-4xl"
+            >
+              <span className="block">{howItWorks.headline[0]}</span>
+              <span className="block text-muted-foreground">{howItWorks.headline[1]}</span>
+            </h2>
+          </div>
+          <Lede className="max-w-md lg:col-span-4 lg:col-start-9">{howItWorks.body}</Lede>
+        </div>
 
         <ol className="mt-14 grid gap-10 lg:mt-20 lg:grid-cols-5 lg:gap-6" aria-label="Capital flow stages">
           {STAGES.map((stage, index) => {
@@ -85,9 +95,9 @@ export function CapitalFlowSection() {
                   stageRefs.current[index] = el
                 }}
                 aria-current={isActive ? 'step' : undefined}
-                className="relative grid grid-cols-[0.75rem_1fr] gap-x-5 lg:grid-cols-1 lg:gap-y-6"
+                className="relative grid grid-cols-[0.75rem_1fr] content-start gap-x-5 lg:grid-cols-1 lg:gap-y-6"
               >
-                <div className="relative lg:h-3" aria-hidden="true">
+                <div className="relative row-span-2 lg:row-span-1 lg:row-start-2 lg:h-3" aria-hidden="true">
                   {/* Vertical segment (mobile) */}
                   <span
                     className={cn(
@@ -113,7 +123,15 @@ export function CapitalFlowSection() {
                   />
                 </div>
 
-                <div className="flex flex-col gap-3 pb-2 lg:pr-6">
+                <StageScene
+                  stage={stage.id}
+                  className={cn(
+                    'col-start-2 row-start-1 mb-4 h-20 w-28 transition-opacity duration-500 lg:col-start-1 lg:mb-0 lg:h-24 lg:w-32',
+                    reached ? 'opacity-100' : 'opacity-55',
+                  )}
+                />
+
+                <div className="col-start-2 flex flex-col gap-3 pb-2 lg:col-start-1 lg:row-start-3 lg:pr-6">
                   <h3
                     className={cn(
                       'font-display text-xl font-medium transition-colors duration-300',

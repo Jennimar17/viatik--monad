@@ -13,10 +13,6 @@ export const siteConfig = {
   ogDescription:
     'Viatik connects funding agreements, capital releases, budgets, payments, and evidence in one verifiable flow.',
   statement: 'Programmable funding infrastructure for modern teams.',
-  // Configuration placeholder for the fictional "View in explorer" control in
-  // the Verified details preview. Leave null to render it as a disabled demo
-  // control instead of linking to a fabricated transaction.
-  explorerUrl: null as string | null,
   routes: {
     demo: '/sign-in',
     signIn: '/sign-in',
@@ -27,37 +23,70 @@ export const siteConfig = {
 
 export type NavItem = { label: string; href: `#${string}` | Route; external?: boolean }
 
+/**
+ * A page that is planned but not built yet. It is listed so the information
+ * architecture is visible, and rendered like a link that cannot be followed.
+ * When the page ships, replace `planned` with `href`; typed routes check it.
+ */
+export type PlannedItem = { label: string; planned: string }
+
+export type FooterItem = NavItem | PlannedItem
+
+export function isPlanned(item: FooterItem): item is PlannedItem {
+  return 'planned' in item
+}
+
 export const primaryNav: NavItem[] = [
-  { label: 'Product', href: '#product' },
   { label: 'How it works', href: '#how-it-works' },
-  { label: 'For investors', href: '#for-investors' },
-  { label: 'For agencies', href: '#for-agencies' },
-  { label: 'Security', href: '#security' },
+  { label: 'Product', href: '#product' },
+  { label: 'Use cases', href: '#use-cases' },
+  { label: 'Controls', href: '#controls' },
+  { label: 'Monad', href: '#monad' },
 ]
 
-export const footerNav: { heading: string; items: NavItem[] }[] = [
+export const footerNav: { heading: string; items: FooterItem[] }[] = [
   {
     heading: 'Product',
     items: [
       { label: 'How it works', href: '#how-it-works' },
-      { label: 'For investors', href: '#for-investors' },
-      { label: 'For agencies', href: '#for-agencies' },
+      { label: 'Roles', href: '#product' },
+      { label: 'Controls', href: '#controls' },
       { label: 'Security', href: '#security' },
+      { label: 'Funding agreements', planned: '/product/funding-agreements' },
+      { label: 'Budgets & policies', planned: '/product/budgets' },
+      { label: 'AI Agents', planned: '/product/ai-agents' },
+      { label: 'Open the demo', href: '/sign-in' },
+    ],
+  },
+  {
+    heading: 'Use cases',
+    items: [
+      { label: 'Venture studios', planned: '/use-cases/venture-studios' },
+      { label: 'Grant programs', planned: '/use-cases/grant-programs' },
+      { label: 'Ecosystem funds', planned: '/use-cases/ecosystem-funds' },
+      { label: 'Agencies & studios', planned: '/use-cases/agencies' },
+      { label: 'Distributed teams', planned: '/use-cases/distributed-teams' },
+    ],
+  },
+  {
+    heading: 'Learn',
+    items: [
+      { label: 'About Monad', planned: '/monad' },
+      { label: 'Why Monad', href: '#monad' },
+      { label: 'Settlement', planned: '/learn/settlement' },
+      { label: 'Verified receipts', planned: '/learn/verification' },
+      { label: 'Documentation', planned: '/docs' },
+      { label: 'Glossary', planned: '/glossary' },
+      { label: 'FAQ', href: '#faq' },
     ],
   },
   {
     heading: 'Company',
     items: [
-      { label: 'About', href: '#principles' },
-      { label: 'Contact', href: '#waitlist' },
-      { label: 'Updates', href: '#waitlist' },
-    ],
-  },
-  {
-    heading: 'Resources',
-    items: [
-      { label: 'Documentation', href: '#faq' },
-      { label: 'Monad', href: '#monad' },
+      { label: 'About Viatik', planned: '/about' },
+      { label: 'Roadmap', planned: '/roadmap' },
+      { label: 'Brand kit', planned: '/brand' },
+      { label: 'Contact', planned: '/contact' },
     ],
   },
   {
@@ -67,4 +96,14 @@ export const footerNav: { heading: string; items: NavItem[] }[] = [
       { label: 'Terms', href: '/terms' },
     ],
   },
+]
+
+export type SocialNetwork = 'x' | 'discord' | 'github' | 'telegram'
+
+/** Social profiles, not live yet: shown in the footer without links. */
+export const socials: { network: SocialNetwork; label: string }[] = [
+  { network: 'x', label: 'X' },
+  { network: 'discord', label: 'Discord' },
+  { network: 'github', label: 'GitHub' },
+  { network: 'telegram', label: 'Telegram' },
 ]

@@ -1,7 +1,7 @@
 import { ArrowDownRightIcon, ArrowRightIcon, ShieldCheckIcon } from 'lucide-react'
 
 import { buttonVariants } from '@/components/ui/button'
-import { HeroCapitalFlow } from '@/components/site/hero/hero-capital-flow'
+import { HeroVisual } from '@/components/site/hero/hero-visual'
 import { Container, Eyebrow } from '@/components/site/chrome/section'
 import { hero } from '@/components/site/content/landing-content'
 import { siteConfig } from '@/components/site/content/site'
@@ -47,19 +47,20 @@ export function HeroSection() {
         </div>
 
         <div className="min-w-0 lg:col-span-6">
-          <HeroCapitalFlow />
+          <HeroVisual />
         </div>
       </Container>
       <Container>
         <div className="flex flex-col justify-between gap-4 border-t border-border py-6 text-sm text-subtle sm:flex-row sm:items-center">
-          <p>For the people backing what comes next.</p>
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-            <span>Purposeful funding</span>
-            <span aria-hidden="true" className="size-1 rounded-full bg-stone/50" />
-            <span>Connected operations</span>
-            <span aria-hidden="true" className="hidden size-1 rounded-full bg-stone/50 sm:block" />
-            <span>Verifiable progress</span>
-          </div>
+          <p>{hero.proofStrip.lead}</p>
+          <ul className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            {hero.proofStrip.items.map((item) => (
+              <li key={item} className="flex items-center gap-2">
+                <span aria-hidden="true" className="size-1 rounded-full bg-stone/60" />
+                {item}
+              </li>
+            ))}
+          </ul>
         </div>
       </Container>
     </section>

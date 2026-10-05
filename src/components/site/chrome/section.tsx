@@ -80,3 +80,20 @@ export function SectionIntro({
     </div>
   )
 }
+
+/** Hairline list with violet square markers, used beside product previews. */
+export function PointList({ points, className }: { points: string[]; className?: string }) {
+  return (
+    <ul className={cn('flex flex-col border-t border-border', className)}>
+      {points.map((point) => (
+        <li
+          key={point}
+          className="flex items-start gap-3 border-b border-border py-3.5 text-base text-foreground"
+        >
+          <span aria-hidden="true" className="mt-2.5 size-1.5 shrink-0 bg-violet" />
+          <span className="text-pretty">{point}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}

@@ -48,10 +48,10 @@ export function SiteHeader() {
 
         <div className="flex items-center justify-end gap-2">
           <a
-            href="#waitlist"
+            href={siteConfig.routes.signIn}
             className={cn(buttonVariants({ variant: 'ghost', size: 'pill-sm' }), 'hidden sm:inline-flex')}
           >
-            Get early access
+            Sign in
           </a>
           <a href={siteConfig.routes.demo} className={buttonVariants({ size: 'pill-sm' })}>
             Open demo
