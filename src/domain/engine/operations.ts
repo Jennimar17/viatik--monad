@@ -217,6 +217,18 @@ export function createBudget(tx: Tx, input: CreateBudgetInput): Budget {
   }
   tx.state.budgets.push(budget)
   const portfolioId = tx.portfolioOfAgency(input.agencyId)
+  // The ledger records the first allocation under the budget's own id.
+  const receipt = tx.receipt({
+    kind: 'allocation',
+    amount: input.allocation,
+    fromLabel: source.name,
+    toLabel: budget.name,
+    description: `Allocated to ${budget.name}`,
+    policyLabel: 'Budget allocation · Agency Admin authorization',
+    operationId: budget.id,
+    portfolioId,
+    agencyId: input.agencyId,
+  })
   tx.move(
     'allocate',
     input.allocation,
@@ -226,6 +238,7 @@ export function createBudget(tx: Tx, input: CreateBudgetInput): Budget {
       portfolioId,
       agencyId: input.agencyId,
       refId: budget.id,
+      receiptId: receipt.id,
     },
   )
   tx.activity(
@@ -252,10 +265,24 @@ export function allocateToBudget(
   const portfolioId = tx.portfolioOfAgency(budget.agencyId)
   // Its own operation id: the ledger already recorded the budget id for the first allocation.
   const operationId = newId('alloc')
+  const source = tx.find('accounts', budget.sourceAccountId, 'Source account')
+  const receipt = (fromLabel: string, toLabel: string, description: string) =>
+    tx.receipt({
+      kind: 'allocation',
+      amount: input.amount,
+      fromLabel,
+      toLabel,
+      description,
+      policyLabel: 'Budget allocation · Agency Admin authorization',
+      operationId,
+      portfolioId,
+      agencyId: budget.agencyId,
+    })
   if (input.direction === 'allocate') {
     const available = accountBalance(tx.state, budget.sourceAccountId)
     if (available < input.amount)
       throw new DomainError('insufficient_funds', `The source account has ${usdText(available)} available.`)
+    const allocated = receipt(source.name, budget.name, `Allocated to ${budget.name}`)
     tx.move(
       'allocate',
       input.amount,
@@ -265,12 +292,14 @@ export function allocateToBudget(
         portfolioId,
         agencyId: budget.agencyId,
         refId: operationId,
+        receiptId: allocated.id,
       },
     )
   } else {
     const usage = budgetUsage(tx.state, budget, tx.now)
     if (usage.available < input.amount)
       throw new DomainError('insufficient_funds', `Only ${usdText(usage.available)} is free to return.`)
+    const returned = receipt(budget.name, source.name, `Returned from ${budget.name}`)
     tx.move(
       'deallocate',
       input.amount,
@@ -280,6 +309,7 @@ export function allocateToBudget(
         portfolioId,
         agencyId: budget.agencyId,
         refId: operationId,
+        receiptId: returned.id,
       },
     )
   }

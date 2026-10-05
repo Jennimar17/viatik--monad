@@ -13,7 +13,7 @@ import { Amount } from '@/components/viatik/amount'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
 import { MoneyInput } from '@/components/viatik/forms'
 import { KeyValueList, PageHeader, Panel } from '@/components/viatik/layout'
-import { CopyButton, Steps, type OperationPhase, type Step } from '@/components/viatik/operation'
+import { CopyButton, type OperationPhase, type Step } from '@/components/viatik/operation'
 import { QrCode } from '@/components/viatik/qr-code'
 import { Spinner } from '@/components/ui/spinner'
 import { useCommand, useLedger, useViatikState } from '@/data/react'
@@ -40,15 +40,21 @@ const STAGE: Partial<Record<OperationPhase | 'idle', number>> = {
  * Recorded on Monad for a deposit the person signs. Driven by the operation
  * lifecycle; a failure marks the step it had reached.
  */
-function depositSteps(phase: OperationPhase | 'idle', onMonad: boolean, reached: number): Step[] {
+function depositSteps(
+  phase: OperationPhase | 'idle',
+  onMonad: boolean,
+  reached: number,
+  /** The demo shows a deposit address: the vault watches for a transfer before anything is confirmed. */
+  watching: boolean,
+): Step[] {
   const stage = STAGE[phase]
   const stateAt = (index: number): Step['state'] => {
     if (stage === undefined) {
       const failedAt = Math.min(reached, 2)
       return index < failedAt ? 'done' : index === failedAt ? 'failed' : 'upcoming'
     }
-    // A deposit the person signs starts when they confirm it, not when the sheet opens.
-    if (onMonad && phase === 'idle') return 'upcoming'
+    // A deposit the person confirms starts then, not when the sheet opens.
+    if (phase === 'idle' && !watching) return 'upcoming'
     return stage > index ? 'done' : stage === index ? 'current' : 'upcoming'
   }
   if (onMonad) {
@@ -313,9 +319,8 @@ export default function AddFundsPage() {
             </>
           ),
         }}
-      >
-        <Steps steps={depositSteps(add.phase, Boolean(monad), reached)} />
-      </ApprovalSheet>
+        steps={depositSteps(add.phase, Boolean(monad), reached, onchainDeposits)}
+      />
     </div>
   )
 }

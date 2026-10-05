@@ -136,7 +136,8 @@ export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
     reconciliations: state.reconciliations.filter((r) => fullAgencyIds.has(r.agencyId)),
     receipts: state.receipts.filter(
       (r) =>
-        receiptIds.has(r.id) ||
+        // Budget allocations name the Agency's accounts, which a Member does not see.
+        (receiptIds.has(r.id) && !(r.kind === 'allocation' && memberOnly(r.agencyId))) ||
         (r.agencyId !== undefined && fullAgencyIds.has(r.agencyId)) ||
         (!r.agencyId && portfolioIds.has(r.portfolioId)),
     ),

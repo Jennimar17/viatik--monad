@@ -45,6 +45,16 @@ const UNANSWERED = new Set([CONNECTION_FAILED, '502', '503', '504'])
 /** Waits between confirmations of a transaction that is not final yet (about a minute in all). */
 const CONFIRM_AFTER_MS = [1_000, 2_000, 3_000, 5_000, 5_000, 8_000, 10_000, 10_000, 15_000]
 
+/**
+ * On a later visit, a short look only: nobody is waiting on a sheet, and the
+ * server keeps searching Monad for it on its own (the sweep of `GET /v1/state`).
+ */
+const RESUME_CONFIRM_AFTER_MS = [3_000]
+
+/** What a person is told while an operation's outcome is not known yet. */
+const NOT_FINAL_YET =
+  'We could not confirm it on Monad yet. If it went through, it shows up here on its own; if not, nothing was paid.'
+
 /** Answers that leave a signed operation's outcome open: confirm again, never sign again. */
 const CONFIRM_AGAIN = new Set([...UNANSWERED, 'network_unavailable', 'not_configured', 'still_processing'])
 
@@ -218,10 +228,7 @@ export class ApiDataSource implements DataSource {
       emit('failed')
       if (error instanceof DataSourceError) throw error
       throw signing
-        ? new DataSourceError(
-            'We could not confirm it yet. It will show up here once Monad has it.',
-            'still_processing',
-          )
+        ? new DataSourceError(NOT_FINAL_YET, 'still_processing')
         : new DataSourceError('Something went wrong. Nothing was changed.', 'unknown')
     }
   }
@@ -232,16 +239,25 @@ export class ApiDataSource implements DataSource {
 
   async resume(operation: OpenOperation, options: DispatchOptions = {}): Promise<ResumeOutcome> {
     try {
-      await this.confirm(operation, requireCredentials(options.credentials))
+      await this.confirm(operation, requireCredentials(options.credentials), RESUME_CONFIRM_AFTER_MS)
       return { status: 'confirmed' }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'An operation you started earlier did not go through.'
       const kept = openOperation(operation.key)
       if (!kept) return { status: 'failed', message }
-      // Still open: say so once, not on every visit.
+      // Still open: say so once, not on every visit. An expired one is kept too, and checked again
+      // quietly on later visits (one request each, until the device forgets it after a day): should
+      // its transaction land late, it is still recorded, and sending it again reuses its key.
       rememberOpen({ ...kept, notifiedAt: new Date().toISOString() })
-      return { status: 'unsettled', message, firstTime: !kept.notifiedAt }
+      const notFound = error instanceof DataSourceError && error.code === 'expired' && !kept.hash
+      return {
+        status: 'unsettled',
+        message: notFound
+          ? 'An operation you started earlier was not found on Monad, so nothing was paid. If it arrives late, Viatik records it.'
+          : message,
+        firstTime: !kept.notifiedAt,
+      }
     }
   }
 
@@ -312,7 +328,11 @@ export class ApiDataSource implements DataSource {
    * operation's is dropped so Viatik searches Monad for the real one. The
    * entry on this device is forgotten only once the outcome is final.
    */
-  private async confirm<R>(operation: OpenOperation, credentials: CredentialsProvider): Promise<R> {
+  private async confirm<R>(
+    operation: OpenOperation,
+    credentials: CredentialsProvider,
+    schedule: readonly number[] = CONFIRM_AFTER_MS,
+  ): Promise<R> {
     let hash = operation.hash
     for (let attempt = 0; ; attempt++) {
       try {
@@ -342,13 +362,8 @@ export class ApiDataSource implements DataSource {
         }
         // Anything else (a hiccup in this tab) is not an outcome either: ask again.
       }
-      const delay = CONFIRM_AFTER_MS[attempt]
-      if (delay === undefined) {
-        throw new DataSourceError(
-          'We could not confirm it on Monad yet. It will show up here as soon as it is final.',
-          'still_processing',
-        )
-      }
+      const delay = schedule[attempt]
+      if (delay === undefined) throw new DataSourceError(NOT_FINAL_YET, 'still_processing')
       await wait(delay)
     }
   }

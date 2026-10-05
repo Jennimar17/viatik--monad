@@ -16,7 +16,7 @@ import type { Cents } from '@/domain/money'
 import { useIsMobile } from '@/hooks/use-mobile'
 
 import { Amount } from './amount'
-import { PendingOperation, type OperationPhase } from './operation'
+import { PendingOperation, Steps, type OperationPhase, type Step } from './operation'
 
 /** What a money-moving action does, stated before anyone confirms it. */
 export type ConsequenceSummary = {
@@ -53,6 +53,7 @@ export function ApprovalSheet({
   success,
   secondaryAction,
   disabled,
+  steps,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -70,9 +71,14 @@ export function ApprovalSheet({
   success?: { title: string; body: React.ReactNode; actions?: React.ReactNode }
   secondaryAction?: React.ReactNode
   disabled?: boolean
+  /** Steps of this operation in its own words; they replace the generic lifecycle list. */
+  steps?: Step[]
 }) {
   const mobile = useIsMobile()
-  const busy = phase !== 'idle' && phase !== 'completed' && phase !== 'failed'
+  const running = phase !== 'idle' && phase !== 'completed' && phase !== 'failed'
+  // Running but answered with a note (not final yet: it settles on its own): nothing to wait for here.
+  const unsettled = running && Boolean(error)
+  const busy = running && !unsettled
   const done = phase === 'completed'
 
   return (
@@ -135,7 +141,11 @@ export function ApprovalSheet({
                 </dl>
               </div>
               {children}
-              {phase !== 'idle' ? <PendingOperation phase={phase} error={error} /> : null}
+              {phase !== 'idle' ? (
+                <PendingOperation phase={phase} error={error} steps={steps} />
+              ) : steps ? (
+                <Steps steps={steps} />
+              ) : null}
             </>
           )}
         </div>
@@ -144,6 +154,10 @@ export function ApprovalSheet({
           {done ? (
             <Button size="pill-sm" onClick={() => onOpenChange(false)}>
               Done
+            </Button>
+          ) : unsettled ? (
+            <Button size="pill-sm" onClick={() => onOpenChange(false)}>
+              Close
             </Button>
           ) : (
             <>

@@ -33,16 +33,20 @@ const steps: { phase: Exclude<OperationPhase, 'idle' | 'failed'>; label: string 
 export function PendingOperation({
   phase,
   error,
+  steps: ownSteps,
   className,
 }: {
   phase: OperationPhase
   error?: string
+  /** This operation's steps in its own words, in place of the generic lifecycle. */
+  steps?: Step[]
   className?: string
 }) {
   const currentIndex = phase === 'failed' ? -1 : steps.findIndex((s) => s.phase === phase)
   return (
     <div className={cn('flex flex-col gap-3', className)} role="status" aria-live="polite">
-      <ol className="flex flex-col gap-2.5">
+      {ownSteps ? <Steps steps={ownSteps} /> : null}
+      <ol className={cn('flex flex-col gap-2.5', ownSteps && 'hidden')}>
         {steps.map((step, index) => {
           const done = phase === 'completed' || index < currentIndex
           const active = index === currentIndex && phase !== 'completed'
@@ -97,6 +101,13 @@ const stepIcon: Record<StepState, React.ReactNode> = {
   failed: <X className="size-3.5" />,
 }
 
+const stepStateText: Record<StepState, string> = {
+  done: 'Done',
+  current: 'In progress',
+  upcoming: 'Not started',
+  failed: 'Failed',
+}
+
 const stepMarker: Record<StepState, string> = {
   done: 'border-sage bg-sage text-primary-foreground',
   current: 'border-warning text-warning',
@@ -119,6 +130,7 @@ export function Steps({ steps, className }: { steps: Step[]; className?: string 
           >
             {stepIcon[step.state]}
           </span>
+          <span className="sr-only">{stepStateText[step.state]}: </span>
           <span className="flex min-w-0 flex-col">
             <span className={cn('text-sm font-medium', step.state === 'upcoming' && 'text-subtle')}>
               {step.label}
