@@ -93,7 +93,7 @@ export const howItWorks = {
     {
       id: 'spend',
       title: 'Spend',
-      description: 'Members, vendors, and AI Agents operate within policy.',
+      description: 'Members, vendors, and automated payments operate within policy.',
       detail: { label: 'Payment', value: 'Vertex Cloud · 120.00 USD' },
     },
     {
@@ -121,7 +121,7 @@ export type RoleLayer = {
 export const roles = {
   eyebrow: 'Product',
   heading: 'One flow. Four layers of control.',
-  body: 'Capital moves down the stack: Investors set the boundaries, Agencies run the capital, Members spend within it, and AI Agents work on a budget.',
+  body: 'Capital moves down the stack: Investors set the boundaries, Agencies run the capital, Members spend within it, and automation runs on a budget.',
   items: [
     {
       id: 'investor',
@@ -132,7 +132,7 @@ export const roles = {
       bestFitFor: 'Funds, angels, grant programs, and studios backing several teams at once.',
       features: [
         'Funding agreements with milestones',
-        'Releases tied to reviewed evidence',
+        'Fund from your wallet, withdraw from your portfolio',
         'One capital trail per Agency',
       ],
       cta: { label: 'Explore the Investor view', role: 'investor' },
@@ -146,8 +146,8 @@ export const roles = {
       bestFitFor: 'Studios, agencies, and startups operating funded work for someone else.',
       features: [
         'Accounts and budgets per project',
-        'Team payments and vendor bills',
-        'Reconciliation with evidence attached',
+        'Scheduled and recurring payments',
+        'Providers you can search, pause and archive',
       ],
       cta: { label: 'Explore the Agency view', role: 'agency-admin' },
     },
@@ -160,7 +160,7 @@ export const roles = {
       bestFitFor: 'Contributors, contractors, and team leads spending on behalf of an Agency.',
       features: [
         'A clear allowance with its rules',
-        'Funding requests in plain language',
+        'Send your balance to your own wallet',
         'A receipt on every payment',
       ],
       cta: { label: 'Explore the Member view', role: 'member' },
@@ -171,7 +171,7 @@ export const roles = {
       label: 'AI Agents',
       heading: 'Give automation a budget, not unlimited access',
       body: 'Every automated payment follows provider rules and leaves a decision record.',
-      bestFitFor: 'Teams paying for APIs, data, and compute through agents.',
+      bestFitFor: 'Teams paying for APIs, data, and compute with controlled automation.',
       features: ['Per-operation and daily limits', 'Approved providers only', 'Emergency pause and expiry'],
       cta: { label: 'See it in the Agency view', role: 'agency-admin' },
     },
@@ -336,7 +336,7 @@ export const faq = {
     {
       question: 'Do users need a crypto wallet?',
       answer:
-        'The intended experience uses embedded accounts, so normal users can sign in with familiar methods and use Viatik without installing a wallet extension. Advanced verification details remain available when needed.',
+        'No. You sign in with email, Google, or a passkey and Viatik creates your account for you. There is no wallet extension to install, and you can still send your balance to your own wallet whenever you want.',
     },
     {
       question: 'Can an Agency spend funds freely?',
@@ -344,9 +344,9 @@ export const faq = {
         'An Agency can operate within the accounts, budgets, limits, categories, and approval thresholds established by its Funding Agreement and administrators.',
     },
     {
-      question: 'How do AI Agents spend money?',
+      question: 'How does automated spending work?',
       answer:
-        'An Agency Admin gives each AI Agent its own budget with approved providers, per-operation limits, a daily cap, and an expiry date. Payments outside those rules are not allowed, and the Agent can be paused at any time.',
+        'An Agency Admin gives each automation its own budget with approved providers, per-operation limits, a daily cap, and an expiry date. Payments outside those rules are not allowed, and the automation can be paused at any time.',
     },
     {
       question: 'Where does Monad appear?',
@@ -356,7 +356,7 @@ export const faq = {
     {
       question: 'Does Viatik guarantee investment returns?',
       answer:
-        'No. Viatik does not guarantee returns. Vault and yield capabilities are optional future features and depend on external protocols, asset eligibility, and risk conditions.',
+        'No. Viatik does not guarantee returns. Network rewards shown in the product are informational, and any yield capability depends on external protocols, asset eligibility, and risk conditions.',
     },
   ],
 }

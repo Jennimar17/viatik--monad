@@ -23,6 +23,7 @@ export const about = {
     },
     {
       id: 'who',
+      tone: 'light',
       heading: 'Who it is for',
       cards: [
         {
@@ -49,6 +50,7 @@ export const about = {
     },
     {
       id: 'status',
+      tone: 'light',
       heading: 'Where we are',
       body: 'Viatik is an early product built for the Monad Metropolis hackathon and runs on Monad Testnet. The demo uses fictional people, organizations and amounts.',
     },
@@ -59,85 +61,81 @@ export const roadmap = {
   eyebrow: 'Roadmap',
   title: 'What works today, and what comes next.',
   intro:
-    'Viatik runs on Monad Testnet. This page separates what you can try now, what we are building next, and what needs mainnet.',
+    'Viatik runs on Monad Testnet today. This page separates what you can use now from what moves to mainnet with real assets.',
   blocks: [
     {
       id: 'live',
-      heading: 'Live on testnet',
+      heading: 'Live today',
+      tone: 'light',
       body: 'Open the demo and follow one tranche from commitment to completed payment.',
       cards: [
         {
-          tag: 'Live',
+          tag: 'Investor',
           title: 'Funding agreements',
           body: 'Commit capital to an Agency with milestones, evidence requirements and tranches.',
         },
         {
-          tag: 'Live',
+          tag: 'Investor',
+          title: 'Fund and withdraw',
+          body: 'Bring funds from your own wallet and withdraw from the Portfolio Vault to your wallet or another address.',
+        },
+        {
+          tag: 'Investor',
+          title: 'Network rewards preview',
+          body: 'A read-only view of a real MON delegation on Monad, with no yield promise.',
+        },
+        {
+          tag: 'Agency Admin',
           title: 'Budgets and policies',
           body: 'Released funding becomes accounts and budgets with limits, categories and approvals.',
         },
         {
-          tag: 'Live',
-          title: 'Payments and receipts',
-          body: 'Members and Admins pay vendors within policy; every payment keeps its receipt.',
-        },
-        {
-          tag: 'Live',
-          title: 'Verification on Monad',
-          body: 'Important actions are settled on Monad Testnet and can be checked onchain.',
-        },
-        {
-          tag: 'Live',
-          title: 'Three roles',
-          body: 'Investor, Agency Admin and Member each see only what their role can do.',
-        },
-        {
-          tag: 'Live',
-          title: 'Sign in without a wallet',
-          body: 'Email, Google or passkey. The account is created for you.',
-        },
-      ],
-    },
-    {
-      id: 'next',
-      heading: 'Next',
-      body: 'What we are building now. Order may change as we learn.',
-      cards: [
-        {
-          tag: 'Next',
-          title: 'Fund from your wallet',
-          body: 'Investors bring test funds from their own wallet and withdraw from the Portfolio Vault.',
-        },
-        {
-          tag: 'Next',
-          title: 'Member withdrawals',
-          body: 'Members send their balance to a saved address of their choice.',
-        },
-        {
-          tag: 'Next',
+          tag: 'Agency Admin',
           title: 'Providers',
-          body: 'A page for Admins to search, edit, pause and archive the vendors they pay.',
+          body: 'Search, edit, pause and archive the vendors you pay, with their payment history.',
         },
         {
-          tag: 'Next',
+          tag: 'Agency Admin',
           title: 'Scheduled and recurring payments',
-          body: 'Admins schedule payments; Admins and Investors can pause or cancel them.',
+          body: 'Schedule one-off or repeating payments. Admins and Investors can pause or cancel them.',
         },
         {
-          tag: 'Next',
-          title: 'Network rewards preview',
-          body: 'A read-only view of a real MON delegation on Monad, without any yield promise.',
+          tag: 'Member',
+          title: 'Your Viatik account',
+          body: 'See your balance and movements, and send them to a saved wallet address whenever you want.',
+        },
+        {
+          tag: 'Everyone',
+          title: 'Verified receipts',
+          body: 'Important actions settle on Monad Testnet and every payment keeps a receipt anyone can check.',
+        },
+        {
+          tag: 'Everyone',
+          title: 'Sign in without a wallet',
+          body: 'Email, Google or passkey. Your account is created for you.',
         },
       ],
     },
     {
       id: 'mainnet',
-      heading: 'Needs mainnet',
-      body: 'Viatik settles with test dollars on Monad Testnet today. These need real assets and live infrastructure.',
-      points: [
-        'Settlement in USDC instead of test dollars',
-        'Fiat on- and off-ramps',
-        'Yield on idle capital through established lending markets',
+      heading: 'Coming to mainnet',
+      body: 'Viatik settles with test dollars on Monad Testnet today. After the hackathon these move to real assets and live infrastructure.',
+      cards: [
+        {
+          tag: 'Mainnet',
+          title: 'USDC settlement',
+          body: 'Funding agreements, releases and payments settle in USDC instead of test dollars.',
+        },
+        {
+          tag: 'Mainnet',
+          title: 'Fiat on- and off-ramps',
+          body: 'Add and withdraw money with a bank account, not only a wallet.',
+        },
+        {
+          tag: 'Mainnet',
+          title: 'Yield on idle capital',
+          body: 'Idle capital can earn through established lending markets, with clear risk disclosures.',
+        },
       ],
     },
   ] satisfies PageBlock[],
@@ -150,6 +148,7 @@ export const docs = {
   blocks: [
     {
       id: 'concepts',
+      tone: 'light',
       heading: 'Core concepts',
       cards: [
         {
@@ -194,6 +193,7 @@ export const docs = {
     },
     {
       id: 'verify',
+      tone: 'light',
       heading: 'How to verify a receipt',
       points: [
         'Open a payment and choose Verified details.',
