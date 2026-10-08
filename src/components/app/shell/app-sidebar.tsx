@@ -68,7 +68,7 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="px-3 pt-4 pb-2">
         <Link
-          href={href(role === 'member' ? 'home' : 'overview')}
+          href={href('overview')}
           className="flex h-9 items-center gap-2.5 px-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
           aria-label="Viatik home"
         >

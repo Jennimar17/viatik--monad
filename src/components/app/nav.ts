@@ -5,7 +5,6 @@ import {
   Building2,
   ChartColumn,
   HandCoins,
-  House,
   Landmark,
   LayoutDashboard,
   Layers,
@@ -16,7 +15,6 @@ import {
   Settings,
   ShieldCheck,
   Store,
-  UserRound,
   Users,
   Vault,
   WalletCards,
@@ -95,7 +93,7 @@ export const NAVIGATION: { [R in Role]: RoleNavigation<R> } = {
   },
   member: {
     primary: [
-      { key: 'home', label: 'Home', path: 'home', icon: House },
+      { key: 'overview', label: 'Overview', path: 'overview', icon: LayoutDashboard },
       { key: 'budget', label: 'My budget', path: 'budget', icon: PieChart },
       { key: 'requests', label: 'Requests', path: 'requests', icon: Layers, badge: 'requests' },
       { key: 'expenses', label: 'Expenses', path: 'expenses', icon: WalletCards },
@@ -103,10 +101,10 @@ export const NAVIGATION: { [R in Role]: RoleNavigation<R> } = {
     ],
     secondary: [
       { key: 'activity', label: 'Activity', path: 'activity', icon: Activity },
-      { key: 'profile', label: 'Profile', path: 'profile', icon: UserRound },
+      { key: 'settings', label: 'Settings', path: 'settings', icon: Settings },
     ],
     mobileTabs: [
-      { key: 'home', label: 'Home', path: 'home', icon: House },
+      { key: 'overview', label: 'Overview', path: 'overview', icon: LayoutDashboard },
       { key: 'request', label: 'Request', path: 'requests/new', icon: Send },
       { key: 'expenses', label: 'Expenses', path: 'expenses', icon: WalletCards },
       { key: 'payments', label: 'Payments', path: 'payments', icon: ArrowDownLeft },
@@ -120,12 +118,12 @@ export function basePath(role: Role, scopeId: string): string {
   return `/member/${scopeId}`
 }
 
-/** The first screen of a role: Portfolio overview, Agency overview or the Member home. */
+/** The first screen of a role: its Overview (Portfolio, Agency or the Member's own). */
 export function roleHome(membership: Membership): Route {
   if (membership.scope.kind === 'portfolio')
     return `/investor/${membership.scope.portfolioId}/overview` as Route
   if (membership.role === 'agency_admin') return `/agency/${membership.scope.agencyId}/overview` as Route
-  return `/member/${membership.scope.agencyId}/home` as Route
+  return `/member/${membership.scope.agencyId}/overview` as Route
 }
 
 /** A receipt's page. Receipts live outside the role workspaces so they print cleanly. */

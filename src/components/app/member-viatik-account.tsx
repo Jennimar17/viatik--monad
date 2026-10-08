@@ -1,21 +1,69 @@
 'use client'
 
-import { ArrowUpRight, TriangleAlert } from 'lucide-react'
-import * as React from 'react'
+import { TriangleAlert } from 'lucide-react'
 
+import { usePermissions } from '@/components/app/role-context'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
-import { Amount } from '@/components/viatik/amount'
-import { Panel, SectionLabel } from '@/components/viatik/layout'
-import type { Cents } from '@/domain/money'
+import { useViatikState } from '@/data/react'
+import { memberHeld } from '@/domain/engine/operations'
+import { cents, clampToZero, type Cents } from '@/domain/money'
 
-import { MemberBalanceMovements } from './member-balance-movements'
 import { useOwnAccount, type OwnAccount } from './member-own-account'
-import { MemberSavedAddresses, useSavedAddresses } from './member-saved-addresses'
-import { MemberWithdrawSheet } from './member-withdraw-sheet'
+import { useSavedAddresses } from './member-saved-addresses'
 
-/** One line under the balance: how sending settles here, or why it cannot right now. */
-function SettlementNote({ own }: { own: OwnAccount }) {
+export type MemberViatikAccount = {
+  /** What the Agency paid the person and they have not sent or returned yet, never below zero. */
+  held: Cents
+  /** The person's own account, and how sending settles here. */
+  own: OwnAccount
+  /** May take their own balance out (`receive_payout`): without it there is no send or return button. */
+  canMove: boolean
+  /** Still loading, failed, or paused: nothing can be sent right now. */
+  blocked: boolean
+  /** Nowhere to send yet: their own account is still being created and nothing is saved. */
+  nowhere: boolean
+  /** "Send to my account" can open now: something to send, somewhere to send it, and the network ready. */
+  canSendNow: boolean
+}
+
+/**
+ * The Member's Viatik account in one Agency, as Payments and Overview show it:
+ * the balance they hold, their own account, and whether they can send it now.
+ */
+export function useMemberViatikAccount(agencyId: string): MemberViatikAccount {
+  const { state, userId } = useViatikState()
+  const { can } = usePermissions()
+  const own = useOwnAccount()
+  const saved = useSavedAddresses()
+  const held = clampToZero(cents(memberHeld(state, agencyId, userId)))
+  // Sending out and returning both take the person's own balance: the engine authorizes `receive_payout`.
+  const canMove = can('receive_payout', { ownerUserId: userId })
+  const blocked = own.loading || own.failed || own.paused
+  // Nowhere to send yet: the account is still being created and nothing is saved.
+  const nowhere = !own.address && saved.length === 0
+  return { held, own, canMove, blocked, nowhere, canSendNow: canMove && held > 0 && !nowhere && !blocked }
+}
+
+/**
+ * One line under the balance: how sending settles here, why it cannot right
+ * now, or that there is nothing to send yet.
+ */
+export function SettlementNote({
+  account,
+  agencyName,
+}: {
+  account: MemberViatikAccount
+  agencyName: string
+}) {
+  const { own, held, blocked, nowhere } = account
+  if (held <= 0 && !blocked) {
+    return (
+      <p className="text-xs text-pretty text-subtle">
+        Nothing to send yet: {agencyName} has not paid you, or you already sent or returned everything.
+      </p>
+    )
+  }
   if (own.loading) {
     return (
       <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -43,6 +91,13 @@ function SettlementNote({ own }: { own: OwnAccount }) {
       </p>
     )
   }
+  if (nowhere) {
+    return (
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner /> Your account is being created. You can send to it in a moment.
+      </p>
+    )
+  }
   return (
     <p className="text-xs text-pretty text-subtle">
       {own.settlement === 'monad'
@@ -51,89 +106,5 @@ function SettlementNote({ own }: { own: OwnAccount }) {
           ? 'Test environment: Viatik records what you send, but nothing reaches the address yet.'
           : 'Demo: sending is simulated with a placeholder address. Nothing leaves Viatik.'}
     </p>
-  )
-}
-
-/**
- * The Member's Viatik account in one Agency: what the Agency paid them and they
- * still hold, how it moved, where they can send it (their own account by default,
- * or an address they saved), and "Send to my account".
- */
-export function MemberViatikAccount({
-  agencyId,
-  agencyName,
-  held,
-  canSend,
-  className,
-}: {
-  agencyId: string
-  agencyName: string
-  /** What the person holds in this Agency (`memberHeld`), never below zero. */
-  held: Cents
-  /** May take their own balance out (`receive_payout`); without it there is no send button. */
-  canSend: boolean
-  className?: string
-}) {
-  const own = useOwnAccount()
-  const saved = useSavedAddresses()
-  const [sendOpen, setSendOpen] = React.useState(false)
-  // Nowhere to send yet: the account is still being created and nothing is saved.
-  const nowhere = !own.address && saved.length === 0
-  const blocked = own.loading || own.failed || own.paused
-
-  return (
-    <Panel
-      title="Viatik account"
-      description={`What ${agencyName} paid you and you have not sent or returned yet.`}
-      className={className}
-    >
-      <div className="flex flex-col gap-6">
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div className="flex min-w-0 flex-col gap-1">
-              <span className="text-sm text-muted-foreground">Your balance with {agencyName}</span>
-              <Amount value={held} size="xl" />
-            </div>
-            {canSend ? (
-              <Button
-                size="pill"
-                className="w-full sm:w-auto"
-                disabled={held <= 0 || nowhere || blocked}
-                onClick={() => setSendOpen(true)}
-              >
-                <ArrowUpRight data-icon="inline-start" /> Send to my account
-              </Button>
-            ) : null}
-          </div>
-          {held <= 0 && !blocked ? (
-            <p className="text-xs text-pretty text-subtle">
-              Nothing to send yet: {agencyName} has not paid you, or you already sent or returned everything.
-            </p>
-          ) : (
-            <SettlementNote own={own} />
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 gap-6 border-t border-border pt-5 md:grid-cols-2">
-          <section aria-labelledby="member-account-movements" className="flex min-w-0 flex-col gap-2">
-            <SectionLabel id="member-account-movements">Recent movements</SectionLabel>
-            <MemberBalanceMovements agencyId={agencyId} agencyName={agencyName} ownAddress={own.address} />
-          </section>
-          <section aria-labelledby="member-account-addresses" className="flex min-w-0 flex-col gap-2">
-            <SectionLabel id="member-account-addresses">Where you can send it</SectionLabel>
-            <MemberSavedAddresses own={own} />
-          </section>
-        </div>
-      </div>
-
-      <MemberWithdrawSheet
-        open={sendOpen && canSend}
-        onOpenChange={setSendOpen}
-        agencyId={agencyId}
-        agencyName={agencyName}
-        held={held}
-        own={own}
-      />
-    </Panel>
   )
 }

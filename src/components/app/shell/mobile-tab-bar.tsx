@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 import { NAVIGATION } from '../nav'
 import { useHref, useRole } from '../role-context'
 
-/** Member navigation on phones: Home · Request · Expenses · Payments · More. */
+/** Member navigation on phones: Overview · Request · Expenses · Payments · More. */
 export function MobileTabBar() {
   const { base } = useRole()
   const href = useHref()

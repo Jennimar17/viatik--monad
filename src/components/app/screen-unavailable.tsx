@@ -5,7 +5,7 @@ import { Compass } from 'lucide-react'
 import { EmptyState } from '@/components/viatik/feedback'
 
 import { ButtonLink } from './button-link'
-import { useHref, useRole } from './role-context'
+import { useHref } from './role-context'
 
 /**
  * In-shell "not found" for paths inside a workspace that do not exist, and
@@ -18,7 +18,6 @@ export function ScreenUnavailable({
   title?: string
   description?: string
 }) {
-  const { role } = useRole()
   const href = useHref()
   return (
     <EmptyState
@@ -27,8 +26,8 @@ export function ScreenUnavailable({
       title={title}
       description={description}
       action={
-        <ButtonLink href={href(role === 'member' ? 'home' : 'overview')} size="pill">
-          Back to {role === 'member' ? 'Home' : 'Overview'}
+        <ButtonLink href={href('overview')} size="pill">
+          Back to Overview
         </ButtonLink>
       }
       className="mt-10"

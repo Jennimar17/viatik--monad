@@ -1,16 +1,21 @@
 'use client'
 
-import { ArrowUpRight, CalendarClock, FileWarning, PieChart, Plus, Upload } from 'lucide-react'
+import { ArrowUpRight, FileWarning, PieChart, Plus, Upload } from 'lucide-react'
+import * as React from 'react'
+
 import Link from '@/components/viatik/link'
 
 import { ButtonLink } from '@/components/app/button-link'
+import { SettlementNote, useMemberViatikAccount } from '@/components/app/member-viatik-account'
+import { MemberWithdrawSheet } from '@/components/app/member-withdraw-sheet'
 import { useHref, useRole } from '@/components/app/role-context'
 import { WelcomeCard } from '@/components/app/welcome-card'
+import { Button } from '@/components/ui/button'
 import { Amount } from '@/components/viatik/amount'
 import { UsageRing } from '@/components/viatik/charts'
 import { EmptyState } from '@/components/viatik/feedback'
 import { UsageBar } from '@/components/viatik/finance'
-import { PageHeader, Panel } from '@/components/viatik/layout'
+import { KeyValueList, PageHeader, Panel } from '@/components/viatik/layout'
 import { PolicySummary } from '@/components/viatik/policy'
 import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useViatikState } from '@/data/react'
@@ -19,13 +24,16 @@ import { formatUsd, min, sum } from '@/domain/money'
 import { describeBudgetPolicy } from '@/domain/policy'
 import { destinationName, memberBudgets, recipientName } from '@/domain/queries'
 import { requestStatus } from '@/domain/status'
-import { formatDate, formatRelative, formatShortDate } from '@/lib/format'
+import { formatRelative, formatShortDate } from '@/lib/format'
 
-export default function MemberHomePage() {
+export default function MemberOverviewPage() {
   const { state, now, user, userId } = useViatikState()
   const { scopeId: agencyId } = useRole()
   const href = useHref()
   const agency = state.agencies.find((a) => a.id === agencyId)
+  const agencyName = agency?.name ?? 'your Agency'
+  const account = useMemberViatikAccount(agencyId)
+  const [sendOpen, setSendOpen] = React.useState(false)
 
   const budgets = memberBudgets(state, agencyId, userId, now)
   const availableTotal = sum(budgets, (b) => min(b.remaining, b.usage.available))
@@ -39,15 +47,15 @@ export default function MemberHomePage() {
   const pending = myRequests.filter(
     (r) => r.status === 'needs_approval' || r.status === 'approved' || r.status === 'processing',
   )
-  const nextPayment = state.payments
-    .filter(
-      (p) =>
-        p.agencyId === agencyId &&
-        p.recipient.kind === 'member' &&
-        p.recipient.userId === userId &&
-        p.status === 'scheduled',
-    )
+  const paidToMe = state.payments.filter(
+    (p) => p.agencyId === agencyId && p.recipient.kind === 'member' && p.recipient.userId === userId,
+  )
+  const nextPayment = paidToMe
+    .filter((p) => p.status === 'scheduled')
     .sort((a, b) => (a.scheduledFor < b.scheduledFor ? -1 : 1))[0]
+  const lastReceived = paidToMe
+    .filter((p) => p.status === 'completed' && p.completedAt)
+    .sort((a, b) => ((a.completedAt ?? '') < (b.completedAt ?? '') ? 1 : -1))[0]
   const expenses = state.expenses
     .filter((e) => e.agencyId === agencyId && e.userId === userId)
     .sort((a, b) => (a.spentAt < b.spentAt ? 1 : -1))
@@ -63,7 +71,7 @@ export default function MemberHomePage() {
           </>
         }
         title={`Hi, ${user?.name.split(' ')[0]}`}
-        description="What you can spend, what is pending, and what still needs a receipt."
+        description="What you can spend, your Viatik balance, what is pending, and what still needs a receipt."
         actions={
           <ButtonLink href={href('requests/new')} size="pill" className="hidden sm:inline-flex">
             <Plus data-icon="inline-start" /> New request
@@ -193,26 +201,59 @@ export default function MemberHomePage() {
           )}
         </Panel>
 
-        <Panel title="Next expected payment">
-          {nextPayment ? (
-            <div className="flex items-center gap-4">
-              <span className="flex size-12 shrink-0 items-center justify-center rounded-xl border border-border text-subtle">
-                <CalendarClock className="size-5" aria-hidden="true" />
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <Amount value={nextPayment.amount} size="lg" />
-                <span className="text-sm text-muted-foreground">
-                  {nextPayment.memo} · {formatDate(nextPayment.scheduledFor)}
-                </span>
-              </span>
-            </div>
-          ) : (
-            <EmptyState
-              compact
-              title="No payments scheduled"
-              description="Payouts your Agency schedules for you will show here."
+        <Panel
+          title="Viatik balance"
+          description={`What ${agencyName} paid you and you still hold.`}
+          action={
+            <ButtonLink href={href('payments')} variant="ghost" size="pill-sm">
+              All payments <ArrowUpRight data-icon="inline-end" />
+            </ButtonLink>
+          }
+        >
+          <div className="flex flex-col gap-4">
+            <Amount value={account.held} size="xl" />
+            <KeyValueList
+              dense
+              items={[
+                {
+                  label: 'Last received',
+                  value: lastReceived
+                    ? `+${formatUsd(lastReceived.amount)} · ${formatShortDate(lastReceived.completedAt ?? '')}`
+                    : 'Nothing yet',
+                  hint: lastReceived?.memo,
+                },
+                {
+                  label: 'Next payment',
+                  value: nextPayment
+                    ? `${formatUsd(nextPayment.amount)} · ${formatShortDate(nextPayment.scheduledFor)}`
+                    : 'Nothing scheduled',
+                  hint: nextPayment?.memo,
+                },
+              ]}
             />
-          )}
+            {/* Why "Send to my account" is unavailable, once the network check is done. */}
+            {account.canMove && !account.canSendNow && !account.own.loading ? (
+              <SettlementNote account={account} agencyName={agencyName} />
+            ) : null}
+            {account.canMove ? (
+              <Button
+                size="pill-sm"
+                className="w-fit"
+                disabled={!account.canSendNow}
+                onClick={() => setSendOpen(true)}
+              >
+                <ArrowUpRight data-icon="inline-start" /> Send to my account
+              </Button>
+            ) : null}
+          </div>
+          <MemberWithdrawSheet
+            open={sendOpen && account.canMove}
+            onOpenChange={setSendOpen}
+            agencyId={agencyId}
+            agencyName={agencyName}
+            held={account.held}
+            own={account.own}
+          />
         </Panel>
       </div>
 

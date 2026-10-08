@@ -99,7 +99,9 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
         PaymentRejected,
         Return,
         Allocation,
-        Withdrawal
+        Withdrawal,
+        OutsidePayment,
+        CapitalReturn
     }
 
     enum ScopeKind {
@@ -209,6 +211,13 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
         bool pausedByInvestor;
     }
 
+    /// @notice A payment an Admin made outside Viatik (to an address), and the proof anchored for it.
+    struct OutsideProof {
+        bool paid;
+        /// The fingerprint of the invoice or receipt; 0 until the Admin anchors it.
+        bytes32 evidenceHash;
+    }
+
     /// @notice What `createSchedule` takes (a struct keeps the function readable).
     struct ScheduleInput {
         bytes32 id;
@@ -305,6 +314,22 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
     event ScheduleRan(bytes32 indexed schedule, bytes32 indexed paymentId, uint64 nextRunAt, uint32 runsLeft);
     event ScheduleStatusChanged(bytes32 indexed schedule, ScheduleStatus status, address by);
 
+    /// @notice An Admin paid outside Viatik: TestUSD left the agency's `source` to `to`.
+    event PaidOutside(
+        bytes32 indexed opId, bytes32 indexed agency, address indexed to, bytes32 source, uint256 amount, bytes32 evidenceHash
+    );
+    /// @notice An Admin returned capital from an agency account to the Investor's Portfolio Vault.
+    event CapitalReturned(
+        bytes32 indexed opId,
+        bytes32 indexed agency,
+        bytes32 indexed agreement,
+        bytes32 fromAccount,
+        bytes32 vault,
+        uint256 amount
+    );
+    /// @notice The proof of a payment made outside Viatik, anchored once.
+    event EvidenceRecorded(bytes32 indexed opId, bytes32 indexed agency, address by, bytes32 evidenceHash);
+
     event RegistrarSet(address registrar);
     event PayoutSinkSet(address sink);
     event NamespaceSet(bytes32 namespace);
@@ -355,6 +380,7 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
     mapping(bytes32 id => PaymentRequest) private _requests;
     mapping(bytes32 agency => mapping(address member => uint256)) private _memberBalances;
     mapping(bytes32 id => Schedule) private _schedules;
+    mapping(bytes32 agency => mapping(bytes32 opId => OutsideProof)) private _outside;
 
     /// @notice Money operations already recorded, per actor: each opId runs once, and
     /// nobody can mark someone else's operation as done.
@@ -884,6 +910,78 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
         if (!TOKEN.transfer(to, amount)) revert InvalidState(opId);
     }
 
+    // ─── Paying outside Viatik and returning capital ───────────────────────
+
+    /// @notice An Agency Admin pays something Viatik cannot pay directly (a tool, a
+    /// subscription) by sending TestUSD from an agency account or budget to `to`
+    /// (`payOutside`). The same limits as `pay` apply: a paused budget pays nothing, a
+    /// budget's per-operation limit holds, and nothing above the Investor's exception
+    /// threshold. A budget limited to approved vendors never pays an address: its list
+    /// names vendors, and an address cannot be proven to be one of them. The proof
+    /// (invoice) can come with the payment or later, through `recordEvidence`.
+    function payOutside(bytes32 opId, bytes32 source, address to, uint256 amount, bytes32 evidenceHash) external {
+        _claim(opId);
+        Location storage from = _locations[source];
+        if (from.kind != LocationKind.Account && from.kind != LocationKind.Budget) revert NotRegistered(source);
+        bytes32 agency = from.scope;
+        _requireRole(agency, Role.Admin);
+        if (amount == 0 || to == address(0) || to == address(this) || to == address(TOKEN)) revert InvalidState(opId);
+        if (from.kind == LocationKind.Budget) {
+            Budget storage budget = _budgets[source];
+            if (budget.paused) revert BudgetPaused(source);
+            if (amount > budget.perOperationLimit) {
+                revert LimitExceeded(LimitRule.PerOperation, budget.perOperationLimit, amount);
+            }
+            if (!budget.anyDestination) revert DestinationNotAllowed(source, bytes32(0));
+        }
+        uint256 threshold = exceptionThresholdOf(agency);
+        if (amount > threshold) revert LimitExceeded(LimitRule.Exception, threshold, amount);
+        _debit(source, amount);
+        _outside[agency][opId] = OutsideProof({paid: true, evidenceHash: evidenceHash});
+        emit PaidOutside(opId, agency, to, source, amount, evidenceHash);
+        // The receipt names where the money went: the address, as a bytes32.
+        _record(opId, ReceiptKind.OutsidePayment, amount, source, _memberLocation(to), evidenceHash);
+        if (!TOKEN.transfer(to, amount)) revert InvalidState(opId);
+    }
+
+    /// @notice An Agency Admin anchors the proof (invoice, receipt) of a payment made outside
+    /// Viatik, once (`addPaymentProof`). It cannot be replaced afterwards.
+    function recordEvidence(bytes32 agencyId, bytes32 opId, bytes32 evidenceHash) external {
+        address caller = _requireRole(agencyId, Role.Admin);
+        OutsideProof storage proof = _outside[agencyId][opId];
+        if (!proof.paid) revert NotRegistered(opId);
+        if (evidenceHash == bytes32(0)) revert InvalidState(opId);
+        if (proof.evidenceHash != bytes32(0)) revert AlreadyProcessed(opId);
+        proof.evidenceHash = evidenceHash;
+        emit EvidenceRecorded(opId, agencyId, caller, evidenceHash);
+    }
+
+    /// @notice An Agency Admin returns capital from one of the agency's accounts to the
+    /// Investor's Portfolio Vault (`returnToInvestor`). Only an account (not a budget or a
+    /// funding vault), only to the Portfolio Vault of this agency's portfolio. `agreementId`
+    /// (optional) names the agreement it is returned under; its funded and released
+    /// amounts do not change: they are history.
+    function returnCapital(
+        bytes32 opId,
+        bytes32 fromAccount,
+        bytes32 portfolioVault,
+        bytes32 agreementId,
+        uint256 amount,
+        bytes32 evidenceHash
+    ) external {
+        _claim(opId);
+        bytes32 agency = _requireLocation(fromAccount, LocationKind.Account).scope;
+        _requireRole(agency, Role.Admin);
+        if (_requireLocation(portfolioVault, LocationKind.PortfolioVault).scope != agencyPortfolio[agency]) {
+            revert InvalidState(portfolioVault);
+        }
+        if (agreementId != bytes32(0) && _agreements[agreementId].agency != agency) revert InvalidState(agreementId);
+        if (amount == 0) revert InvalidState(opId);
+        _move(fromAccount, portfolioVault, amount);
+        emit CapitalReturned(opId, agency, agreementId, fromAccount, portfolioVault, amount);
+        _record(opId, ReceiptKind.CapitalReturn, amount, fromAccount, portfolioVault, evidenceHash);
+    }
+
     // ─── Scheduled payments ─────────────────────────────────────────────────
 
     /// @notice An Agency Admin authorizes a payment to a Member or a vendor, once or on a cadence
@@ -1056,6 +1154,12 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
 
     function getSchedule(bytes32 id) external view returns (Schedule memory) {
         return _schedules[id];
+    }
+
+    /// @notice Whether an agency paid `opId` outside Viatik, and the proof anchored for it (0 if none yet).
+    function outsidePayment(bytes32 agencyId, bytes32 opId) external view returns (bool paid, bytes32 evidenceHash) {
+        OutsideProof storage proof = _outside[agencyId][opId];
+        return (proof.paid, proof.evidenceHash);
     }
 
     /// @notice The exception threshold of an agency: the one of its governing agreement,
@@ -1236,6 +1340,14 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
         }
         _memberBalances[agencyId][member] = amount;
         _mintToLedger(amount);
+    }
+
+    /// @notice Genesis: a payment the seeded story made outside Viatik. Nothing moves: that
+    /// money already left; only the record (and its proof, if any) is carried over.
+    function importOutsidePayment(bytes32 agencyId, bytes32 opId, bytes32 evidenceHash) external onlyOwner {
+        if (scopeKind[agencyId] != ScopeKind.Agency || opId == bytes32(0)) revert InvalidState(agencyId);
+        if (_outside[agencyId][opId].paid) revert AlreadyProcessed(opId);
+        _outside[agencyId][opId] = OutsideProof({paid: true, evidenceHash: evidenceHash});
     }
 
     /// @notice Genesis: a request still waiting for approval in the seeded story. Its

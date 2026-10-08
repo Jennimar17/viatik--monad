@@ -27,7 +27,9 @@ contract Deploy is Script {
         address keeper = vm.envOr("LEDGER_KEEPER", deployer);
 
         vm.startBroadcast(key);
-        token = new TestUSD();
+        // Reuse the deployed TestUSD when given (everyone keeps their test funds); else a new one.
+        address existing = vm.envOr("TEST_USD_ADDRESS", address(0));
+        token = existing == address(0) ? new TestUSD() : TestUSD(existing);
         ledger = new ViatikLedger(ITestUSD(address(token)), registrar, sink);
         ledger.setKeeper(keeper);
         vm.stopBroadcast();

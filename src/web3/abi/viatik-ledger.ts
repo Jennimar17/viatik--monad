@@ -1159,6 +1159,29 @@ export const viatikLedgerAbi = [
   },
   {
     type: 'function',
+    name: 'importOutsidePayment',
+    inputs: [
+      {
+        name: 'agencyId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'opId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'evidenceHash',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     name: 'importPendingRequest',
     inputs: [
       {
@@ -1470,6 +1493,35 @@ export const viatikLedgerAbi = [
   },
   {
     type: 'function',
+    name: 'outsidePayment',
+    inputs: [
+      {
+        name: 'agencyId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'opId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    outputs: [
+      {
+        name: 'paid',
+        type: 'bool',
+        internalType: 'bool',
+      },
+      {
+        name: 'evidenceHash',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     name: 'owner',
     inputs: [],
     outputs: [
@@ -1515,6 +1567,39 @@ export const viatikLedgerAbi = [
       },
       {
         name: 'member',
+        type: 'address',
+        internalType: 'address',
+      },
+      {
+        name: 'amount',
+        type: 'uint256',
+        internalType: 'uint256',
+      },
+      {
+        name: 'evidenceHash',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'payOutside',
+    inputs: [
+      {
+        name: 'opId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'source',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'to',
         type: 'address',
         internalType: 'address',
       },
@@ -1612,6 +1697,29 @@ export const viatikLedgerAbi = [
       },
     ],
     stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    name: 'recordEvidence',
+    inputs: [
+      {
+        name: 'agencyId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'opId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'evidenceHash',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -1770,6 +1878,44 @@ export const viatikLedgerAbi = [
     inputs: [
       {
         name: 'scheduleId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'returnCapital',
+    inputs: [
+      {
+        name: 'opId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'fromAccount',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'portfolioVault',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'agreementId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'amount',
+        type: 'uint256',
+        internalType: 'uint256',
+      },
+      {
+        name: 'evidenceHash',
         type: 'bytes32',
         internalType: 'bytes32',
       },
@@ -2421,6 +2567,49 @@ export const viatikLedgerAbi = [
   },
   {
     type: 'event',
+    name: 'CapitalReturned',
+    inputs: [
+      {
+        name: 'opId',
+        type: 'bytes32',
+        indexed: true,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'agency',
+        type: 'bytes32',
+        indexed: true,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'agreement',
+        type: 'bytes32',
+        indexed: true,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'fromAccount',
+        type: 'bytes32',
+        indexed: false,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'vault',
+        type: 'bytes32',
+        indexed: false,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'amount',
+        type: 'uint256',
+        indexed: false,
+        internalType: 'uint256',
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
     name: 'Deposited',
     inputs: [
       {
@@ -2448,6 +2637,37 @@ export const viatikLedgerAbi = [
     type: 'event',
     name: 'EIP712DomainChanged',
     inputs: [],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'EvidenceRecorded',
+    inputs: [
+      {
+        name: 'opId',
+        type: 'bytes32',
+        indexed: true,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'agency',
+        type: 'bytes32',
+        indexed: true,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'by',
+        type: 'address',
+        indexed: false,
+        internalType: 'address',
+      },
+      {
+        name: 'evidenceHash',
+        type: 'bytes32',
+        indexed: false,
+        internalType: 'bytes32',
+      },
+    ],
     anonymous: false,
   },
   {
@@ -2572,6 +2792,49 @@ export const viatikLedgerAbi = [
         type: 'address',
         indexed: true,
         internalType: 'address',
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'PaidOutside',
+    inputs: [
+      {
+        name: 'opId',
+        type: 'bytes32',
+        indexed: true,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'agency',
+        type: 'bytes32',
+        indexed: true,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'to',
+        type: 'address',
+        indexed: true,
+        internalType: 'address',
+      },
+      {
+        name: 'source',
+        type: 'bytes32',
+        indexed: false,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'amount',
+        type: 'uint256',
+        indexed: false,
+        internalType: 'uint256',
+      },
+      {
+        name: 'evidenceHash',
+        type: 'bytes32',
+        indexed: false,
+        internalType: 'bytes32',
       },
     ],
     anonymous: false,

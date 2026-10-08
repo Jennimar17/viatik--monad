@@ -234,8 +234,8 @@ function NewRequest() {
               <ButtonLink href={href(`requests/${result.id}`)} size="pill">
                 View request
               </ButtonLink>
-              <ButtonLink href={href('home')} variant="outline" size="pill">
-                Back to home
+              <ButtonLink href={href('overview')} variant="outline" size="pill">
+                Back to Overview
               </ButtonLink>
               {ledgerRecord ? (
                 <VerifiedDetailsButton record={ledgerRecord} variant="ghost" size="pill" />
@@ -269,7 +269,7 @@ function NewRequest() {
                 </ButtonLink>
               ) : null}
               <ReceiptDetailsButton receipt={receipt} size="pill" />
-              <Button variant="ghost" size="pill" onClick={() => router.push(href('home'))}>
+              <Button variant="ghost" size="pill" onClick={() => router.push(href('overview'))}>
                 Done
               </Button>
             </div>

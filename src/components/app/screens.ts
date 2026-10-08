@@ -266,9 +266,9 @@ export const SCREENS = {
   ],
   member: [
     {
-      path: 'home',
-      title: 'Home',
-      summary: 'Available to spend, requests, next payment, receipts.',
+      path: 'overview',
+      title: 'Overview',
+      summary: 'Available to spend, Viatik account, requests, receipts.',
       status: 'ready',
     },
     { path: 'budget', title: 'My budget', summary: 'Assigned budgets.', status: 'ready' },
@@ -299,13 +299,18 @@ export const SCREENS = {
       summary: 'Merchant, amount, receipt.',
       status: 'ready',
     },
-    { path: 'payments', title: 'Payments', summary: 'Payouts received.', status: 'ready' },
+    {
+      path: 'payments',
+      title: 'Payments',
+      summary:
+        'Viatik account: balance, send to my account, return unused funds, payments received, movements, saved addresses.',
+      status: 'ready',
+    },
     { path: 'activity', title: 'Activity', summary: 'Personal activity.', status: 'ready' },
     {
-      path: 'profile',
-      title: 'Profile',
-      summary:
-        'Viatik account (balance, movements, saved addresses, send to my account), notifications, passkey, return funds.',
+      path: 'settings',
+      title: 'Settings',
+      summary: 'Profile, agency, notifications, security, developer.',
       status: 'ready',
     },
   ],

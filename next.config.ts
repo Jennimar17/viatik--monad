@@ -20,6 +20,13 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }]
   },
+  // The Member's Home and Profile became Overview and Settings, as in the other roles.
+  async redirects() {
+    return [
+      { source: '/member/:agencyId/home', destination: '/member/:agencyId/overview', permanent: false },
+      { source: '/member/:agencyId/profile', destination: '/member/:agencyId/settings', permanent: false },
+    ]
+  },
 }
 
 export default nextConfig

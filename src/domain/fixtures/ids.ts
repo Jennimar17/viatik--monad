@@ -121,6 +121,6 @@ export const DEMO_PERSONAS: {
     name: 'Alex Morgan',
     role: 'member',
     organization: 'Arc Studio',
-    href: `/member/${DEMO.agencies.arc}/home`,
+    href: `/member/${DEMO.agencies.arc}/overview`,
   },
 ]

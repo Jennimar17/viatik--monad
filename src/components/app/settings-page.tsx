@@ -94,17 +94,7 @@ function usePreferences(userId: string) {
 }
 
 /** Profile, workspace, rules and device settings; the tabs depend on the role. */
-export function SettingsPage({
-  title = 'Settings',
-  leading,
-  children,
-}: {
-  title?: string
-  /** Panels a role puts before the tabs, e.g. the Member's Viatik account. */
-  leading?: React.ReactNode
-  /** Sheets and dialogs the caller controls. */
-  children?: React.ReactNode
-}) {
+export function SettingsPage() {
   const { state, user, userId } = useViatikState()
   const { mode, account } = useSession()
   const { role, agencyId, portfolioId } = useRole()
@@ -619,15 +609,13 @@ export function SettingsPage({
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
-        title={title}
+        title="Settings"
         description="Your profile, your workspace, and how Viatik keeps you informed."
       />
-      {leading}
       <PageTabs tabs={tabs} />
       {role === 'agency_admin' && agency ? (
         <AddDestinationSheet open={destinationOpen} onOpenChange={setDestinationOpen} agencyId={agency.id} />
       ) : null}
-      {children}
     </div>
   )
 }
