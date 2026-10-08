@@ -132,7 +132,7 @@ export const roles = {
       bestFitFor: 'Funds, angels, grant programs, and studios backing several teams at once.',
       features: [
         'Funding agreements with milestones',
-        'Fund from your wallet, withdraw from your portfolio',
+        'Releases tied to reviewed evidence',
         'One capital trail per Agency',
       ],
       cta: { label: 'Explore the Investor view', role: 'investor' },
@@ -146,8 +146,8 @@ export const roles = {
       bestFitFor: 'Studios, agencies, and startups operating funded work for someone else.',
       features: [
         'Accounts and budgets per project',
-        'Scheduled and recurring payments',
-        'Providers you can search, pause and archive',
+        'Team payments and vendor bills',
+        'Reconciliation with evidence attached',
       ],
       cta: { label: 'Explore the Agency view', role: 'agency-admin' },
     },
@@ -160,7 +160,7 @@ export const roles = {
       bestFitFor: 'Contributors, contractors, and team leads spending on behalf of an Agency.',
       features: [
         'A clear allowance with its rules',
-        'Send your balance to your own wallet',
+        'Receive payments directly and work without friction',
         'A receipt on every payment',
       ],
       cta: { label: 'Explore the Member view', role: 'member' },
