@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import * as React from 'react'
 
-import { HeroFlowCards } from '@/components/site/hero/hero-visual'
+import { AuthVisual } from '@/components/app/auth-visual'
 import { Button } from '@/components/ui/button'
 import { PersonAvatar, roleIcons } from '@/components/viatik/people'
 import { ViatikLogo } from '@/components/viatik/viatik-logo'
@@ -67,7 +67,7 @@ function Demo() {
           <p className="max-w-sm font-display text-4xl leading-tight font-medium tracking-tight text-balance text-mist">
             See how capital moves, from every seat.
           </p>
-          <HeroFlowCards className="mx-auto w-full max-w-sm pb-2" />
+          <AuthVisual className="mx-auto max-w-md" />
         </div>
       </section>
 

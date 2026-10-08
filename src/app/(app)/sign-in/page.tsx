@@ -9,7 +9,7 @@ import * as React from 'react'
 import { roleHome } from '@/components/app/nav'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { HeroFlowCards } from '@/components/site/hero/hero-visual'
+import { AuthVisual } from '@/components/app/auth-visual'
 import { OrgAvatar, roleIcons } from '@/components/viatik/people'
 import { ViatikLogo } from '@/components/viatik/viatik-logo'
 import { useViatik } from '@/data/react'
@@ -73,15 +73,13 @@ function SignIn() {
     else if (only) router.replace(roleHome(only))
   }, [signingIn, signedIn, memberships.length, only, router])
 
-  // Without a Privy app there are no real accounts: sign-in leads to the demo.
   const start = (method: SignInMethod) => {
-    if (!accountsEnabled) return router.push('/sign-in/demo')
     setSigningIn(true)
     signIn(method)
   }
 
   // Privy is restoring a session or the server is resolving the account.
-  const checking = accountsEnabled && (!accountsReady || userId === undefined)
+  const checking = !accountsEnabled || !accountsReady || userId === undefined
 
   return (
     <main id="main" className="grid min-h-svh grid-cols-1 lg:grid-cols-[1.05fr_1fr]">
@@ -92,7 +90,7 @@ function SignIn() {
           <p className="max-w-sm font-display text-4xl leading-tight font-medium tracking-tight text-balance text-mist">
             Fund the work. Control how capital moves.
           </p>
-          <HeroFlowCards className="mx-auto w-full max-w-sm pb-2" />
+          <AuthVisual className="mx-auto max-w-md" />
         </div>
       </section>
 
@@ -199,7 +197,9 @@ function SignIn() {
                   </div>
                 ) : null}
                 <p className="pt-1 text-center text-sm text-subtle" aria-live="polite">
-                  {checking && accountsReady
+                  {!accountsEnabled
+                    ? 'Real sign-in is not set up in this environment. Explore the demo instead.'
+                    : checking && accountsReady
                     ? 'Opening your account…'
                     : 'Your financial account is created automatically. No wallet extension required.'}
                 </p>
