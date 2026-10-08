@@ -34,65 +34,75 @@ export function HeroVisual({ className }: { className?: string }) {
       />
       <div className="hero-scene-shade absolute inset-0" aria-hidden="true" />
 
-      <ol
-        aria-label="Capital moving from an approved milestone to a verified payment"
-        className="relative z-[2] flex flex-col px-4 py-8 sm:px-8 sm:py-10"
-      >
-        <Step index={0} className="ml-auto w-full max-w-xs">
-          <div className="theme-dark product-frame product-frame-glass flex items-center gap-3 rounded-2xl p-3.5 pr-4">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-success-soft text-success">
-              <CheckIcon className="size-4" aria-hidden="true" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-subtle">Milestone approved</p>
-              <p className="truncate text-sm font-medium text-foreground">Prototype delivered</p>
-            </div>
-            <Amount value={capital.tranche} size="md" signed tone="positive" />
-          </div>
-        </Step>
-
-        <Step index={1} connector="ml-[72%]">
-          <div className="theme-dark product-frame product-frame-glass flex flex-col gap-5 p-5 sm:p-6">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <ViatikMark className="size-8" />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">{story.agency}</p>
-                  <p className="text-xs text-pretty text-subtle">
-                    {story.agreement} · {story.investor}
-                  </p>
-                </div>
-              </div>
-              <StatusBadge status={{ label: 'Tranche 2 of 4', tone: 'success' }} />
-            </div>
-            <div className="flex flex-col gap-1">
-              <p className="text-xs text-subtle">Capital released</p>
-              <Amount value={capital.released} size="xl" />
-              <p className="text-xs text-muted-foreground">
-                of <span className="num">{formatUsd(capital.committed)}</span> committed
-              </p>
-            </div>
-            <FundingProgress segments={tranches} />
-          </div>
-        </Step>
-
-        <Step index={2} connector="ml-[24%]" className="w-full max-w-sm">
-          <div className="theme-dark product-frame product-frame-glass flex items-center gap-3 rounded-2xl p-3.5 pr-4">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-mist/10 text-mist">
-              <ShieldCheckIcon className="size-4" aria-hidden="true" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-subtle">Payment complete</p>
-              <p className="truncate text-sm font-medium text-foreground">{story.vendor}</p>
-            </div>
-            <div className="flex flex-col items-end gap-0.5">
-              <Amount value={capital.payment} size="sm" />
-              <span className="text-2xs whitespace-nowrap text-success">Verified on Monad</span>
-            </div>
-          </div>
-        </Step>
-      </ol>
+      <HeroFlowCards className="relative z-[2] px-4 py-8 sm:px-8 sm:py-10" />
     </div>
+  )
+}
+
+/**
+ * The three product surfaces of the hero (milestone approved, capital
+ * released, payment verified), reusable over any brand photograph.
+ */
+export function HeroFlowCards({ className }: { className?: string }) {
+  return (
+    <ol
+      aria-label="Capital moving from an approved milestone to a verified payment"
+      className={cn('flex flex-col', className)}
+    >
+      <Step index={0} className="ml-auto w-full max-w-xs">
+        <div className="theme-dark product-frame product-frame-glass flex items-center gap-3 rounded-2xl p-3.5 pr-4">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-success-soft text-success">
+            <CheckIcon className="size-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs text-subtle">Milestone approved</p>
+            <p className="truncate text-sm font-medium text-foreground">Prototype delivered</p>
+          </div>
+          <Amount value={capital.tranche} size="md" signed tone="positive" />
+        </div>
+      </Step>
+
+      <Step index={1} connector="ml-[72%]">
+        <div className="theme-dark product-frame product-frame-glass flex flex-col gap-5 p-5 sm:p-6">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <ViatikMark className="size-8" />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-foreground">{story.agency}</p>
+                <p className="text-xs text-pretty text-subtle">
+                  {story.agreement} · {story.investor}
+                </p>
+              </div>
+            </div>
+            <StatusBadge status={{ label: 'Tranche 2 of 4', tone: 'success' }} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <p className="text-xs text-subtle">Capital released</p>
+            <Amount value={capital.released} size="xl" />
+            <p className="text-xs text-muted-foreground">
+              of <span className="num">{formatUsd(capital.committed)}</span> committed
+            </p>
+          </div>
+          <FundingProgress segments={tranches} />
+        </div>
+      </Step>
+
+      <Step index={2} connector="ml-[24%]" className="w-full max-w-sm">
+        <div className="theme-dark product-frame product-frame-glass flex items-center gap-3 rounded-2xl p-3.5 pr-4">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-mist/10 text-mist">
+            <ShieldCheckIcon className="size-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs text-subtle">Payment complete</p>
+            <p className="truncate text-sm font-medium text-foreground">{story.vendor}</p>
+          </div>
+          <div className="flex flex-col items-end gap-0.5">
+            <Amount value={capital.payment} size="sm" />
+            <span className="text-2xs whitespace-nowrap text-success">Verified on Monad</span>
+          </div>
+        </div>
+      </Step>
+    </ol>
   )
 }
 

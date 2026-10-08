@@ -14,10 +14,10 @@ export const siteConfig = {
     'Viatik connects funding agreements, capital releases, budgets, payments, and evidence in one verifiable flow.',
   statement: 'Programmable funding infrastructure for modern teams.',
   routes: {
-    demo: '/sign-in',
+    demo: '/sign-in/demo',
     signIn: '/sign-in',
     /** Opens the product signed in as the matching person of the demo story. */
-    demoRole: (role: DemoRole) => `/sign-in?as=${role}` as const,
+    demoRole: (role: DemoRole) => `/sign-in/demo?as=${role}` as const,
   },
 } as const
 
@@ -55,7 +55,7 @@ export const footerNav: { heading: string; items: FooterItem[] }[] = [
       { label: 'Funding agreements', planned: '/product/funding-agreements' },
       { label: 'Budgets & policies', planned: '/product/budgets' },
       { label: 'AI Agents', planned: '/product/ai-agents' },
-      { label: 'Open the demo', href: '/sign-in' },
+      { label: 'Open the demo', href: '/sign-in/demo' },
     ],
   },
   {

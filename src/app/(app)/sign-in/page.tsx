@@ -2,28 +2,21 @@
 
 import { ArrowRight, Fingerprint, Mail } from 'lucide-react'
 import type { Route } from 'next'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import * as React from 'react'
 
 import { roleHome } from '@/components/app/nav'
 import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { OrgAvatar, PersonAvatar, roleIcons } from '@/components/viatik/people'
+import { HeroFlowCards } from '@/components/site/hero/hero-visual'
+import { OrgAvatar, roleIcons } from '@/components/viatik/people'
 import { ViatikLogo } from '@/components/viatik/viatik-logo'
 import { useViatik } from '@/data/react'
-import { DEMO_PERSONAS, type DemoPersonaKey } from '@/domain/fixtures'
-import { roleDescription, roleLabel } from '@/domain/permissions'
+import { roleLabel } from '@/domain/permissions'
 import type { Membership, ViatikState } from '@/domain/types'
 import { publicEnv } from '@/lib/env'
 import { useSession, type SignInMethod } from '@/lib/session'
-
-/** `?as=` values used by the landing's "Explore the … view" links. */
-const DEEP_LINKS: Record<string, DemoPersonaKey> = {
-  investor: 'investor',
-  'agency-admin': 'admin',
-  member: 'member',
-}
 
 function GoogleMark() {
   return (
@@ -57,31 +50,19 @@ export default function SignInPage() {
 function SignIn() {
   const router = useRouter()
   const params = useSearchParams()
-  const { userId, mode, account, accountsEnabled, accountsReady, error, retry, enterDemo, signIn, signOut } =
+  const { userId, mode, account, accountsEnabled, accountsReady, error, retry, signIn, signOut } =
     useSession()
   const { state, memberships } = useViatik()
-  const [chooseDemo, setChooseDemo] = React.useState(false)
   // Set when the person uses a real sign-in button on this page, so the
   // workspace opens by itself once the account resolves.
   const [signingIn, setSigningIn] = React.useState(false)
-  const personasRef = React.useRef<HTMLDivElement>(null)
   const showDemo = publicEnv.NEXT_PUBLIC_DEMO_MODE || !accountsEnabled
 
-  const enterAs = React.useCallback(
-    (key: DemoPersonaKey) => {
-      const persona = DEMO_PERSONAS.find((p) => p.key === key)
-      if (!persona) return
-      enterDemo(persona.userId)
-      router.push(persona.href as Route)
-    },
-    [router, enterDemo],
-  )
-
-  // Deep links from viatik.xyz ("Explore the Investor view").
+  // Old deep links (`/sign-in?as=…`) now live on the demo page.
+  const asParam = params.get('as')
   React.useEffect(() => {
-    const persona = DEEP_LINKS[params.get('as') ?? '']
-    if (persona && showDemo) enterAs(persona)
-  }, [params, enterAs, showDemo])
+    if (asParam && showDemo) router.replace(`/sign-in/demo?as=${encodeURIComponent(asParam)}` as Route)
+  }, [asParam, showDemo, router])
 
   // After a real sign-in: one workspace opens directly; none goes to onboarding.
   const signedIn = mode === 'account' && Boolean(userId) && Boolean(state)
@@ -92,43 +73,26 @@ function SignIn() {
     else if (only) router.replace(roleHome(only))
   }, [signingIn, signedIn, memberships.length, only, router])
 
-  // Without a Privy app, every sign-in method leads to choosing a demo person.
-  const simulate = () => {
-    setChooseDemo(true)
-    personasRef.current?.querySelector('button')?.focus()
-  }
-
+  // Without a Privy app there are no real accounts: sign-in leads to the demo.
   const start = (method: SignInMethod) => {
-    if (!accountsEnabled) return simulate()
+    if (!accountsEnabled) return router.push('/sign-in/demo')
     setSigningIn(true)
     signIn(method)
   }
 
   // Privy is restoring a session or the server is resolving the account.
   const checking = accountsEnabled && (!accountsReady || userId === undefined)
-  const current = mode === 'demo' ? DEMO_PERSONAS.find((p) => p.userId === userId) : undefined
 
   return (
     <main id="main" className="grid min-h-svh grid-cols-1 lg:grid-cols-[1.05fr_1fr]">
       <section className="grain relative hidden overflow-hidden lg:block" aria-hidden="true">
         <img src="/images/alpine-landscape.jpg" alt="" className="absolute inset-0 size-full object-cover" />
         <div className="hero-scene-shade absolute inset-0" />
-        <p className="absolute top-10 left-10 z-[2] max-w-sm font-display text-4xl leading-tight font-medium tracking-tight text-balance text-mist">
-          Fund the work. Control how capital moves.
-        </p>
-        <div className="absolute inset-x-10 bottom-12 z-[2] flex flex-col gap-4">
-          <div className="glass-panel hero-account-card w-80 rounded-2xl p-5">
-            <p className="text-xs text-stone">Capital released</p>
-            <p className="mt-1 font-display text-3xl tracking-tight num">
-              25,000<span className="text-xl opacity-70">.00</span>
-              <span className="ml-1.5 text-sm text-stone">USD</span>
-            </p>
-            <p className="mt-2 text-sm opacity-80">Tranche 2 of 4 · Prototype delivered</p>
-          </div>
-          <div className="glass-panel hero-release-card gentle-float ml-16 w-72 rounded-2xl p-4">
-            <p className="text-sm font-medium">Payment completed</p>
-            <p className="mt-1 text-sm opacity-80">120.00 USD to Vertex Cloud · Receipt verified</p>
-          </div>
+        <div className="relative z-[2] flex h-full flex-col justify-between gap-8 px-10 py-10 xl:px-14">
+          <p className="max-w-sm font-display text-4xl leading-tight font-medium tracking-tight text-balance text-mist">
+            Fund the work. Control how capital moves.
+          </p>
+          <HeroFlowCards className="mx-auto w-full max-w-sm pb-2" />
         </div>
       </section>
 
@@ -196,16 +160,9 @@ function SignIn() {
             </div>
           ) : (
             <>
-              {current ? (
-                <Button size="pill" className="w-full justify-center" onClick={() => enterAs(current.key)}>
-                  Continue as {current.name} <ArrowRight data-icon="inline-end" />
-                </Button>
-              ) : null}
-
               <div className="flex flex-col gap-2.5">
                 <Button
                   size="pill"
-                  variant={current ? 'outline' : 'default'}
                   className="w-full justify-center"
                   disabled={checking}
                   onClick={() => start('email')}
@@ -256,49 +213,12 @@ function SignIn() {
           )}
 
           {showDemo ? (
-            <>
-              <div className="flex items-center gap-3">
-                <Separator className="flex-1" />
-                <span className="text-xs tracking-[0.1em] text-subtle uppercase">Or try the demo</span>
-                <Separator className="flex-1" />
-              </div>
-
-              <div ref={personasRef} className="flex flex-col gap-2" id="demo-personas">
-                <p className="text-sm text-muted-foreground" aria-live="polite">
-                  {chooseDemo
-                    ? 'Sign-in is simulated in this demo. Choose who you want to be:'
-                    : 'Explore Viatik as one of the people in the demo story:'}
-                </p>
-                {DEMO_PERSONAS.map((persona) => {
-                  const Icon = roleIcons[persona.role]
-                  return (
-                    <button
-                      key={persona.key}
-                      type="button"
-                      onClick={() => enterAs(persona.key)}
-                      className={choiceClass}
-                    >
-                      <PersonAvatar name={persona.name} size="md" />
-                      <span className="flex min-w-0 flex-1 flex-col gap-1">
-                        <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                          {persona.name}
-                          <span className="box-tag">
-                            <Icon className="size-2.5" aria-hidden="true" /> {roleLabel[persona.role]}
-                          </span>
-                        </span>
-                        <span className="text-xs text-pretty text-muted-foreground">
-                          {persona.organization} · {roleDescription[persona.role]}
-                        </span>
-                      </span>
-                      <ArrowRight
-                        className="size-4 text-subtle transition-transform group-hover:translate-x-0.5"
-                        aria-hidden="true"
-                      />
-                    </button>
-                  )
-                })}
-              </div>
-            </>
+            <p className="text-center text-sm text-subtle">
+              Just looking around?{' '}
+              <Link href="/sign-in/demo" className="text-foreground underline underline-offset-4">
+                Explore the demo
+              </Link>
+            </p>
           ) : null}
         </div>
       </section>
