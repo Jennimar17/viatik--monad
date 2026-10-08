@@ -89,7 +89,9 @@ function NewRequest() {
   const budget = selected?.budget
   const destinationOptions = (
     budget && budget.allowedDestinationIds.length > 0
-      ? state.destinations.filter((d) => budget.allowedDestinationIds.includes(d.id))
+      ? state.destinations.filter(
+          (d) => budget.allowedDestinationIds.includes(d.id) && d.status === 'approved',
+        )
       : state.destinations.filter((d) => d.agencyId === agencyId && d.status === 'approved')
   ).map((d) => ({ value: d.id, label: d.name, description: d.settlementLabel }))
 

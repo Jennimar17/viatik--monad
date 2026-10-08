@@ -1,6 +1,7 @@
 import { BaseError, decodeErrorResult, type Hex } from 'viem'
 
 import { formatUsd, type Cents } from '@/domain/money'
+import { testUsdAbi } from '@/web3/abi/test-usd'
 import { viatikLedgerAbi } from '@/web3/abi/viatik-ledger'
 
 import { translateLedgerError, type TranslatedError } from './errors'
@@ -54,12 +55,39 @@ function fromContractError(name: string, args: readonly unknown[]): LedgerError 
   }
 }
 
-/** One of the ledger's errors, from raw revert data. */
+/**
+ * The token's own refusals, which the ledger passes on when it cannot pull a deposit from
+ * the Investor's account: not allowed to move it yet, or not enough of it.
+ */
+function fromTokenError(name: string, args: readonly unknown[]): LedgerError | null {
+  const error = (code: LedgerErrorCode, message: string): LedgerError => ({ code, message, retryable: false })
+  switch (name) {
+    case 'ERC20InsufficientAllowance':
+      return error('allowance_required', 'Allow Viatik to move your TestUSD first, then deposit again.')
+    case 'ERC20InsufficientBalance':
+      return error(
+        'wallet_insufficient',
+        `Your account holds ${usd(args[1] as bigint)} of TestUSD, which is not enough for this deposit.`,
+      )
+    default:
+      return null
+  }
+}
+
+/** One of the ledger's errors (or the token's, through it), from raw revert data. */
 export function ledgerErrorOf(data: Hex): TranslatedError | null {
   try {
     const decoded = decodeErrorResult({ abi: viatikLedgerAbi, data })
     const args = decoded.args ?? []
     const error = fromContractError(decoded.errorName, args)
+    return error ? { ...error, raw: `${decoded.errorName}(${args.join(', ')})` } : null
+  } catch {
+    // Not one of the ledger's own errors: it may be the token's.
+  }
+  try {
+    const decoded = decodeErrorResult({ abi: testUsdAbi, data })
+    const args = decoded.args ?? []
+    const error = fromTokenError(decoded.errorName, args)
     return error ? { ...error, raw: `${decoded.errorName}(${args.join(', ')})` } : null
   } catch {
     return null

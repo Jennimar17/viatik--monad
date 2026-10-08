@@ -1,6 +1,7 @@
 import { eq, sql } from 'drizzle-orm'
 
 import { createDemoState } from '@/domain/fixtures'
+import { upgradeState } from '@/domain/migrate'
 import type { ViatikState } from '@/domain/types'
 import type { Balances } from '@/ledger/types'
 
@@ -40,7 +41,7 @@ export async function readWorld(): Promise<World> {
     ;[row] = await db.select().from(worldState).where(eq(worldState.id, WORLD))
   }
   if (!row) throw new Error('The product state could not be created.')
-  return { state: row.state, version: row.version, ledger: row.ledger }
+  return { state: upgradeState(row.state), version: row.version, ledger: row.ledger }
 }
 
 /** Where the world settles (null on the demo ledger), without reading the state itself. */
@@ -68,7 +69,10 @@ export async function withWorld<R>(
       ;[row] = await tx.select().from(worldState).where(eq(worldState.id, WORLD)).for('update')
     }
     if (!row) throw new Error('The product state could not be created.')
-    const { state, result } = await work({ state: row.state, version: row.version, ledger: row.ledger }, tx)
+    const { state, result } = await work(
+      { state: upgradeState(row.state), version: row.version, ledger: row.ledger },
+      tx,
+    )
     if (state) {
       await tx
         .update(worldState)

@@ -270,7 +270,8 @@ export type PaymentDestination = {
   /** Generic, country-neutral settlement label. */
   settlementLabel: string
   website?: string
-  status: 'approved' | 'pending_review'
+  /** Paused and archived destinations cannot be paid; `approved` ones can. */
+  status: 'approved' | 'pending_review' | 'paused' | 'archived'
   addedAt: ISODate
 }
 
@@ -464,7 +465,14 @@ export type VerifiedDetails = {
   decisionHash?: `0x${string}`
 }
 
-export type ReceiptKind = 'payment' | 'tranche_release' | 'deposit' | 'funding' | 'transfer' | 'allocation'
+export type ReceiptKind =
+  | 'payment'
+  | 'tranche_release'
+  | 'deposit'
+  | 'funding'
+  | 'transfer'
+  | 'allocation'
+  | 'withdrawal'
 
 export type Receipt = {
   id: Id
@@ -486,7 +494,8 @@ export type Receipt = {
 // ─── Ledger movements (capital trail) ────────────────────────────────────────
 
 export type Location =
-  | { kind: 'external'; label: string }
+  /** Outside Viatik. `address` is where a withdrawal went: only its owner sees it in full. */
+  | { kind: 'external'; label: string; address?: string }
   | { kind: 'vault'; vaultId: Id }
   | { kind: 'account'; accountId: Id }
   | { kind: 'budget'; budgetId: Id }
@@ -501,6 +510,7 @@ export type MovementKind =
   | 'deallocate'
   | 'payment'
   | 'capital_return'
+  | 'withdrawal'
 
 /**
  * Every balance in the product is derived from these movements, so every
@@ -586,6 +596,8 @@ export type ActivityType =
   | 'agent_resumed'
   | 'agency_created'
   | 'portfolio_created'
+  | 'funds_withdrawn'
+  | 'destination_updated'
 
 export type Activity = {
   id: Id
@@ -626,6 +638,15 @@ export type Invitation = {
 // ─── Aggregate state ─────────────────────────────────────────────────────────
 
 /** Everything the product knows, as one serializable snapshot. */
+/** An address a person saved to send their money to (their own wallets, in practice). */
+export type PayoutAddress = {
+  id: Id
+  userId: Id
+  label: string
+  address: string
+  createdAt: ISODate
+}
+
 export type ViatikState = {
   version: number
   generatedAt: ISODate
@@ -653,4 +674,5 @@ export type ViatikState = {
   agentDecisions: AgentDecision[]
   activity: Activity[]
   notifications: Notification[]
+  payoutAddresses: PayoutAddress[]
 }

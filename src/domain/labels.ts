@@ -145,4 +145,5 @@ export const receiptKindLabel: Record<ReceiptKind, string> = {
   funding: 'Funding receipt',
   transfer: 'Transfer receipt',
   allocation: 'Allocation receipt',
+  withdrawal: 'Withdrawal receipt',
 }

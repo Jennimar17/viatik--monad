@@ -1,3 +1,4 @@
+import { parseAddress, shortAddress } from '../address'
 import { newId } from '../ids'
 import { cents, sum, type Cents } from '../money'
 import { evaluatePolicy, type PolicyRequest } from '../policy'
@@ -22,11 +23,13 @@ import type {
   PaymentRecipient,
   PaymentRequest,
   PaymentType,
+  PayoutAddress,
   PolicyCheck,
   PolicyDecision,
   RequestType,
   SpendingAllowance,
   SpendingCategory,
+  ViatikState,
 } from '../types'
 import {
   DomainError,
@@ -601,6 +604,7 @@ export function requestPayment(tx: Tx, input: RequestPaymentInput): PaymentReque
   const destination = tx.find('destinations', input.destinationId, 'Payment destination')
   if (destination.agencyId !== input.agencyId)
     throw new DomainError('forbidden', 'This payment destination belongs to another Agency.')
+  requirePayable(destination)
 
   // A retry with the same key returns the original request, but only to the
   // person (or automation) who made it, in the same Agency: keys are not secrets.
@@ -846,6 +850,8 @@ export function approveRequest(tx: Tx, input: { requestId: Id }) {
   const budget = tx.find('budgets', request.budgetId, 'Budget')
   if (budget.status !== 'active')
     throw new DomainError('invalid_state', 'The budget is paused. Resume it before approving.')
+  if (request.destination.kind === 'destination')
+    requirePayable(tx.find('destinations', request.destination.destinationId, 'Payment destination'))
   // The rules are checked again now, not as they were when the request was
   // sent: other payments may have used the limit since, or the budget changed.
   const requesterName = tx.actorName(request.requester)
@@ -971,6 +977,7 @@ export function sendPayment(tx: Tx, input: SendPaymentInput) {
     const destination = tx.find('destinations', recipient.destinationId, 'Payment destination')
     if (destination.agencyId !== input.agencyId)
       throw new DomainError('forbidden', 'This payment destination belongs to another Agency.')
+    requirePayable(destination)
   }
   const portfolioId = tx.portfolioOfAgency(input.agencyId)
 
@@ -1156,6 +1163,7 @@ export function addBill(tx: Tx, input: AddBillInput): Bill {
   const destination = tx.find('destinations', input.destinationId, 'Payment destination')
   if (destination.agencyId !== input.agencyId)
     throw new DomainError('forbidden', 'This vendor belongs to another Agency.')
+  requirePayable(destination)
   const bill: Bill = {
     id: newId('bill'),
     agencyId: input.agencyId,
@@ -1196,6 +1204,7 @@ export function payBill(
   if (bill.status === 'paid' || bill.status === 'reconciled')
     throw new DomainError('invalid_state', 'This bill is already paid.')
   const destination = tx.find('destinations', bill.destinationId, 'Payment destination')
+  requirePayable(destination)
   // Paying or rescheduling a scheduled bill replaces its scheduled payment;
   // no money had moved for it yet.
   const previous = bill.paymentId ? tx.state.payments.find((p) => p.id === bill.paymentId) : undefined
@@ -1368,24 +1377,36 @@ export function addDestination(
   return destination
 }
 
+/** A destination can only be paid while it is approved: a paused or archived one is not. */
+function requirePayable(destination: { name: string; status: string }) {
+  if (destination.status === 'approved') return
+  const why =
+    destination.status === 'paused'
+      ? 'is paused. Resume it to pay it again.'
+      : destination.status === 'archived'
+        ? 'is archived. Restore it to pay it again.'
+        : 'is still waiting for review.'
+  throw new DomainError('invalid_state', `${destination.name} ${why}`)
+}
+
+/** What a person holds in an agency: paid to them, minus what they returned or withdrew. */
+export function memberHeld(state: ViatikState, agencyId: Id, userId: Id): number {
+  return state.movements.reduce((total, m) => {
+    if (m.agencyId !== agencyId) return total
+    const toMe =
+      m.to.kind === 'recipient' && m.to.recipient.kind === 'member' && m.to.recipient.userId === userId
+    const fromMe =
+      m.from.kind === 'recipient' && m.from.recipient.kind === 'member' && m.from.recipient.userId === userId
+    return total + (toMe ? m.amount : 0) - (fromMe ? m.amount : 0)
+  }, 0)
+}
+
 /** A Member sends money they received but no longer need back to the Agency. */
 export function returnUnusedFunds(tx: Tx, input: { agencyId: Id; amount: Cents }) {
   tx.authorize('receive_payout', { agencyId: input.agencyId, ownerUserId: tx.userId })
   requirePositive(input.amount)
   const memberLocation = { kind: 'recipient', recipient: { kind: 'member', userId: tx.userId } } as const
-  const received = tx.state.movements.reduce((total, m) => {
-    const toMe =
-      m.to.kind === 'recipient' &&
-      m.to.recipient.kind === 'member' &&
-      m.to.recipient.userId === tx.userId &&
-      m.agencyId === input.agencyId
-    const fromMe =
-      m.from.kind === 'recipient' &&
-      m.from.recipient.kind === 'member' &&
-      m.from.recipient.userId === tx.userId &&
-      m.agencyId === input.agencyId
-    return total + (toMe ? m.amount : 0) - (fromMe ? m.amount : 0)
-  }, 0)
+  const received = memberHeld(tx.state, input.agencyId, tx.userId)
   if (input.amount > received) {
     throw new DomainError(
       'insufficient_funds',
@@ -1432,4 +1453,139 @@ export function returnUnusedFunds(tx: Tx, input: { agencyId: Id; amount: Cents }
     `/agency/${input.agencyId}/accounts/${operations.id}`,
   )
   return receipt
+}
+
+/**
+ * A person takes what an Agency paid them out of their Viatik balance, to their
+ * account or another address. It only touches their own balance.
+ */
+export function withdrawBalance(tx: Tx, input: { agencyId: Id; amount: Cents; to: string }) {
+  tx.authorize('receive_payout', { agencyId: input.agencyId, ownerUserId: tx.userId })
+  requirePositive(input.amount)
+  const address = parseAddress(input.to)
+  if (!address)
+    throw new DomainError('validation', 'Enter a valid account address (0x followed by 40 characters).')
+  const held = memberHeld(tx.state, input.agencyId, tx.userId)
+  if (input.amount > held) {
+    throw new DomainError(
+      'insufficient_funds',
+      `You can withdraw up to ${usdText(cents(Math.max(0, held)))} from this Agency.`,
+    )
+  }
+  const portfolioId = tx.portfolioOfAgency(input.agencyId)
+  const operationId = newId('wd')
+  const receipt = tx.receipt({
+    kind: 'withdrawal',
+    amount: input.amount,
+    fromLabel: tx.nameOf(tx.userId),
+    toLabel: shortAddress(address),
+    description: 'Balance withdrawn to an account',
+    policyLabel: 'A withdrawal only takes your own balance',
+    operationId,
+    portfolioId,
+    agencyId: input.agencyId,
+  })
+  tx.move(
+    'withdrawal',
+    input.amount,
+    { kind: 'recipient', recipient: { kind: 'member', userId: tx.userId } },
+    { kind: 'external', label: shortAddress(address), address },
+    { portfolioId, agencyId: input.agencyId, refId: operationId, receiptId: receipt.id },
+  )
+  tx.activity(
+    'funds_withdrawn',
+    `${tx.nameOf(tx.userId)} withdrew ${usdText(input.amount)}`,
+    { kind: 'receipt', id: receipt.id },
+    { portfolioId, agencyId: input.agencyId, amount: input.amount, subjectUserId: tx.userId },
+  )
+  return receipt
+}
+
+const MAX_PAYOUT_ADDRESSES = 10
+
+/** A person saves an address to send their money to. Their Agency Admins can see it. */
+export function addPayoutAddress(tx: Tx, input: { label: string; address: string }): PayoutAddress {
+  const userId = tx.userId
+  const address = parseAddress(input.address)
+  if (!address)
+    throw new DomainError('validation', 'Enter a valid account address (0x followed by 40 characters).')
+  const saved = tx.state.payoutAddresses.filter((a) => a.userId === userId)
+  if (saved.some((a) => a.address === address))
+    throw new DomainError('invalid_state', 'You already saved this address.')
+  if (saved.length >= MAX_PAYOUT_ADDRESSES)
+    throw new DomainError('limit_exceeded', `You can save up to ${MAX_PAYOUT_ADDRESSES} addresses.`)
+  const record: PayoutAddress = {
+    id: newId('addr'),
+    userId,
+    label: requireText(input.label, 'Label', 40),
+    address,
+    createdAt: tx.now,
+  }
+  tx.state.payoutAddresses.push(record)
+  return record
+}
+
+export function removePayoutAddress(tx: Tx, input: { addressId: Id }) {
+  const record = tx.find('payoutAddresses', input.addressId, 'Saved address')
+  if (record.userId !== tx.userId) throw new DomainError('forbidden', 'This address is not yours.')
+  tx.state.payoutAddresses = tx.state.payoutAddresses.filter((a) => a.id !== record.id)
+  return record
+}
+
+/** An Agency Admin edits a payment destination (vendor, service or contractor). */
+export function updateDestination(
+  tx: Tx,
+  input: {
+    destinationId: Id
+    name?: string
+    kind?: 'vendor' | 'service' | 'contractor'
+    category?: SpendingCategory
+    settlementLabel?: string
+    /** An empty text removes it. */
+    website?: string
+  },
+) {
+  const destination = tx.find('destinations', input.destinationId, 'Payment destination')
+  tx.authorize('send_payment', { agencyId: destination.agencyId })
+  if (input.name !== undefined) destination.name = requireText(input.name, 'Name', 80)
+  if (input.kind !== undefined) destination.kind = input.kind
+  if (input.category !== undefined) destination.category = input.category
+  if (input.settlementLabel !== undefined)
+    destination.settlementLabel = requireText(input.settlementLabel, 'Settlement method', 80)
+  if (input.website !== undefined) destination.website = input.website.trim() || undefined
+  tx.activity(
+    'destination_updated',
+    `Updated ${destination.name}`,
+    { kind: 'destination', id: destination.id },
+    { portfolioId: tx.portfolioOfAgency(destination.agencyId), agencyId: destination.agencyId },
+  )
+  return destination
+}
+
+/** Pauses, archives or restores a payment destination. Only an approved one can be paid. */
+export function setDestinationStatus(
+  tx: Tx,
+  input: { destinationId: Id; status: 'approved' | 'paused' | 'archived' },
+) {
+  const destination = tx.find('destinations', input.destinationId, 'Payment destination')
+  tx.authorize('send_payment', { agencyId: destination.agencyId })
+  if (destination.status === input.status)
+    throw new DomainError('invalid_state', `${destination.name} is already ${input.status}.`)
+  const previous = destination.status
+  destination.status = input.status
+  const verb =
+    input.status === 'paused'
+      ? 'Paused'
+      : input.status === 'archived'
+        ? 'Archived'
+        : previous === 'paused'
+          ? 'Resumed'
+          : 'Restored'
+  tx.activity(
+    'destination_updated',
+    `${verb} ${destination.name}`,
+    { kind: 'destination', id: destination.id },
+    { portfolioId: tx.portfolioOfAgency(destination.agencyId), agencyId: destination.agencyId },
+  )
+  return destination
 }

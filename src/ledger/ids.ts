@@ -122,6 +122,8 @@ function witnessOf(op: LedgerOp): Witness {
     case 'transfer':
     case 'allocate':
     case 'returnToAgency':
+    case 'withdraw':
+    case 'withdrawMemberBalance':
       return one('Recorded', op.opId)
   }
 }

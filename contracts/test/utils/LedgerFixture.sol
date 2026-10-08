@@ -72,10 +72,28 @@ abstract contract LedgerFixture is Test {
         _buildStory();
     }
 
+    /// What `_equip` minted, so supply checks can tell it from what genesis minted.
+    uint256 internal equippedSupply;
+
     function _deployLedger() internal {
+        equippedSupply = 0;
         (registrar, registrarKey) = makeAddrAndKey("registrar");
         token = new TestUSD();
         ledger = new ViatikLedger(ITestUSD(address(token)), registrar, sink);
+        _equip(investor);
+        _equip(investor2);
+        _equip(stranger);
+    }
+
+    /// Deposits move real tokens now: gives `who` plenty of TestUSD and lets the ledger pull it.
+    function _equip(address who) internal {
+        uint256 chunk = token.MAX_MINT();
+        for (uint256 i; i < 20; ++i) {
+            token.mint(who, chunk);
+            equippedSupply += chunk;
+        }
+        vm.prank(who);
+        token.approve(address(ledger), type(uint256).max);
     }
 
     /// Balances after it: portfolio vault 100,000; funding vault 75,000; Operations

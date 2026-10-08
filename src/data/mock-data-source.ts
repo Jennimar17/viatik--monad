@@ -8,6 +8,7 @@ import {
 import { createDemoState } from '@/domain/fixtures'
 import { invitationPreview, withVerifiedPerson } from '@/domain/identity'
 import { newId } from '@/domain/ids'
+import { upgradeState } from '@/domain/migrate'
 import { hasStoredCopy } from '@/domain/evidence'
 import { findEvidence } from '@/domain/queries'
 import type { Evidence, ViatikState } from '@/domain/types'
@@ -57,8 +58,8 @@ export class MockDataSource implements DataSource {
         if (raw) {
           const parsed = JSON.parse(raw) as ViatikState
           if (parsed.version === STATE_VERSION) {
-            this.state = parsed
-            return parsed
+            this.state = upgradeState(parsed)
+            return this.state
           }
         }
       } catch {

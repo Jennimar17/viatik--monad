@@ -153,6 +153,8 @@ contract LedgerHandler is CommonBase, StdCheats, StdUtils {
         registrarKey = registrarKey_;
         stranger = makeAddr("stranger");
         donor = makeAddr("donor");
+        vm.prank(stranger);
+        token_.approve(address(ledger_), type(uint256).max);
         // The setup only deposited (no imports or donations); vendor payouts sit in the sink.
         ghostVendorPaid = token_.balanceOf(sink_);
         ghostDeposits = token_.balanceOf(address(ledger_)) + ghostVendorPaid;
@@ -161,6 +163,8 @@ contract LedgerHandler is CommonBase, StdCheats, StdUtils {
             Seed memory seed = seeds[s];
             Side memory side = seed.side;
             sides[s] = side;
+            vm.prank(side.investor);
+            token_.approve(address(ledger_), type(uint256).max);
             memberRole[s] = ledger_.roleOf(side.agency, side.member);
             _pool[s].push(side.portfolio);
             _pool[s].push(side.agency);
@@ -242,6 +246,12 @@ contract LedgerHandler is CommonBase, StdCheats, StdUtils {
 
     // ─── Funding ────────────────────────────────────────────────────────────
 
+    /// Deposits pull real TestUSD: the actor holds what it is about to deposit (the ledger was approved at construction).
+    function _equip(address who, uint256 amount) internal {
+        uint256 max = token.MAX_MINT();
+        token.mint(who, amount > max ? max : amount);
+    }
+
     function deposit(uint256 sideSeed, uint256 amount) external {
         _begin();
         uint256 s = sideSeed % 2;
@@ -250,6 +260,7 @@ contract LedgerHandler is CommonBase, StdCheats, StdUtils {
         amount = _bound(amount, 1, max + max / 16);
         bytes memory want = amount > max ? _limit(ViatikLedger.LimitRule.Deposit, max, amount) : bytes("");
         bytes32 opId = _fresh("dep");
+        _equip(side.investor, amount);
         vm.prank(side.investor);
         try ledger.deposit(opId, side.portfolio, side.pfVault, amount) {
             _succeeded(want, "deposit");
@@ -953,6 +964,7 @@ contract LedgerHandler is CommonBase, StdCheats, StdUtils {
             (actor, portfolio, vault) = (stranger, _strangerPortfolios[i], _strangerVaults[i]);
         }
         bytes memory want = ledger.processed(actor, opId) ? _already(opId) : bytes("");
+        _equip(actor, amount);
         vm.prank(actor);
         try ledger.deposit(opId, portfolio, vault, amount) {
             _succeeded(want, "squatting deposit");

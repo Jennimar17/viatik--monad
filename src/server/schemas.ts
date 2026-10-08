@@ -290,6 +290,23 @@ export const commandSchemas = {
     website: text(300).optional(),
   }),
   returnUnusedFunds: z.object({ agencyId: id, amount: cents }),
+  // The engine checks the address (a valid, non-zero account): the schema only bounds the text.
+  withdrawFunds: z.object({ portfolioId: id, amount: cents, to: text(64) }),
+  withdrawBalance: z.object({ agencyId: id, amount: cents, to: text(64) }),
+  addPayoutAddress: z.object({ label: text(40), address: text(64) }),
+  removePayoutAddress: z.object({ addressId: id }),
+  updateDestination: z.object({
+    destinationId: id,
+    name: text(120).optional(),
+    kind: z.enum(['vendor', 'service', 'contractor']).optional(),
+    category: category.optional(),
+    settlementLabel: text(120).optional(),
+    website: text(300).optional(),
+  }),
+  setDestinationStatus: z.object({
+    destinationId: id,
+    status: z.enum(['approved', 'paused', 'archived']),
+  }),
 
   // ─── People and automations ───────────────────────────────────────────────
   invite: z.object({

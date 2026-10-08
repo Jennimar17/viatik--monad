@@ -1,8 +1,8 @@
 import { and, count, desc, eq, inArray, isNotNull } from 'drizzle-orm'
 import { Hono } from 'hono'
-import type { Address } from 'viem'
+import { getAddress, isAddress, type Address } from 'viem'
 
-import type { LedgerLocationKind, LedgerView } from '@/data/api-contract'
+import type { LedgerAccount, LedgerLocationKind, LedgerView } from '@/data/api-contract'
 import type { Id, ViatikState } from '@/domain/types'
 import { scopeStateForUser } from '@/domain/visibility'
 import { needsReseed } from '@/ledger/genesis'
@@ -10,6 +10,7 @@ import { ledgerId } from '@/ledger/ids'
 import { decodeLedgerError } from '@/ledger/revert'
 import { ledgerSnapshot } from '@/ledger/snapshot'
 import type { Balances, PreparedTx } from '@/ledger/types'
+import { unitsToCents } from '@/ledger/units'
 import { withTimeout } from '@/lib/timeout'
 
 import { requireAccount } from './auth'
@@ -22,6 +23,19 @@ import { readWorld, type World } from './repository'
 import { requireUser } from './user'
 
 const noStore = { 'cache-control': 'no-store' }
+
+/** What one press of "Get test funds" mints: 100,000 TestUSD. */
+const TEST_FUNDS_CENTS = 10_000_000
+const ACCOUNT_READ_MS = 5_000
+
+/** Token units in cents; an unlimited approval is shown as the largest safe number. */
+function safeCents(units: bigint): number {
+  try {
+    return unitsToCents(units).cents
+  } catch {
+    return Number.MAX_SAFE_INTEGER
+  }
+}
 
 /** Each read of Monad is one multicall on a public RPC: one every few seconds is plenty. */
 const REFRESH_EVERY_MS = 10_000
@@ -201,6 +215,32 @@ export const ledgerView = new Hono<AppEnv>()
       }
     }
     return c.json(await ledgerViewFor(world, c.get('user')), 200, noStore)
+  })
+  // The person's own account: TestUSD held and allowed to the ledger, read live (no cache: it
+  // changes with every press of "Get test funds" and every approval).
+  .get('/account', requireAccount, requireUser, async (c) => {
+    const monad = getMonadLedger()
+    const wallet = c.get('user').walletAddress
+    const none: LedgerAccount = { available: false }
+    if (!monad?.isConfigured || !monad.address || !wallet || !isAddress(wallet, { strict: false }))
+      return c.json(none, 200, noStore)
+    try {
+      const address = getAddress(wallet)
+      const read = await withTimeout(monad.readAccount(address), ACCOUNT_READ_MS)
+      const account: LedgerAccount = {
+        available: true,
+        address,
+        token: read.token,
+        ledger: monad.address,
+        balance: safeCents(read.balance),
+        allowance: safeCents(read.allowance),
+        testFunds: TEST_FUNDS_CENTS,
+      }
+      return c.json(account, 200, noStore)
+    } catch (error) {
+      console.error(`[api] ${c.get('requestId')} account read: ${decodeLedgerError(error).raw}`)
+      throw new ApiError(503, 'network_unavailable', 'Monad could not be read right now. Try again in a moment.')
+    }
   })
   .post('/refresh', requireAccount, requireUser, async (c) => {
     const world = await readWorld()

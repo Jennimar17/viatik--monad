@@ -34,6 +34,7 @@ const RECORD_KIND: Record<RecordKind, number> = {
   payment_rejected: 6,
   return: 7,
   allocation: 8,
+  withdrawal: 9,
 }
 
 /** A plan that cannot become calldata yet: a person without an account, or no registrar to sign a permit. */
@@ -172,6 +173,10 @@ export function encodeOp(op: LedgerOp, chain: ChainContext, permit?: JoinPermit)
       ])
     case 'returnToAgency':
       return call('returnToAgency', [id(op.opId), id(op.agencyId), units(op.amount)])
+    case 'withdraw':
+      return call('withdraw', [id(op.opId), id(op.portfolioId), id(op.vaultId), units(op.amount), op.to])
+    case 'withdrawMemberBalance':
+      return call('withdrawMemberBalance', [id(op.opId), id(op.agencyId), units(op.amount), op.to])
   }
 }
 
@@ -193,6 +198,8 @@ export function encodePlan(
 export function receiptHashOf(record: PlannedRecord, chain: ChainContext): Hex {
   const end = (value: RecordEnd): Hex => {
     if (value === null) return zeroHash
+    // Where a withdrawal went: the address, as the contract hashes it (`memberLocation`).
+    if ('address' in value) return memberLocation(value.address)
     if ('member' in value) {
       const address = chain.addressOf(value.member)
       if (!address) throw new NotEncodable('account', value.member)

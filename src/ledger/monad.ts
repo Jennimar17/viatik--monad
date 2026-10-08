@@ -191,6 +191,22 @@ export class MonadLedgerAdapter implements LedgerAdapter {
     return this.config.ledgerAddress
   }
 
+  /** What a person's own account holds of the token, and how much of it it lets the ledger move. */
+  async readAccount(account: Address): Promise<{ token: Address; balance: bigint; allowance: bigint }> {
+    const token = this.config.tokenAddress
+    if (!token) throw new Error('The settlement token is not configured.')
+    const [balance, allowance] = await Promise.all([
+      this.client.readContract({ address: token, abi: testUsdAbi, functionName: 'balanceOf', args: [account] }),
+      this.client.readContract({
+        address: token,
+        abi: testUsdAbi,
+        functionName: 'allowance',
+        args: [account, this.ledger],
+      }),
+    ])
+    return { token, balance, allowance }
+  }
+
   /** The ledger is reachable, on the expected chain, with its token and the registrar's key. */
   async check(): Promise<{ ok: true } | { ok: false; problem: string }> {
     if (!this.isConfigured) return { ok: false, problem: 'not_configured' }
@@ -955,6 +971,8 @@ function recordCalls(ops: readonly LedgerOp[]) {
       case 'transfer':
       case 'allocate':
       case 'returnToAgency':
+      case 'withdraw':
+      case 'withdrawMemberBalance':
         calls.set(op.opId, op.call)
         break
       case 'releaseTranche':

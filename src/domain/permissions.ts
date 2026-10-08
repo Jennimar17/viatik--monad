@@ -19,6 +19,7 @@ export type Capability =
   | 'create_agency'
   | 'create_agreement'
   | 'fund_agreement'
+  | 'withdraw_funds'
   | 'release_tranche'
   | 'request_tranche'
   | 'submit_milestone_evidence'
@@ -48,6 +49,8 @@ export const PERMISSIONS: Record<Capability, Record<Role, Access>> = {
   create_agency: { investor: 'full', agency_admin: 'none', member: 'none' },
   create_agreement: { investor: 'full', agency_admin: 'none', member: 'none' },
   fund_agreement: { investor: 'full', agency_admin: 'none', member: 'none' },
+  // Only the Portfolio Vault can be withdrawn, and only by the Investor who funds it.
+  withdraw_funds: { investor: 'full', agency_admin: 'none', member: 'none' },
   release_tranche: { investor: 'full', agency_admin: 'none', member: 'none' },
   request_tranche: { investor: 'view', agency_admin: 'full', member: 'none' },
   submit_milestone_evidence: { investor: 'view', agency_admin: 'full', member: 'none' },

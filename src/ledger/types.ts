@@ -45,6 +45,10 @@ export type LedgerErrorCode =
   | 'rule_drift'
   /** Someone the operation names has no account on the ledger yet. */
   | 'account_not_ready'
+  /** The person's account has not let the ledger move their TestUSD yet. */
+  | 'allowance_required'
+  /** The person's account holds less TestUSD than the deposit needs. */
+  | 'wallet_insufficient'
   /** The transaction was sent and is not final yet: ask again before retrying. */
   | 'still_processing'
   /** The transaction did not go through (reverted, or its user operation failed): nothing moved. */
@@ -135,6 +139,10 @@ export type LedgerOp =
       evidenceHash: Hash | null
     }
   | { call: 'returnToAgency'; opId: Id; agencyId: Id; amount: Cents }
+  /** An Investor takes money out of a Portfolio Vault to an address. */
+  | { call: 'withdraw'; opId: Id; portfolioId: Id; vaultId: Id; amount: Cents; to: Address }
+  /** A person takes their Viatik balance in an agency out to an address. */
+  | { call: 'withdrawMemberBalance'; opId: Id; agencyId: Id; amount: Cents; to: Address }
 
 export type LedgerCall = LedgerOp['call']
 
@@ -149,9 +157,10 @@ export type RecordKind =
   | 'payment_rejected'
   | 'return'
   | 'allocation'
+  | 'withdrawal'
 
-/** One side of a record: a ledger location or payment destination (by product id), a Member, or none. */
-export type RecordEnd = { id: Id } | { member: Id } | null
+/** One side of a record: a ledger location or payment destination (by product id), a Member, an address money left to, or none. */
+export type RecordEnd = { id: Id } | { member: Id } | { address: Address } | null
 
 /**
  * What the ledger records for a money operation (`Recorded(opId, actor,

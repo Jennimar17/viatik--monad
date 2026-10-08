@@ -35,6 +35,32 @@ export const viatikLedgerAbi = [
   },
   {
     type: 'function',
+    name: 'MAX_RUNS',
+    inputs: [],
+    outputs: [
+      {
+        name: '',
+        type: 'uint32',
+        internalType: 'uint32',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'MIN_INTERVAL',
+    inputs: [],
+    outputs: [
+      {
+        name: '',
+        type: 'uint32',
+        internalType: 'uint32',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     name: 'TOKEN',
     inputs: [],
     outputs: [
@@ -137,6 +163,19 @@ export const viatikLedgerAbi = [
       },
     ],
     stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'cancelSchedule',
+    inputs: [
+      {
+        name: 'scheduleId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -317,6 +356,61 @@ export const viatikLedgerAbi = [
         name: 'vaultId',
         type: 'bytes32',
         internalType: 'bytes32',
+      },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'createSchedule',
+    inputs: [
+      {
+        name: 'input',
+        type: 'tuple',
+        internalType: 'struct ViatikLedger.ScheduleInput',
+        components: [
+          {
+            name: 'id',
+            type: 'bytes32',
+            internalType: 'bytes32',
+          },
+          {
+            name: 'source',
+            type: 'bytes32',
+            internalType: 'bytes32',
+          },
+          {
+            name: 'destination',
+            type: 'bytes32',
+            internalType: 'bytes32',
+          },
+          {
+            name: 'member',
+            type: 'address',
+            internalType: 'address',
+          },
+          {
+            name: 'amount',
+            type: 'uint256',
+            internalType: 'uint256',
+          },
+          {
+            name: 'firstRunAt',
+            type: 'uint64',
+            internalType: 'uint64',
+          },
+          {
+            name: 'interval',
+            type: 'uint32',
+            internalType: 'uint32',
+          },
+          {
+            name: 'runs',
+            type: 'uint32',
+            internalType: 'uint32',
+          },
+        ],
       },
     ],
     outputs: [],
@@ -679,6 +773,82 @@ export const viatikLedgerAbi = [
             name: 'epoch',
             type: 'uint64',
             internalType: 'uint64',
+          },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getSchedule',
+    inputs: [
+      {
+        name: 'id',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple',
+        internalType: 'struct ViatikLedger.Schedule',
+        components: [
+          {
+            name: 'agency',
+            type: 'bytes32',
+            internalType: 'bytes32',
+          },
+          {
+            name: 'source',
+            type: 'bytes32',
+            internalType: 'bytes32',
+          },
+          {
+            name: 'destination',
+            type: 'bytes32',
+            internalType: 'bytes32',
+          },
+          {
+            name: 'member',
+            type: 'address',
+            internalType: 'address',
+          },
+          {
+            name: 'creator',
+            type: 'address',
+            internalType: 'address',
+          },
+          {
+            name: 'amount',
+            type: 'uint256',
+            internalType: 'uint256',
+          },
+          {
+            name: 'nextRunAt',
+            type: 'uint64',
+            internalType: 'uint64',
+          },
+          {
+            name: 'interval',
+            type: 'uint32',
+            internalType: 'uint32',
+          },
+          {
+            name: 'runsLeft',
+            type: 'uint32',
+            internalType: 'uint32',
+          },
+          {
+            name: 'status',
+            type: 'uint8',
+            internalType: 'enum ViatikLedger.ScheduleStatus',
+          },
+          {
+            name: 'pausedByInvestor',
+            type: 'bool',
+            internalType: 'bool',
           },
         ],
       },
@@ -1150,6 +1320,19 @@ export const viatikLedgerAbi = [
   },
   {
     type: 'function',
+    name: 'keeper',
+    inputs: [],
+    outputs: [
+      {
+        name: '',
+        type: 'address',
+        internalType: 'address',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     name: 'memberBalance',
     inputs: [
       {
@@ -1297,6 +1480,19 @@ export const viatikLedgerAbi = [
       },
     ],
     stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'pauseSchedule',
+    inputs: [
+      {
+        name: 'scheduleId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -1570,6 +1766,19 @@ export const viatikLedgerAbi = [
   },
   {
     type: 'function',
+    name: 'resumeSchedule',
+    inputs: [
+      {
+        name: 'scheduleId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     name: 'returnToAgency',
     inputs: [
       {
@@ -1632,6 +1841,24 @@ export const viatikLedgerAbi = [
       },
     ],
     stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'runSchedule',
+    inputs: [
+      {
+        name: 'scheduleId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'paymentId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -1711,6 +1938,19 @@ export const viatikLedgerAbi = [
         name: 'paused',
         type: 'bool',
         internalType: 'bool',
+      },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'setKeeper',
+    inputs: [
+      {
+        name: 'keeper_',
+        type: 'address',
+        internalType: 'address',
       },
     ],
     outputs: [],
@@ -1861,6 +2101,67 @@ export const viatikLedgerAbi = [
       },
     ],
     stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'withdraw',
+    inputs: [
+      {
+        name: 'opId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'portfolioId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'vaultId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'amount',
+        type: 'uint256',
+        internalType: 'uint256',
+      },
+      {
+        name: 'to',
+        type: 'address',
+        internalType: 'address',
+      },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'withdrawMemberBalance',
+    inputs: [
+      {
+        name: 'opId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'agencyId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'amount',
+        type: 'uint256',
+        internalType: 'uint256',
+      },
+      {
+        name: 'to',
+        type: 'address',
+        internalType: 'address',
+      },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
   },
   {
     type: 'event',
@@ -2182,6 +2483,19 @@ export const viatikLedgerAbi = [
         type: 'uint256',
         indexed: false,
         internalType: 'uint256',
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'KeeperSet',
+    inputs: [
+      {
+        name: 'keeper',
+        type: 'address',
+        indexed: false,
+        internalType: 'address',
       },
     ],
     anonymous: false,
@@ -2538,6 +2852,123 @@ export const viatikLedgerAbi = [
   },
   {
     type: 'event',
+    name: 'ScheduleCreated',
+    inputs: [
+      {
+        name: 'schedule',
+        type: 'bytes32',
+        indexed: true,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'agency',
+        type: 'bytes32',
+        indexed: true,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'source',
+        type: 'bytes32',
+        indexed: false,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'destination',
+        type: 'bytes32',
+        indexed: false,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'member',
+        type: 'address',
+        indexed: false,
+        internalType: 'address',
+      },
+      {
+        name: 'amount',
+        type: 'uint256',
+        indexed: false,
+        internalType: 'uint256',
+      },
+      {
+        name: 'firstRunAt',
+        type: 'uint64',
+        indexed: false,
+        internalType: 'uint64',
+      },
+      {
+        name: 'interval',
+        type: 'uint32',
+        indexed: false,
+        internalType: 'uint32',
+      },
+      {
+        name: 'runs',
+        type: 'uint32',
+        indexed: false,
+        internalType: 'uint32',
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'ScheduleRan',
+    inputs: [
+      {
+        name: 'schedule',
+        type: 'bytes32',
+        indexed: true,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'paymentId',
+        type: 'bytes32',
+        indexed: true,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'nextRunAt',
+        type: 'uint64',
+        indexed: false,
+        internalType: 'uint64',
+      },
+      {
+        name: 'runsLeft',
+        type: 'uint32',
+        indexed: false,
+        internalType: 'uint32',
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'ScheduleStatusChanged',
+    inputs: [
+      {
+        name: 'schedule',
+        type: 'bytes32',
+        indexed: true,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'status',
+        type: 'uint8',
+        indexed: false,
+        internalType: 'enum ViatikLedger.ScheduleStatus',
+      },
+      {
+        name: 'by',
+        type: 'address',
+        indexed: false,
+        internalType: 'address',
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
     name: 'TrancheChangesRequested',
     inputs: [
       {
@@ -2644,6 +3075,43 @@ export const viatikLedgerAbi = [
         type: 'bytes32',
         indexed: false,
         internalType: 'bytes32',
+      },
+      {
+        name: 'amount',
+        type: 'uint256',
+        indexed: false,
+        internalType: 'uint256',
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'Withdrawn',
+    inputs: [
+      {
+        name: 'opId',
+        type: 'bytes32',
+        indexed: true,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'scope',
+        type: 'bytes32',
+        indexed: true,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'source',
+        type: 'bytes32',
+        indexed: false,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'to',
+        type: 'address',
+        indexed: true,
+        internalType: 'address',
       },
       {
         name: 'amount',
@@ -2806,6 +3274,22 @@ export const viatikLedgerAbi = [
   },
   {
     type: 'error',
+    name: 'NotDue',
+    inputs: [
+      {
+        name: 'schedule',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'dueAt',
+        type: 'uint64',
+        internalType: 'uint64',
+      },
+    ],
+  },
+  {
+    type: 'error',
     name: 'NotRegistered',
     inputs: [
       {
@@ -2834,6 +3318,17 @@ export const viatikLedgerAbi = [
         name: 'account',
         type: 'address',
         internalType: 'address',
+      },
+    ],
+  },
+  {
+    type: 'error',
+    name: 'SchedulePaused',
+    inputs: [
+      {
+        name: 'schedule',
+        type: 'bytes32',
+        internalType: 'bytes32',
       },
     ],
   },

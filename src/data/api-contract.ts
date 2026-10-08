@@ -106,6 +106,25 @@ export type LedgerLocationKind = 'portfolio_vault' | 'funding_vault' | 'account'
  * for what the caller may see. The browser compares it with what its screens
  * show, so a balance is "verified" only when both agree.
  */
+/**
+ * The signed-in person's own account on Monad, for adding funds: the TestUSD it
+ * holds and how much of it the ledger may move (amounts in cents; the allowance
+ * is capped at the largest safe number). `available: false` on the demo ledger
+ * or before the person has an account.
+ */
+export type LedgerAccount =
+  | { available: false }
+  | {
+      available: true
+      address: Hex
+      token: Hex
+      ledger: Hex
+      balance: number
+      allowance: number
+      /** What one "Get test funds" press mints. */
+      testFunds: number
+    }
+
 export type LedgerView =
   | { settlement: 'demo' }
   | {

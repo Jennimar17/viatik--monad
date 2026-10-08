@@ -1,3 +1,4 @@
+import { parseAddress, shortAddress } from '../address'
 import { evidenceSetHash } from '../evidence'
 import { newId } from '../ids'
 import { cents, sum, type Cents } from '../money'
@@ -388,6 +389,53 @@ export function addFunds(tx: Tx, input: { portfolioId: Id; amount: Cents; source
       portfolioId: input.portfolioId,
       amount: input.amount,
     },
+  )
+  return receipt
+}
+
+/**
+ * The Investor takes money out of their Portfolio Vault, to their account or another
+ * address. Only the Portfolio Vault can be named: what is committed to an Agency
+ * (a funding vault) keeps its own flow of tranches and returns.
+ */
+export function withdrawFunds(tx: Tx, input: { portfolioId: Id; amount: Cents; to: string }) {
+  tx.authorize('withdraw_funds', { portfolioId: input.portfolioId })
+  requirePositive(input.amount)
+  const address = parseAddress(input.to)
+  if (!address)
+    throw new DomainError('validation', 'Enter a valid account address (0x followed by 40 characters).')
+  const vault = tx.state.vaults.find((v) => v.portfolioId === input.portfolioId && v.kind === 'portfolio')
+  if (!vault) throw new DomainError('not_found', 'Portfolio Vault not found.')
+  const available = vaultBalance(tx.state, vault.id)
+  if (available < input.amount) {
+    throw new DomainError(
+      'insufficient_funds',
+      `The Portfolio Vault has ${usdText(available)} available. Capital committed to an Agency cannot be withdrawn from here.`,
+    )
+  }
+  const operationId = newId('wd')
+  const receipt = tx.receipt({
+    kind: 'withdrawal',
+    amount: input.amount,
+    fromLabel: vault.name,
+    toLabel: shortAddress(address),
+    description: 'Funds withdrawn from the Portfolio Vault',
+    policyLabel: 'Only the Portfolio Vault can be withdrawn',
+    operationId,
+    portfolioId: input.portfolioId,
+  })
+  tx.move(
+    'withdrawal',
+    input.amount,
+    { kind: 'vault', vaultId: vault.id },
+    { kind: 'external', label: shortAddress(address), address },
+    { portfolioId: input.portfolioId, refId: operationId, receiptId: receipt.id },
+  )
+  tx.activity(
+    'funds_withdrawn',
+    `Withdrew ${usdText(input.amount)} from the Portfolio Vault`,
+    { kind: 'receipt', id: receipt.id },
+    { portfolioId: input.portfolioId, amount: input.amount },
   )
   return receipt
 }

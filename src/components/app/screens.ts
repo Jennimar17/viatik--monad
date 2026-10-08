@@ -205,6 +205,19 @@ export const SCREENS = {
       summary: 'Match paid bills to payments.',
       status: 'ready',
     },
+    {
+      path: 'providers',
+      title: 'Providers',
+      summary: 'Vendors, services and contractors with search, status and totals.',
+      status: 'ready',
+    },
+    {
+      path: 'providers/[providerId]',
+      title: 'Provider detail',
+      summary: 'Payments, total paid, budgets, bills; edit, pause, archive.',
+      status: 'ready',
+      open: `providers/${DEMO.destinations.vertex}`,
+    },
     { path: 'team', title: 'Team', summary: 'Members and invitations.', status: 'ready' },
     {
       path: 'team/[memberId]',
@@ -291,7 +304,8 @@ export const SCREENS = {
     {
       path: 'profile',
       title: 'Profile',
-      summary: 'Payment destination, notifications, passkey, return funds.',
+      summary:
+        'Viatik account (balance, movements, saved addresses, send to my account), notifications, passkey, return funds.',
       status: 'ready',
     },
   ],

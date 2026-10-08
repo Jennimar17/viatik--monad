@@ -12,6 +12,7 @@ interface ITestUSD {
     function MAX_MINT() external view returns (uint256);
     function mint(address to, uint256 amount) external;
     function transfer(address to, uint256 amount) external returns (bool);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
 }
 
 /// @title ViatikLedger
@@ -97,7 +98,8 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
         PaymentPending,
         PaymentRejected,
         Return,
-        Allocation
+        Allocation,
+        Withdrawal
     }
 
     enum ScopeKind {
@@ -177,6 +179,48 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
         bytes32 evidenceHash;
     }
 
+    enum ScheduleStatus {
+        None,
+        Active,
+        Paused,
+        Cancelled,
+        Completed
+    }
+
+    /// @notice A payment an Agency Admin authorizes once; the keeper only runs it when it is due.
+    struct Schedule {
+        bytes32 agency;
+        /// An Account or a Budget of the agency, like `pay`.
+        bytes32 source;
+        /// The vendor paid (a label, like `pay`), or 0 when paying a Member.
+        bytes32 destination;
+        /// The Member credited to their Viatik balance, or 0 when paying a vendor.
+        address member;
+        /// The Admin who authorized it: if they lose the role, the schedule stops.
+        address creator;
+        /// Paid on every run.
+        uint256 amount;
+        uint64 nextRunAt;
+        /// Seconds between runs; 0 = a single run.
+        uint32 interval;
+        uint32 runsLeft;
+        ScheduleStatus status;
+        /// Whether the Investor paused it: then only the Investor resumes it.
+        bool pausedByInvestor;
+    }
+
+    /// @notice What `createSchedule` takes (a struct keeps the function readable).
+    struct ScheduleInput {
+        bytes32 id;
+        bytes32 source;
+        bytes32 destination;
+        address member;
+        uint256 amount;
+        uint64 firstRunAt;
+        uint32 interval;
+        uint32 runs;
+    }
+
     // ─── Errors (named like LedgerErrorCode, in PascalCase) ────────────────
 
     error NotAuthorized(address account);
@@ -188,6 +232,9 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
     error AgreementPaused(bytes32 agreement);
     error NotRegistered(bytes32 id);
     error InvalidState(bytes32 id);
+    /// @notice A schedule is not due yet (`dueAt` is when it will be).
+    error NotDue(bytes32 schedule, uint64 dueAt);
+    error SchedulePaused(bytes32 schedule);
 
     // ─── Events ─────────────────────────────────────────────────────────────
 
@@ -240,14 +287,37 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
     event RequestClosed(bytes32 indexed requestId, address by, bool declined);
     event FundsReturned(bytes32 indexed opId, bytes32 indexed agency, address member, bytes32 account, uint256 amount);
 
+    /// @notice Money left the ledger as real TestUSD. `scope` is the portfolio or agency, `source`
+    /// the vault or the Member's balance location, `to` where it went.
+    event Withdrawn(bytes32 indexed opId, bytes32 indexed scope, bytes32 source, address indexed to, uint256 amount);
+
+    event ScheduleCreated(
+        bytes32 indexed schedule,
+        bytes32 indexed agency,
+        bytes32 source,
+        bytes32 destination,
+        address member,
+        uint256 amount,
+        uint64 firstRunAt,
+        uint32 interval,
+        uint32 runs
+    );
+    event ScheduleRan(bytes32 indexed schedule, bytes32 indexed paymentId, uint64 nextRunAt, uint32 runsLeft);
+    event ScheduleStatusChanged(bytes32 indexed schedule, ScheduleStatus status, address by);
+
     event RegistrarSet(address registrar);
     event PayoutSinkSet(address sink);
     event NamespaceSet(bytes32 namespace);
+    event KeeperSet(address keeper);
 
     // ─── Storage ────────────────────────────────────────────────────────────
 
     bytes32 public constant JOIN_TYPEHASH =
         keccak256("Join(address account,bytes32 scope,uint8 role,uint256 nonce,uint256 deadline)");
+
+    /// @notice The shortest gap between two runs of a schedule, and the most runs one can have.
+    uint32 public constant MIN_INTERVAL = 60;
+    uint32 public constant MAX_RUNS = 52;
 
     ITestUSD public immutable TOKEN;
     /// @notice Server key that signs role permits (never moves money).
@@ -255,6 +325,8 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
     /// @notice Where vendor payments leave the ledger as real TestUSD transfers.
     address public payoutSink;
     bytes32 public namespace;
+    /// @notice The only account that runs due schedules (it can pay nothing an Admin did not authorize).
+    address public keeper;
 
     mapping(bytes32 scope => mapping(address account => Role)) private _roles;
     /// @notice Portfolio and agency ids live in one space and never collide.
@@ -282,6 +354,7 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
 
     mapping(bytes32 id => PaymentRequest) private _requests;
     mapping(bytes32 agency => mapping(address member => uint256)) private _memberBalances;
+    mapping(bytes32 id => Schedule) private _schedules;
 
     /// @notice Money operations already recorded, per actor: each opId runs once, and
     /// nobody can mark someone else's operation as done.
@@ -391,10 +464,11 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
 
     // ─── Funding ────────────────────────────────────────────────────────────
 
-    /// @notice The Investor adds funds: TestUSD is minted into the ledger (`addFunds`).
+    /// @notice The Investor adds funds: TestUSD moves from their own account into the ledger
+    /// (`addFunds`). The Investor approves the ledger for the amount beforehand.
     function deposit(bytes32 opId, bytes32 portfolioId, bytes32 vaultId, uint256 amount) external {
         _claim(opId);
-        _requireRole(portfolioId, Role.Investor);
+        address investor = _requireRole(portfolioId, Role.Investor);
         Location storage vault = _requireLocation(vaultId, LocationKind.PortfolioVault);
         if (vault.scope != portfolioId) revert InvalidState(vaultId);
         uint256 max = TOKEN.MAX_MINT();
@@ -402,7 +476,7 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
         vault.balance += amount;
         emit Deposited(opId, portfolioId, amount);
         _record(opId, ReceiptKind.Deposit, amount, bytes32(0), vaultId, bytes32(0));
-        TOKEN.mint(address(this), amount);
+        if (!TOKEN.transferFrom(investor, address(this), amount)) revert InvalidState(opId);
     }
 
     /// @notice The Investor creates an agreement for an agency (`createAgreement`). The funding
@@ -756,18 +830,7 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
             revert NotRegistered(bytes32(uint256(uint160(member))));
         }
         if (amount == 0 || (member != address(0) && destinationId != bytes32(0))) revert InvalidState(paymentId);
-        if (from.kind == LocationKind.Budget) {
-            Budget storage budget = _budgets[source];
-            if (budget.paused) revert BudgetPaused(source);
-            if (amount > budget.perOperationLimit) {
-                revert LimitExceeded(LimitRule.PerOperation, budget.perOperationLimit, amount);
-            }
-            if (member == address(0) && !_destinationAllowed(source, budget, destinationId)) {
-                revert DestinationNotAllowed(source, destinationId);
-            }
-        }
-        uint256 threshold = exceptionThresholdOf(agency);
-        if (amount > threshold) revert LimitExceeded(LimitRule.Exception, threshold, amount);
+        _requirePayable(source, from, agency, destinationId, member, amount);
         _payOut(paymentId, bytes32(0), source, agency, destinationId, member, amount, evidenceHash);
     }
 
@@ -786,6 +849,158 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
         _locations[operations].balance += amount;
         emit FundsReturned(opId, agencyId, caller, operations, amount);
         _record(opId, ReceiptKind.Return, amount, _memberLocation(caller), operations, bytes32(0));
+    }
+
+    // ─── Withdrawals ────────────────────────────────────────────────────────
+
+    /// @notice The Investor takes money out of a Portfolio Vault to `to` (`withdrawFunds`). Only a
+    /// Portfolio Vault can be named: capital committed to an Agency (a funding vault) keeps its own
+    /// flow of tranches and returns, so it can never leave through here.
+    function withdraw(bytes32 opId, bytes32 portfolioId, bytes32 vaultId, uint256 amount, address to) external {
+        _claim(opId);
+        _requireRole(portfolioId, Role.Investor);
+        Location storage vault = _requireLocation(vaultId, LocationKind.PortfolioVault);
+        if (vault.scope != portfolioId) revert InvalidState(vaultId);
+        if (amount == 0 || to == address(0) || to == address(this)) revert InvalidState(opId);
+        _debit(vaultId, amount);
+        emit Withdrawn(opId, portfolioId, vaultId, to, amount);
+        // The receipt names where the money went: the address, as a bytes32.
+        _record(opId, ReceiptKind.Withdrawal, amount, vaultId, _memberLocation(to), bytes32(0));
+        if (!TOKEN.transfer(to, amount)) revert InvalidState(opId);
+    }
+
+    /// @notice Someone takes the money the agency paid them out of their Viatik balance to `to`
+    /// (`withdrawBalance`). It only touches their own balance. It does not ask for a current
+    /// role: money already paid to a person stays theirs even if they left the agency.
+    function withdrawMemberBalance(bytes32 opId, bytes32 agencyId, uint256 amount, address to) external {
+        _claim(opId);
+        address caller = _msgSender();
+        if (to == address(0) || to == address(this)) revert InvalidState(opId);
+        uint256 balance = _memberBalances[agencyId][caller];
+        if (amount == 0 || amount > balance) revert InsufficientFunds(_memberLocation(caller), balance, amount);
+        _memberBalances[agencyId][caller] = balance - amount;
+        emit Withdrawn(opId, agencyId, _memberLocation(caller), to, amount);
+        _record(opId, ReceiptKind.Withdrawal, amount, _memberLocation(caller), _memberLocation(to), bytes32(0));
+        if (!TOKEN.transfer(to, amount)) revert InvalidState(opId);
+    }
+
+    // ─── Scheduled payments ─────────────────────────────────────────────────
+
+    /// @notice An Agency Admin authorizes a payment to a Member or a vendor, once or on a cadence
+    /// (`schedulePayment`). It must be payable today by the same rules as `pay`: a schedule can
+    /// never authorize what the Admin could not pay by hand.
+    function createSchedule(ScheduleInput calldata input) external {
+        Location storage from = _locations[input.source];
+        if (from.kind != LocationKind.Account && from.kind != LocationKind.Budget) revert NotRegistered(input.source);
+        bytes32 agency = from.scope;
+        address creator = _requireRole(agency, Role.Admin);
+        if (input.id == bytes32(0)) revert InvalidState(input.id);
+        if (_schedules[input.id].status != ScheduleStatus.None) revert AlreadyProcessed(input.id);
+        bool toMember = input.member != address(0);
+        // Exactly one payee: a Member or a vendor.
+        if (toMember == (input.destination != bytes32(0))) revert InvalidState(input.id);
+        if (toMember && _roles[agency][input.member] == Role.None) {
+            revert NotRegistered(_memberLocation(input.member));
+        }
+        if (input.amount == 0 || input.runs == 0 || input.runs > MAX_RUNS || input.firstRunAt < block.timestamp) {
+            revert InvalidState(input.id);
+        }
+        // A single run has no interval; a repeating one cannot be faster than MIN_INTERVAL.
+        if (input.interval == 0 ? input.runs != 1 : input.interval < MIN_INTERVAL) revert InvalidState(input.id);
+        _requirePayable(input.source, from, agency, input.destination, input.member, input.amount);
+
+        Schedule storage created = _schedules[input.id];
+        created.agency = agency;
+        created.source = input.source;
+        created.destination = input.destination;
+        created.member = input.member;
+        created.creator = creator;
+        created.amount = input.amount;
+        created.nextRunAt = input.firstRunAt;
+        created.interval = input.interval;
+        created.runsLeft = input.runs;
+        created.status = ScheduleStatus.Active;
+        emit ScheduleCreated(
+            input.id,
+            agency,
+            input.source,
+            input.destination,
+            input.member,
+            input.amount,
+            input.firstRunAt,
+            input.interval,
+            input.runs
+        );
+    }
+
+    /// @notice The keeper runs a due schedule (`runSchedule`). Everything is checked again now:
+    /// that it is active and due, that its Admin still holds the role, and the same budget
+    /// rules as `pay`. The payment is recorded under `paymentId`, with the keeper as actor.
+    function runSchedule(bytes32 scheduleId, bytes32 paymentId) external {
+        address caller = _msgSender();
+        if (caller != keeper) revert NotAuthorized(caller);
+        Schedule storage run = _schedules[scheduleId];
+        if (run.status == ScheduleStatus.None) revert NotRegistered(scheduleId);
+        if (run.status == ScheduleStatus.Paused) revert SchedulePaused(scheduleId);
+        if (run.status != ScheduleStatus.Active) revert InvalidState(scheduleId);
+        if (block.timestamp < run.nextRunAt) revert NotDue(scheduleId, run.nextRunAt);
+        _claim(paymentId);
+        if (_roles[run.agency][run.creator] != Role.Admin) revert NotAuthorized(run.creator);
+        if (run.member != address(0) && _roles[run.agency][run.member] == Role.None) {
+            revert NotRegistered(_memberLocation(run.member));
+        }
+        _requirePayable(run.source, _locations[run.source], run.agency, run.destination, run.member, run.amount);
+
+        run.runsLeft -= 1;
+        if (run.runsLeft == 0) {
+            run.status = ScheduleStatus.Completed;
+        } else {
+            run.nextRunAt += run.interval;
+        }
+        emit ScheduleRan(scheduleId, paymentId, run.nextRunAt, run.runsLeft);
+        _payOut(paymentId, bytes32(0), run.source, run.agency, run.destination, run.member, run.amount, bytes32(0));
+    }
+
+    /// @notice An Agency Admin or the Investor of the portfolio pauses an active schedule.
+    function pauseSchedule(bytes32 scheduleId) external {
+        Schedule storage target = _requireSchedule(scheduleId);
+        (address caller, bool asInvestor) = _requireScheduleManager(target.agency);
+        if (target.status != ScheduleStatus.Active) revert InvalidState(scheduleId);
+        target.status = ScheduleStatus.Paused;
+        target.pausedByInvestor = asInvestor;
+        emit ScheduleStatusChanged(scheduleId, ScheduleStatus.Paused, caller);
+    }
+
+    /// @notice Resumes a paused schedule. If the Investor paused it, only the Investor resumes it.
+    /// Dates that passed while it was paused are skipped, not paid: it goes on from the next date
+    /// on its own cadence (a single run that was due runs as soon as possible).
+    function resumeSchedule(bytes32 scheduleId) external {
+        Schedule storage target = _requireSchedule(scheduleId);
+        (address caller, bool asInvestor) = _requireScheduleManager(target.agency);
+        if (target.status != ScheduleStatus.Paused) revert InvalidState(scheduleId);
+        if (target.pausedByInvestor && !asInvestor) revert NotAuthorized(caller);
+        target.status = ScheduleStatus.Active;
+        target.pausedByInvestor = false;
+        if (target.nextRunAt <= block.timestamp) {
+            if (target.interval == 0) {
+                target.nextRunAt = uint64(block.timestamp);
+            } else {
+                uint256 skipped = (block.timestamp - target.nextRunAt) / target.interval + 1;
+                target.nextRunAt += uint64(skipped * target.interval);
+            }
+        }
+        emit ScheduleStatusChanged(scheduleId, ScheduleStatus.Active, caller);
+    }
+
+    /// @notice An Agency Admin or the Investor cancels a schedule for good, paused or not.
+    function cancelSchedule(bytes32 scheduleId) external {
+        Schedule storage target = _requireSchedule(scheduleId);
+        (address caller,) = _requireScheduleManager(target.agency);
+        if (target.status != ScheduleStatus.Active && target.status != ScheduleStatus.Paused) {
+            revert InvalidState(scheduleId);
+        }
+        target.status = ScheduleStatus.Cancelled;
+        emit ScheduleStatusChanged(scheduleId, ScheduleStatus.Cancelled, caller);
     }
 
     // ─── Reads ──────────────────────────────────────────────────────────────
@@ -839,6 +1054,10 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
         return _requests[id];
     }
 
+    function getSchedule(bytes32 id) external view returns (Schedule memory) {
+        return _schedules[id];
+    }
+
     /// @notice The exception threshold of an agency: the one of its governing agreement,
     /// the first (in creation order) that is active or paused. Without one, there are
     /// no exceptions.
@@ -888,6 +1107,12 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
         if (sink == address(0) || sink == address(this)) revert NotRegistered(bytes32(0));
         payoutSink = sink;
         emit PayoutSinkSet(sink);
+    }
+
+    function setKeeper(address keeper_) external onlyOwner {
+        if (keeper_ == address(0)) revert NotRegistered(bytes32(0));
+        keeper = keeper_;
+        emit KeeperSet(keeper_);
     }
 
     /// @notice Marks a new epoch of ids (each re-seed of the demo history).
@@ -1097,6 +1322,42 @@ contract ViatikLedger is Ownable, EIP712, Nonces, Multicall {
         uint256 available = _locations[budgetId].balance;
         if (amount > available) return (Reason.InsufficientFunds, available);
         return (Reason.None, 0);
+    }
+
+    /// @dev What a direct payment by an Admin must satisfy: budget pause, per-operation limit,
+    /// allowed destination and the exception threshold of the Investor. Scheduled payments share it.
+    function _requirePayable(
+        bytes32 source,
+        Location storage from,
+        bytes32 agency,
+        bytes32 destinationId,
+        address member,
+        uint256 amount
+    ) private view {
+        if (from.kind == LocationKind.Budget) {
+            Budget storage budget = _budgets[source];
+            if (budget.paused) revert BudgetPaused(source);
+            if (amount > budget.perOperationLimit) {
+                revert LimitExceeded(LimitRule.PerOperation, budget.perOperationLimit, amount);
+            }
+            if (member == address(0) && !_destinationAllowed(source, budget, destinationId)) {
+                revert DestinationNotAllowed(source, destinationId);
+            }
+        }
+        uint256 threshold = exceptionThresholdOf(agency);
+        if (amount > threshold) revert LimitExceeded(LimitRule.Exception, threshold, amount);
+    }
+
+    function _requireSchedule(bytes32 scheduleId) private view returns (Schedule storage schedule_) {
+        schedule_ = _schedules[scheduleId];
+        if (schedule_.status == ScheduleStatus.None) revert NotRegistered(scheduleId);
+    }
+
+    /// @dev Who may pause, resume or cancel: an Admin of the agency or the Investor of its portfolio.
+    function _requireScheduleManager(bytes32 agency) private view returns (address caller, bool asInvestor) {
+        caller = _msgSender();
+        asInvestor = _roles[agencyPortfolio[agency]][caller] == Role.Investor;
+        if (!asInvestor && _roles[agency][caller] != Role.Admin) revert NotAuthorized(caller);
     }
 
     function _execute(bytes32 requestId, bytes32 paymentId, PaymentRequest storage request) private {

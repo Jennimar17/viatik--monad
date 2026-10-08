@@ -86,7 +86,16 @@ export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
     }
     return false
   }
-  const movements = state.movements.filter(movementVisible)
+  // Where a withdrawal went is for its owner: others see the short label, never the whole address.
+  const ownsWithdrawal = (m: ViatikState['movements'][number]) =>
+    portfolioIds.has(m.portfolioId) && m.from.kind === 'vault'
+      ? true
+      : m.from.kind === 'recipient' && m.from.recipient.kind === 'member' && m.from.recipient.userId === userId
+  const movements = state.movements.filter(movementVisible).map((m) =>
+    m.to.kind === 'external' && m.to.address && !ownsWithdrawal(m)
+      ? { ...m, to: { kind: 'external' as const, label: m.to.label } }
+      : m,
+  )
   const receiptIds = new Set(movements.map((m) => m.receiptId).filter(Boolean) as Id[])
 
   const agencyUserIds = new Set(
@@ -99,6 +108,11 @@ export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
       .map((m) => m.userId),
   )
   agencyUserIds.add(userId)
+  const adminVisibleUserIds = new Set(
+    state.memberships
+      .filter((m) => m.status === 'active' && m.scope.kind === 'agency' && adminAgencyIds.has(m.scope.agencyId))
+      .map((m) => m.userId),
+  )
 
   return {
     ...state,
@@ -155,6 +169,10 @@ export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
           (a.subjectUserId === userId || (a.actor.kind === 'user' && a.actor.userId === userId))),
     ),
     notifications: state.notifications.filter((n) => n.userId === userId),
+    // Saved addresses: your own, and those of the people in the agencies you administer.
+    payoutAddresses: state.payoutAddresses.filter(
+      (a) => a.userId === userId || adminVisibleUserIds.has(a.userId),
+    ),
   }
 }
 

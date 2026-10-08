@@ -57,6 +57,7 @@ export class SeedBuilder {
       agentDecisions: [],
       activity: [],
       notifications: [],
+      payoutAddresses: [],
     }
   }
 

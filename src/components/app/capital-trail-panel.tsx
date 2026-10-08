@@ -22,6 +22,7 @@ export const movementLabel: Record<Movement['kind'], string> = {
   deallocate: 'Returned from budget',
   payment: 'Payment',
   capital_return: 'Capital returned',
+  withdrawal: 'Withdrawn',
 }
 
 export function locationLabel(state: ViatikState, location: Location): string {

@@ -10,6 +10,7 @@ import {
   type ConfirmAnswer,
   type EvidenceLink,
   type EvidenceUploadTicket,
+  type LedgerAccount,
   type LedgerView,
   type VerifiedUpload,
 } from './api-contract'
@@ -119,6 +120,11 @@ export class ApiDataSource implements DataSource {
       credentials,
       expectedUserId: userId,
     })
+  }
+
+  async ledgerAccount(userId: string, options: LedgerOptions = {}): Promise<LedgerAccount> {
+    const credentials = await requireCredentials(options.credentials)()
+    return apiFetch<LedgerAccount>('/v1/ledger/account', { method: 'GET', credentials, expectedUserId: userId })
   }
 
   async lookupInvitation(code: string): Promise<InvitationPreview | null> {

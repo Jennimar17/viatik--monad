@@ -57,6 +57,8 @@ const icons: Record<ActivityType, LucideIcon> = {
   agent_resumed: PlayCircle,
   agency_created: Building2,
   portfolio_created: Briefcase,
+  funds_withdrawn: Landmark,
+  destination_updated: Building2,
 }
 
 const DANGER: ReadonlySet<ActivityType> = new Set(['policy_rejected', 'payment_declined', 'agreement_frozen'])

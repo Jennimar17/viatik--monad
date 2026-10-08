@@ -1,14 +1,24 @@
 'use client'
 
 import type { ColumnDef } from '@tanstack/react-table'
-import { ArrowUpRight, Info, Landmark, Lock, Plus, ShieldCheck, Vault as VaultIcon } from 'lucide-react'
+import {
+  ArrowUpFromLine,
+  ArrowUpRight,
+  Info,
+  Landmark,
+  Lock,
+  Plus,
+  ShieldCheck,
+  Vault as VaultIcon,
+} from 'lucide-react'
 import * as React from 'react'
 
 import { BalanceCheckNote } from '@/components/app/balance-check'
 import { ButtonLink } from '@/components/app/button-link'
 import { locationLabel, movementLabel } from '@/components/app/capital-trail-panel'
+import { InvestorWithdrawSheet } from '@/components/app/investor-withdraw-sheet'
 import { useReceiptDrawer } from '@/components/app/receipt-details'
-import { useHref, useRole } from '@/components/app/role-context'
+import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Amount } from '@/components/viatik/amount'
@@ -36,6 +46,7 @@ const VAULT_MOVEMENTS: ReadonlySet<Movement['kind']> = new Set([
   'fund_agreement',
   'release_tranche',
   'capital_return',
+  'withdrawal',
 ])
 
 export default function VaultsPage() {
@@ -44,8 +55,10 @@ export default function VaultsPage() {
   const href = useHref()
   const receipts = useReceiptDrawer()
   const { checks } = useLedger()
+  const { can } = usePermissions()
   const [assetVault, setAssetVault] = React.useState<Vault | null>(null)
   const [assetOpen, setAssetOpen] = React.useState(false)
+  const [withdrawOpen, setWithdrawOpen] = React.useState(false)
 
   const vaults = state.vaults.filter((v) => v.portfolioId === portfolioId)
   const portfolioVault = vaults.find((v) => v.kind === 'portfolio')
@@ -68,6 +81,9 @@ export default function VaultsPage() {
   const inFunding = sum(fundingVaults, (v) => vaultBalance(state, v.id))
   const inReserves = sum(reserves, (a) => accountBalance(state, a.id))
   const deposits = movements.filter((m) => m.kind === 'deposit').length
+  const withdrawals = movements.filter((m) => m.kind === 'withdrawal').length
+  // Only the Portfolio Vault can be withdrawn: funding vaults follow their tranches and returns.
+  const canWithdraw = Boolean(portfolioVault) && can('withdraw_funds')
 
   const showAsset = (vault: Vault) => {
     setAssetVault(vault)
@@ -159,17 +175,25 @@ export default function VaultsPage() {
               dense
               items={[
                 { label: 'Deposits', value: String(deposits) },
+                ...(withdrawals > 0 ? [{ label: 'Withdrawals', value: String(withdrawals) }] : []),
                 { label: 'Funding vaults funded from here', value: String(fundingVaults.length) },
               ]}
             />
-            <Button
-              variant="ghost"
-              size="pill-sm"
-              className="mt-3 w-fit"
-              onClick={() => showAsset(portfolioVault)}
-            >
-              Vault asset details <ArrowUpRight data-icon="inline-end" />
-            </Button>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {canWithdraw ? (
+                <Button
+                  variant="outline"
+                  size="pill-sm"
+                  disabled={!available || available <= 0}
+                  onClick={() => setWithdrawOpen(true)}
+                >
+                  <ArrowUpFromLine data-icon="inline-start" /> Withdraw
+                </Button>
+              ) : null}
+              <Button variant="ghost" size="pill-sm" onClick={() => showAsset(portfolioVault)}>
+                Vault asset details <ArrowUpRight data-icon="inline-end" />
+              </Button>
+            </div>
           </Panel>
         ) : null}
         <Panel title="Funding vaults" description={vaultKindLabel.funding.description}>
@@ -216,6 +240,10 @@ export default function VaultsPage() {
                 {capital
                   ? `${percentOf(capital.funded, capital.committed)}% of the commitment funded · ${percentOf(capital.released, capital.committed)}% released`
                   : 'No agreement yet'}
+              </p>
+              <p className="mt-2 flex gap-1.5 text-xs text-pretty text-subtle">
+                <Lock className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+                Can’t be withdrawn: committed capital follows the agreement’s tranches and returns.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {v.agreementId ? (
@@ -288,6 +316,7 @@ export default function VaultsPage() {
                 { value: 'fund_agreement', label: 'Agreement funded' },
                 { value: 'release_tranche', label: 'Tranche released' },
                 { value: 'capital_return', label: 'Capital returned' },
+                { value: 'withdrawal', label: movementLabel.withdrawal },
               ],
             },
           ]}
@@ -307,7 +336,7 @@ export default function VaultsPage() {
             <EmptyState
               compact
               title="No vault movements yet"
-              description="Deposits, agreement funding and tranche releases will appear here."
+              description="Deposits, agreement funding, tranche releases and withdrawals will appear here."
             />
           }
         />
@@ -315,6 +344,9 @@ export default function VaultsPage() {
 
       {receipts.drawer}
       <VaultAssetSheet vault={assetVault} open={assetOpen} onOpenChange={setAssetOpen} />
+      {portfolioVault && canWithdraw ? (
+        <InvestorWithdrawSheet vault={portfolioVault} open={withdrawOpen} onOpenChange={setWithdrawOpen} />
+      ) : null}
     </div>
   )
 }
@@ -418,7 +450,9 @@ function VaultAssetSheet({
                 label: 'Custody',
                 value: monad
                   ? 'A balance inside the ledger contract; only its rules move capital out. Tokens sent to the contract directly are not credited: deposits go through Add funds'
-                  : 'Smart contract vault; only funding contracts can move capital out',
+                  : vault.kind === 'portfolio'
+                    ? 'Smart contract vault; capital leaves only to fund agreements or when you withdraw it'
+                    : 'Smart contract vault; only funding contracts can move capital out',
               },
               {
                 label: 'Ledger',

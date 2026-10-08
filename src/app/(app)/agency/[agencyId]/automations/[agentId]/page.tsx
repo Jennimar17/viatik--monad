@@ -104,7 +104,11 @@ export default function AgentDetailPage() {
     (r) => r.amount,
   )
   const denied = decisions.filter((d) => d.outcome === 'rejected').length
-  const agencyDestinations = state.destinations.filter((d) => d.agencyId === agent.agencyId)
+  const agencyDestinations = state.destinations.filter(
+    (d) =>
+      d.agencyId === agent.agencyId &&
+      (d.status === 'approved' || agent.allowedDestinationIds.includes(d.id)),
+  )
   const budget = state.budgets.find((b) => b.id === agent.budgetId)
   const expiresAt = fromDateInput(expires)
   const editErrors = {

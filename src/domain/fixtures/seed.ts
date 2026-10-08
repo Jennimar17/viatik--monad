@@ -1093,32 +1093,6 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     return { paymentId, receiptId: receipt.id }
   }
 
-  const schedulePayout = (
-    agencyId: Id,
-    fromBudget: Id,
-    fromAccount: Id,
-    memberId: Id,
-    amount: Cents,
-    at: ISODate,
-    memo: string,
-    by: Id,
-  ) => {
-    s.payments.push({
-      id: b.id('pay'),
-      agencyId,
-      type: 'contractor',
-      sourceAccountId: fromAccount,
-      budgetId: fromBudget,
-      recipient: { kind: 'member', userId: memberId },
-      amount,
-      category: 'contractors',
-      memo,
-      status: 'scheduled',
-      createdBy: user(by),
-      scheduledFor: at,
-    })
-  }
-
   /** Runs the real policy engine, then records the request and, when approved, the payment. */
   const request = (input: {
     agencyId: Id
@@ -1624,9 +1598,8 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
           at: payoutAt,
           createdBy: user(U.maya),
         })
-      } else {
-        schedulePayout(A.arc, BUD.arcTeam, ACC.arcPeople, memberId, amount, payoutAt, payoutMemo, U.maya)
       }
+      // Future payouts are not seeded: scheduled payments are created live (they run on Monad).
     }
   }
 
@@ -1919,8 +1892,6 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
             at: payoutAt,
             createdBy: user(U.ren),
           })
-      } else {
-        schedulePayout(A.lumen, BUD.lumenPayroll, ACC.lumenPeople, memberId, amount, payoutAt, memo, U.ren)
       }
     }
   }
@@ -2057,13 +2028,6 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     'Maya Chen requested 450.00 USD for Product Design Summit ticket.',
     agencyHref('approvals'),
     b.ago(1, 16, 10),
-  )
-  b.notify(
-    U.alex,
-    'Payment scheduled',
-    'Your contractor payment is scheduled for the 25th.',
-    `/member/${A.arc}/payments`,
-    b.ago(2, 9),
   )
   b.notify(
     U.alex,

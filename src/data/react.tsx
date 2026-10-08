@@ -240,7 +240,11 @@ export function useCommand<N extends CommandName>(
       if (error instanceof DataSourceError && UNSETTLED_CODES.has(error.code)) toast(message)
       else toast.error(message)
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: STATE_KEY }),
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: STATE_KEY }),
+        queryClient.invalidateQueries({ queryKey: ['ledger-account'] }),
+      ]),
   })
 
   const { mutateAsync, reset: resetMutation } = mutation
@@ -319,6 +323,23 @@ export function useLedger() {
     refresh: refresh.mutate,
     refreshing: refresh.isPending,
   }
+}
+
+/**
+ * The signed-in person's own account on Monad (TestUSD held and allowed to the
+ * ledger). Disabled in the demo, which has no accounts. `refetch` after a
+ * mint or an approval lands.
+ */
+export function useLedgerAccount() {
+  const { userId, mode, credentials } = useViatik()
+  const source = mode ? getDataSource(mode as SessionMode) : null
+  const query = useQuery({
+    queryKey: ['ledger-account', mode, userId],
+    queryFn: () => source!.ledgerAccount!(userId as string, { credentials }),
+    enabled: Boolean(userId && mode && source?.ledgerAccount),
+    staleTime: 5_000,
+  })
+  return { account: query.data, isLoading: query.isLoading, isError: query.isError, refetch: query.refetch }
 }
 
 /**

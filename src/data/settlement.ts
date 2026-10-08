@@ -1,3 +1,4 @@
+import { parseAddress } from '@/domain/address'
 import { attachmentsHash, decisionHash } from '@/domain/evidence'
 import { ZERO, type Cents } from '@/domain/money'
 import type {
@@ -457,6 +458,28 @@ function movementCall(
           decision,
         ),
       }
+    }
+    case 'withdrawal': {
+      const address = to.kind === 'external' && to.address ? parseAddress(to.address) : null
+      if (!address) return null
+      if (from.kind === 'vault')
+        return {
+          op: {
+            call: 'withdraw',
+            opId: refId,
+            portfolioId: movement.portfolioId,
+            vaultId: from.vaultId,
+            amount,
+            to: address,
+          },
+          record: record(refId, 'withdrawal', amount, { id: from.vaultId }, { address }),
+        }
+      if (from.kind === 'recipient' && from.recipient.kind === 'member' && movement.agencyId)
+        return {
+          op: { call: 'withdrawMemberBalance', opId: refId, agencyId: movement.agencyId, amount, to: address },
+          record: record(refId, 'withdrawal', amount, { member: signerUserId }, { address }),
+        }
+      return null
     }
     case 'transfer':
       if (from.kind === 'account' && to.kind === 'account')

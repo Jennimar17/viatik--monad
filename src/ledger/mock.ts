@@ -667,6 +667,40 @@ class LedgerView {
         )
         return
       }
+      case 'withdraw': {
+        this.claim(op.opId)
+        this.requireRole(op.portfolioId, 'investor')
+        // Only a Portfolio Vault can be named: capital committed to an Agency never leaves through here.
+        const vault = this.placeOf(op.vaultId, 'portfolio_vault')
+        if (vault.scope !== op.portfolioId)
+          revert('invalid_state', 'This vault belongs to another portfolio.')
+        if (op.amount === 0) revert('invalid_state', 'There is nothing to withdraw.')
+        if (op.amount > vault.balance)
+          revert('insufficient_funds', `Only ${usd(vault.balance)} is available.`)
+        vault.balance -= op.amount
+        this.record(
+          op.opId,
+          'withdraw',
+          'Only the Portfolio Vault can be withdrawn',
+          written('withdrawal', op.amount, { id: op.vaultId }, { address: op.to }),
+        )
+        return
+      }
+      case 'withdrawMemberBalance': {
+        this.claim(op.opId)
+        const key = `${op.agencyId}|${this.caller()}`
+        const balance = this.members.get(key) ?? 0
+        if (op.amount === 0 || op.amount > balance)
+          revert('insufficient_funds', `Only ${usd(balance)} is available.`)
+        this.members.set(key, balance - op.amount)
+        this.record(
+          op.opId,
+          'withdrawMemberBalance',
+          'A withdrawal only takes your own balance',
+          written('withdrawal', op.amount, { member: this.caller() }, { address: op.to }),
+        )
+        return
+      }
       case 'returnToAgency': {
         this.claim(op.opId)
         const role = this.roles.get(`${op.agencyId}|${this.caller()}`)
@@ -928,6 +962,7 @@ function sameRecords(a: readonly PlannedRecord[], b: readonly PlannedRecord[]) {
 
 function sameEnd(a: RecordEnd, b: RecordEnd) {
   if (a === null || b === null) return a === b
+  if ('address' in a) return 'address' in b && a.address.toLowerCase() === b.address.toLowerCase()
   return 'member' in a ? 'member' in b && a.member === b.member : 'id' in b && a.id === b.id
 }
 

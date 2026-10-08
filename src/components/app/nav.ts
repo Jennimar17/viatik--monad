@@ -15,6 +15,7 @@ import {
   Send,
   Settings,
   ShieldCheck,
+  Store,
   UserRound,
   Users,
   Vault,
@@ -76,6 +77,7 @@ export const NAVIGATION: { [R in Role]: RoleNavigation<R> } = {
         capability: 'manage_bills',
         badge: 'bills',
       },
+      { key: 'providers', label: 'Providers', path: 'providers', icon: Store },
       { key: 'team', label: 'Team', path: 'team', icon: Users, capability: 'manage_team' },
     ],
     secondary: [
