@@ -11,10 +11,11 @@
 --
 -- Before running it:
 --   1. Generate a token of at least 32 characters, e.g. `openssl rand -hex 32`.
---   2. Set it in Vercel as KEEPER_TRIGGER_TOKEN (Production) and redeploy: without it
---      the route answers 404.
---   3. Replace <KEEPER_TRIGGER_TOKEN> and <PRODUCTION_URL> below (no trailing slash,
---      e.g. https://viatik.example.com). Do not commit the edited copy.
+--   2. Set it on the production host (Hostinger hPanel > the Node.js app > Environment
+--      variables) as KEEPER_TRIGGER_TOKEN and redeploy: without it the route answers 404.
+--   3. Replace <KEEPER_TRIGGER_TOKEN> and <PRODUCTION_URL> below with the exact URL that
+--      answers without a redirect (no trailing slash, e.g. https://viatik.xyz): pg_net does
+--      not follow redirects. Do not commit the edited copy.
 --
 -- Check it afterwards:
 --   select jobid, jobname, schedule, active from cron.job where jobname = 'viatik-keeper';

@@ -16,6 +16,9 @@ const nextConfig: NextConfig = {
     // The repo lives on a slow external drive: persisting the dev cache costs
     // more (60–100 MB writes per compile, minute-long compactions) than it saves.
     turbopackFileSystemCacheForDev: false,
+    // Only Vercel keeps .next/cache between builds; elsewhere (Hostinger) the build cache
+    // would be written (about 1 GB) and never read again.
+    turbopackFileSystemCacheForBuild: process.env.VERCEL === '1',
   },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }]
@@ -23,6 +26,13 @@ const nextConfig: NextConfig = {
   // The Member's Home and Profile became Overview and Settings, as in the other roles.
   async redirects() {
     return [
+      // One hostname in production, so passkeys and sessions always belong to viatik.xyz.
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: 'www.viatik.xyz' }],
+        destination: 'https://viatik.xyz/:path*',
+        permanent: true,
+      },
       { source: '/member/:agencyId/home', destination: '/member/:agencyId/overview', permanent: false },
       { source: '/member/:agencyId/profile', destination: '/member/:agencyId/settings', permanent: false },
     ]
