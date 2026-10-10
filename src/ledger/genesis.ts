@@ -31,8 +31,11 @@ import { centsToUnits } from './units'
  * namespace, so the chain starts where the app's history is. It imports what
  * the mock's view of the ledger holds (`ledgerSnapshot`), in the order the
  * contract needs: scopes, roles, locations with their balances (minting the
- * TestUSD behind them), agreements, budget rules, allowances, Member balances
- * and requests still waiting for approval. The namespace is set last.
+ * TestUSD behind them), agreements, budget rules, allowances, Member balances,
+ * payments made outside Viatik (their record and invoice; that money already
+ * left) and requests still waiting for approval. The namespace is set last.
+ * Payment for work waiting for an Admin is not imported: it only reaches the
+ * ledger when it is paid.
  *
  * People without an account get a placeholder address that nobody holds:
  * their roles, allowances, balances and open requests still exist onchain, so
@@ -346,7 +349,23 @@ export function buildGenesis(
     minted += amount
   }
 
-  // 8. Requests still waiting for approval, from someone with a role and an allowance on the budget.
+  // 8. Payments the story made outside Viatik: their record and invoice. Nothing moves or is
+  // minted: the money already left, and its source's balance shows it. Anchoring an invoice
+  // later (`recordEvidence`) needs this record.
+  for (const [key, proof] of snapshot.outside) {
+    const [agencyId, paymentId] = key.split('|') as [Id, Id]
+    if (snapshot.scopes.get(agencyId) !== 'agency') {
+      problems.push(`outside payment ${paymentId} belongs to an agency that is not in the state`)
+      continue
+    }
+    call(`outside payment ${paymentId}`, 'importOutsidePayment', [
+      id(agencyId),
+      id(paymentId),
+      proof.evidenceHash ?? zeroHash,
+    ])
+  }
+
+  // 9. Requests still waiting for approval, from someone with a role and an allowance on the budget.
   for (const [requestId, request] of snapshot.requests) {
     if (request.status !== 'pending') continue
     const budget = snapshot.budgets.get(request.budget)
@@ -378,6 +397,12 @@ export function buildGenesis(
   ).length
   if (waitingFromAgents > 0)
     skipped.push(`${waitingFromAgents} pending requests from automations (automations do not sign)`)
+  // Payment for work stays offchain until an Agency Admin pays it (`pay`), so the snapshot leaves it out.
+  const waitingWork = state.requests.filter(
+    (r) => r.status === 'needs_approval' && r.requester.kind === 'user' && r.type === 'work',
+  ).length
+  if (waitingWork > 0)
+    skipped.push(`${waitingWork} payments for work waiting for an Admin (they reach the ledger when paid)`)
 
   if (problems.length > 0) throw new GenesisError([...new Set(problems)])
 

@@ -6,6 +6,7 @@ import type {
   PaymentType,
   ReceiptKind,
   ReleaseModel,
+  Reminder,
   RequestType,
   SpendingCategory,
   VaultKind,
@@ -98,12 +99,14 @@ export const paymentTypeLabel: Record<PaymentType, string> = {
   refund: 'Refund',
   capital_return: 'Capital return',
   automation: 'Automation payment',
+  advance: 'Money for purchases',
 }
 
 export const requestTypeLabel: Record<RequestType, string> = {
-  funds: 'Request funds',
+  funds: 'Money for purchases',
   vendor_payment: 'Vendor payment',
   reimbursement: 'Reimbursement',
+  work: 'Payment for work',
   automation: 'Automation payment',
 }
 
@@ -146,4 +149,10 @@ export const receiptKindLabel: Record<ReceiptKind, string> = {
   transfer: 'Transfer receipt',
   allocation: 'Allocation receipt',
   withdrawal: 'Withdrawal receipt',
+  outside_payment: 'Outside payment receipt',
+  capital_return: 'Capital return receipt',
+}
+
+export const reminderCadenceLabel: Record<Reminder['cadence'], string> = {
+  monthly: 'Monthly',
 }

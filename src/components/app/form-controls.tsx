@@ -7,7 +7,8 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
-export type Option = { value: string; label: string; description?: string }
+/** A choice; a `disabled` one stays listed (its description can say why) but cannot be picked. */
+export type Option = { value: string; label: string; description?: string; disabled?: boolean }
 
 /**
  * Pill select that shows the chosen option's label. With nothing to choose it
@@ -63,7 +64,12 @@ export function SimpleSelect({
       {none ? null : (
         <SelectContent className="max-h-80 rounded-xl p-1">
           {options.map((option) => (
-            <SelectItem key={option.value} value={option.value} className="rounded-lg py-2">
+            <SelectItem
+              key={option.value}
+              value={option.value}
+              disabled={option.disabled}
+              className="rounded-lg py-2"
+            >
               <span className="flex flex-col">
                 <span>{option.label}</span>
                 {option.description ? (

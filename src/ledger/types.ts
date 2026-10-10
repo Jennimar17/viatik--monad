@@ -119,7 +119,7 @@ export type LedgerOp =
       paymentId: Id
       budgetId: Id
       destinationId: Id | null
-      /** A reimbursement: the requester is paid into their Viatik balance. */
+      /** funds, reimbursement: the requester is paid into their Viatik balance. */
       memberUserId: Id | null
       amount: Cents
       evidenceHash: Hash | null
@@ -143,6 +143,30 @@ export type LedgerOp =
   | { call: 'withdraw'; opId: Id; portfolioId: Id; vaultId: Id; amount: Cents; to: Address }
   /** A person takes their Viatik balance in an agency out to an address. */
   | { call: 'withdrawMemberBalance'; opId: Id; agencyId: Id; amount: Cents; to: Address }
+  /** An Agency Admin pays outside Viatik, from an account or a budget, to an address. */
+  | {
+      call: 'payOutside'
+      paymentId: Id
+      /** An account or a budget. */
+      sourceId: Id
+      to: Address
+      amount: Cents
+      /** The invoice, when it comes with the payment. */
+      evidenceHash: Hash | null
+    }
+  /** An Agency Admin anchors the invoice of an outside payment, once. Records no receipt. */
+  | { call: 'recordEvidence'; agencyId: Id; paymentId: Id; evidenceHash: Hash }
+  /** An Agency Admin returns capital from an agency account to its Portfolio Vault. */
+  | {
+      call: 'returnCapital'
+      opId: Id
+      fromAccountId: Id
+      portfolioVaultId: Id
+      /** Null: no agreement named. */
+      agreementId: Id | null
+      amount: Cents
+      evidenceHash: Hash | null
+    }
 
 export type LedgerCall = LedgerOp['call']
 
@@ -158,6 +182,8 @@ export type RecordKind =
   | 'return'
   | 'allocation'
   | 'withdrawal'
+  | 'outside_payment'
+  | 'capital_return'
 
 /** One side of a record: a ledger location or payment destination (by product id), a Member, an address money left to, or none. */
 export type RecordEnd = { id: Id } | { member: Id } | { address: Address } | null
@@ -206,7 +232,9 @@ export type SettlementPlan = {
 
 /**
  * One operation the ledger confirmed: a money operation (`Recorded(opId, …)`
- * onchain), or a tranche request (`TrancheRequested`), which records no money.
+ * onchain), or one that records no money and proves itself with its own
+ * event: a tranche request (`TrancheRequested`) or an invoice anchored for an
+ * outside payment (`EvidenceRecorded`).
  */
 export type LedgerRecord = {
   opId: Id

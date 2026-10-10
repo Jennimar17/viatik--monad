@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 
 import { ButtonLink } from '@/components/app/button-link'
 import { PageTabs } from '@/components/app/page-tabs'
+import { requestRecipientLabel } from '@/components/app/request-parts'
 import { useHref, useRole } from '@/components/app/role-context'
 import { Amount } from '@/components/viatik/amount'
 import { DataTable } from '@/components/viatik/data-table'
@@ -13,8 +14,8 @@ import { EmptyState } from '@/components/viatik/feedback'
 import { PageHeader } from '@/components/viatik/layout'
 import { StatusBadge } from '@/components/viatik/status'
 import { useViatikState } from '@/data/react'
-import { budgetName, recipientName } from '@/domain/queries'
-import { requestStatus } from '@/domain/status'
+import { budgetName } from '@/domain/queries'
+import { requestStatusFor } from '@/domain/status'
 import type { PaymentRequest, RequestStatus } from '@/domain/types'
 import { formatDate } from '@/lib/format'
 
@@ -47,7 +48,7 @@ export default function MemberRequestsPage() {
         <span className="flex flex-col">
           <span className="font-medium">{row.original.purpose}</span>
           <span className="text-xs text-subtle">
-            {recipientName(state, row.original.destination)} · {budgetName(state, row.original.budgetId)}
+            {requestRecipientLabel(state, row.original, userId)} · {budgetName(state, row.original.budgetId)}
           </span>
         </span>
       ),
@@ -61,7 +62,7 @@ export default function MemberRequestsPage() {
     {
       id: 'status',
       header: 'Status',
-      cell: ({ row }) => <StatusBadge status={requestStatus[row.original.status]} />,
+      cell: ({ row }) => <StatusBadge status={requestStatusFor(row.original)} />,
     },
   ]
 
@@ -71,7 +72,7 @@ export default function MemberRequestsPage() {
       columns={columns}
       caption="Your requests"
       searchPlaceholder="Search requests"
-      searchText={(r) => `${r.purpose} ${recipientName(state, r.destination)}`}
+      searchText={(r) => `${r.purpose} ${requestRecipientLabel(state, r, userId)}`}
       onRowClick={(r) => router.push(href(`requests/${r.id}`))}
       empty={
         <EmptyState
@@ -86,12 +87,12 @@ export default function MemberRequestsPage() {
           <span className="flex min-w-0 flex-col gap-0.5">
             <span className="truncate text-sm font-medium">{r.purpose}</span>
             <span className="truncate text-xs text-subtle">
-              {formatDate(r.createdAt)} · {recipientName(state, r.destination)}
+              {formatDate(r.createdAt)} · {requestRecipientLabel(state, r, userId)}
             </span>
           </span>
           <span className="flex flex-col items-end gap-1">
             <Amount value={r.amount} size="sm" />
-            <StatusBadge status={requestStatus[r.status]} />
+            <StatusBadge status={requestStatusFor(r)} />
           </span>
         </div>
       )}

@@ -8,7 +8,8 @@ export type PolicyCheck = { rule: string; passed: boolean; blocking: boolean; me
 /** The outcome of evaluating a request against a budget's rules. */
 export type PolicyDecision = {
   outcome: 'approved' | 'needs_approval' | 'rejected'
-  reason?: { message: string }
+  /** `rule` names the check that decided it (e.g. the exception threshold routes it to the Investor). */
+  reason?: { message: string; rule?: string }
   checks: PolicyCheck[]
 }
 
@@ -66,6 +67,30 @@ const reviewerTitle: Record<PolicyDecision['outcome'], string> = {
 }
 
 /**
+ * The verdict's headline: who decides a request that needs approval follows the rule that routed it,
+ * and a request refused by the Investor's exception threshold (payment for work) says so.
+ */
+function verdictTitle(decision: PolicyDecision, perspective: 'requester' | 'reviewer'): string {
+  const reviewer = perspective === 'reviewer'
+  if (decision.outcome === 'rejected' && decision.reason?.rule === 'exception_threshold') {
+    return reviewer
+      ? "Above the Investor's exception threshold — rejected before anyone decided"
+      : "This request is above the Investor's exception threshold"
+  }
+  if (decision.outcome === 'needs_approval') {
+    if (decision.reason?.rule === 'exception_threshold') {
+      return reviewer
+        ? 'Above the exception threshold — the Investor decides'
+        : 'Needs approval from the Investor'
+    }
+    if (decision.reason?.rule === 'work_review' && reviewer) {
+      return 'Payment for work — always reviewed by an Agency Admin'
+    }
+  }
+  return reviewer ? reviewerTitle[decision.outcome] : outcomeCopy[decision.outcome].title
+}
+
+/**
  * Live policy evaluation. Shows the outcome in words, then each rule that
  * was checked, so the requester knows why before anything is submitted.
  */
@@ -82,7 +107,7 @@ export function PolicyVerdict({
   className?: string
 }) {
   const copy = outcomeCopy[decision.outcome]
-  const title = perspective === 'reviewer' ? reviewerTitle[decision.outcome] : copy.title
+  const title = verdictTitle(decision, perspective)
   const Icon = copy.icon
   return (
     <div

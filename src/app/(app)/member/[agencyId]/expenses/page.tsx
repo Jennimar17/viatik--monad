@@ -5,7 +5,15 @@ import { Plus, Upload, WalletCards } from 'lucide-react'
 import * as React from 'react'
 
 import { ButtonLink } from '@/components/app/button-link'
-import { useHref, useRole } from '@/components/app/role-context'
+import {
+  justifyHint,
+  justifySummary,
+  MemberAdvanceList,
+  useMemberAccountability,
+} from '@/components/app/member-advances'
+import { MemberReturnSheet } from '@/components/app/member-return-sheet'
+import { advanceTitle } from '@/components/app/request-parts'
+import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { Button } from '@/components/ui/button'
 import { Amount } from '@/components/viatik/amount'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
@@ -13,13 +21,13 @@ import { DataTable } from '@/components/viatik/data-table'
 import { EmptyState } from '@/components/viatik/feedback'
 import { KpiTile } from '@/components/viatik/finance'
 import { EvidenceUploader, pendingUploads, toEvidence, type DraftFile } from '@/components/viatik/forms'
-import { HairlineGrid, PageHeader } from '@/components/viatik/layout'
+import { HairlineGrid, PageHeader, Panel } from '@/components/viatik/layout'
 import { StatusBadge } from '@/components/viatik/status'
 import { useCommand, useEvidenceFiles, useViatikState } from '@/data/react'
 import { categoryLabel } from '@/domain/labels'
-import { sum } from '@/domain/money'
+import { formatUsd, sum } from '@/domain/money'
 import { budgetName } from '@/domain/queries'
-import type { Expense } from '@/domain/types'
+import type { Expense, Id } from '@/domain/types'
 import { formatDate, pluralize } from '@/lib/format'
 
 const receiptStatus = (expense: Expense) =>
@@ -31,16 +39,31 @@ export default function ExpensesPage() {
   const { state, now, userId } = useViatikState()
   const { scopeId: agencyId } = useRole()
   const href = useHref()
+  const { can } = usePermissions()
   const attach = useCommand('attachReceipt')
   const evidenceFiles = useEvidenceFiles()
   // The expense being completed is fixed when its sheet opens; the sheet reads the live record.
   const [uploadingId, setUploadingId] = React.useState<string | null>(null)
   const [files, setFiles] = React.useState<DraftFile[]>([])
+  // One return sheet for the page. The money for purchases it opens on is kept while it closes,
+  // so its choice does not flip during the closing animation.
+  const [returnOpen, setReturnOpen] = React.useState(false)
+  const [returnFor, setReturnFor] = React.useState<Id | undefined>(undefined)
+  const canMove = can('receive_payout', { ownerUserId: userId })
+  const agencyName = state.agencies.find((a) => a.id === agencyId)?.name ?? 'your Agency'
+  const acc = useMemberAccountability(agencyId)
 
   const expenses = state.expenses
     .filter((e) => e.agencyId === agencyId && e.userId === userId)
     .sort((a, b) => (a.spentAt < b.spentAt ? 1 : -1))
-  const missing = expenses.filter((e) => !e.receipt)
+  // Receipts for money for purchases come with their expense; what can still miss one is an
+  // expense for something Viatik paid a vendor for you.
+  const missing = acc.missing
+  // The money for purchases an expense justifies, named after the row's details.
+  const forText = (expense: Expense) => {
+    const advance = expense.paymentId ? acc.all.find((s) => s.payment.id === expense.paymentId) : undefined
+    return advance ? ` · For “${advanceTitle(advance)}”` : ''
+  }
   const month = now.slice(0, 7)
   const thisMonth = expenses.filter((e) => e.spentAt.startsWith(month))
   const uploading = state.expenses.find((e) => e.id === uploadingId)
@@ -50,6 +73,16 @@ export default function ExpensesPage() {
     setFiles([])
     setUploadingId(expense.id)
   }
+
+  const openReturn = (paymentId: Id) => {
+    setReturnFor(paymentId)
+    setReturnOpen(true)
+  }
+
+  const missingSentence =
+    missing.length > 0
+      ? `${pluralize(missing.length, 'expense needs', 'expenses need')} a receipt so your Agency can reconcile the payment.`
+      : null
 
   const columns: ColumnDef<Expense, unknown>[] = [
     {
@@ -69,6 +102,7 @@ export default function ExpensesPage() {
           <span className="truncate font-medium">{row.original.merchant}</span>
           <span className="text-xs text-subtle">
             {categoryLabel[row.original.category]} · {budgetName(state, row.original.budgetId)}
+            {forText(row.original)}
           </span>
         </span>
       ),
@@ -98,36 +132,48 @@ export default function ExpensesPage() {
       <PageHeader
         title="Expenses"
         description={
-          missing.length > 0
-            ? `${pluralize(missing.length, 'expense needs', 'expenses need')} a receipt so your Agency can reconcile the payment.`
-            : 'Every expense has its receipt.'
+          acc.pending > 0
+            ? `${formatUsd(acc.pending, { withCode: true })} still to justify. Add receipts or return what you do not use.${missingSentence ? ` ${missingSentence}` : ''}`
+            : (missingSentence ??
+              (acc.all.length > 0
+                ? 'Your money for purchases is justified and every expense has its receipt.'
+                : 'Every expense has its receipt.'))
         }
         actions={
           <ButtonLink href={href('expenses/new')} size="pill">
-            <Plus data-icon="inline-start" /> Add expense
+            <Plus data-icon="inline-start" /> Add receipt
           </ButtonLink>
         }
       />
 
-      {expenses.length === 0 ? (
+      {acc.all.length > 0 ? (
+        <Panel title="Money to justify" description={justifySummary(acc)}>
+          <MemberAdvanceList advances={acc.all} onReturn={openReturn} />
+        </Panel>
+      ) : null}
+
+      {expenses.length === 0 && acc.all.length === 0 ? (
         <EmptyState
           icon={<WalletCards />}
           title="No expenses yet"
-          description="Things you pay for and want reimbursed, with their receipts, show up here."
+          description="What you buy with money for purchases, and what Viatik pays for you, shows up here with its receipt."
           action={
             <ButtonLink href={href('expenses/new')} size="pill-sm">
-              <Plus data-icon="inline-start" /> Add expense
+              <Plus data-icon="inline-start" /> Add receipt
             </ButtonLink>
           }
         />
       ) : (
         <>
-          <HairlineGrid className="grid-cols-3">
+          <HairlineGrid className={acc.all.length > 0 ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-3'}>
             <KpiTile
               label="This month"
               value={sum(thisMonth, (e) => e.amount)}
               hint={pluralize(thisMonth.length, 'expense')}
             />
+            {acc.all.length > 0 ? (
+              <KpiTile label="To justify" value={acc.pending} hint={justifyHint(acc)} />
+            ) : null}
             <KpiTile
               label="Missing receipts"
               value={<span className="font-display text-2xl leading-none">{missing.length}</span>}
@@ -169,8 +215,9 @@ export default function ExpensesPage() {
                 <div className="flex items-center justify-between gap-3">
                   <span className="flex min-w-0 flex-col gap-0.5">
                     <span className="truncate text-sm font-medium">{e.merchant}</span>
-                    <span className="text-xs text-subtle">
+                    <span className="text-xs text-pretty text-subtle">
                       {formatDate(e.spentAt)} · {categoryLabel[e.category]}
+                      {forText(e)}
                     </span>
                   </span>
                   <Amount value={e.amount} size="sm" />
@@ -186,11 +233,20 @@ export default function ExpensesPage() {
               </div>
             )}
             empty={
-              <EmptyState
-                compact
-                title="No expenses here"
-                description="Expenses matching these filters will appear here."
-              />
+              expenses.length === 0 ? (
+                <EmptyState
+                  compact
+                  icon={<WalletCards />}
+                  title="No receipts yet"
+                  description="Each receipt you add for money for purchases shows here as an expense."
+                />
+              ) : (
+                <EmptyState
+                  compact
+                  title="No expenses here"
+                  description="Expenses matching these filters will appear here."
+                />
+              )
             }
           />
         </>
@@ -232,6 +288,13 @@ export default function ExpensesPage() {
           hint="PDF, PNG, JPG, WEBP or HEIC, up to 10 MB. It stays private; only its fingerprint is recorded."
         />
       </ApprovalSheet>
+      <MemberReturnSheet
+        open={returnOpen && canMove}
+        onOpenChange={setReturnOpen}
+        agencyId={agencyId}
+        agencyName={agencyName}
+        advanceId={returnFor}
+      />
     </div>
   )
 }

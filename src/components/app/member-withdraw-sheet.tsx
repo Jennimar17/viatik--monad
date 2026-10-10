@@ -1,5 +1,6 @@
 'use client'
 
+import { Info } from 'lucide-react'
 import * as React from 'react'
 
 import { FormField, SimpleSelect, type Option } from '@/components/app/form-controls'
@@ -11,8 +12,9 @@ import { ApprovalSheet } from '@/components/viatik/approval-sheet'
 import { MoneyInput } from '@/components/viatik/forms'
 import { CopyButton } from '@/components/viatik/operation'
 import { useCommand, useViatikState } from '@/data/react'
+import { advancesOf, otherMoneyReturnable } from '@/domain/accountability'
 import { shortAddress } from '@/domain/address'
-import { formatUsd, type Cents } from '@/domain/money'
+import { cents, clampToZero, formatUsd, ZERO, type Cents } from '@/domain/money'
 import { receiptFor } from '@/domain/queries'
 
 import { sameAddress, type OwnAccount } from './member-own-account'
@@ -27,9 +29,11 @@ type Sent = { amount: Cents; label: string; address: string }
 
 /**
  * "Send to my account": the person takes money out of their Viatik balance in
- * one Agency, to their own account (the default) or an address they saved. The
- * full address is on screen before anything is sent; a saved address also needs
- * an explicit "the address is correct". Ends with the receipt.
+ * one Agency, to their own Viatik account (the default) or an address they
+ * saved. The full address is on screen before anything is sent; a saved address
+ * also needs an explicit "the address is correct". When the amount includes
+ * money for purchases still to justify, a note says it can then only be
+ * justified with receipts (sending is still allowed). Ends with the receipt.
  */
 export function MemberWithdrawSheet({
   open,
@@ -47,7 +51,7 @@ export function MemberWithdrawSheet({
   held: Cents
   own: OwnAccount
 }) {
-  const { state } = useViatikState()
+  const { state, now, userId } = useViatikState()
   const saved = useSavedAddresses()
   const send = useCommand('withdrawBalance')
   const [amount, setAmount] = React.useState<Cents | null>(null)
@@ -60,7 +64,14 @@ export function MemberWithdrawSheet({
 
   const destinations: Destination[] = [
     ...(own.address
-      ? [{ value: OWN, label: 'My account', description: shortAddress(own.address), address: own.address }]
+      ? [
+          {
+            value: OWN,
+            label: 'My Viatik account',
+            description: shortAddress(own.address),
+            address: own.address,
+          },
+        ]
       : []),
     ...saved.map((a) => ({
       value: a.id,
@@ -78,7 +89,13 @@ export function MemberWithdrawSheet({
   const locked = send.isPending
   const receipt = receiptFor(state, receiptId ?? undefined)
   const amountText = amount ? formatUsd(amount, { withCode: true }) : 'The amount'
-  const where = destination ? (toOwn ? 'your account' : destination.label) : 'the address you choose'
+  const where = destination ? (toOwn ? 'your Viatik account' : destination.label) : 'the address you choose'
+  // The part of the amount that is money for purchases still to justify: what the balance holds
+  // beyond it goes first. Once sent, that part can be justified only with receipts, never returned.
+  const hasOpenAdvances = advancesOf(state, { agencyId, userId }, now).some((s) => s.pending > 0)
+  const freeToSend = otherMoneyReturnable(state, { agencyId, userId }, now)
+  const fromPending =
+    amount && hasOpenAdvances ? clampToZero(cents(Math.min(amount, held) - freeToSend)) : ZERO
 
   const what =
     own.settlement === 'monad'
@@ -138,7 +155,11 @@ export function MemberWithdrawSheet({
         const result = await send.run({ agencyId, amount, to: destination.address })
         if (result) {
           setReceiptId(result.id)
-          setSent({ amount, label: toOwn ? 'your account' : destination.label, address: destination.address })
+          setSent({
+            amount,
+            label: toOwn ? 'your Viatik account' : destination.label,
+            address: destination.address,
+          })
         }
       }}
       success={{
@@ -160,7 +181,7 @@ export function MemberWithdrawSheet({
         <FormField
           label="Send to"
           htmlFor="withdraw-destination"
-          hint={saved.length === 0 ? 'Save another account you own to choose it here.' : undefined}
+          hint={saved.length === 0 ? 'Save another address you own to choose it here.' : undefined}
         >
           <SimpleSelect
             id="withdraw-destination"
@@ -170,7 +191,7 @@ export function MemberWithdrawSheet({
               setConfirmedFor(null)
             }}
             options={destinations}
-            empty="Your account is still being created"
+            empty="Your Viatik account is still being created"
             disabled={locked}
           />
         </FormField>
@@ -178,7 +199,7 @@ export function MemberWithdrawSheet({
         {destination ? (
           <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-muted/40 p-3">
             <span className="text-xs text-subtle">
-              {toOwn ? 'Your account address, in full' : `${destination.label}, in full`}
+              {toOwn ? 'Your Viatik account address, in full' : `${destination.label}, in full`}
             </span>
             <span className="flex items-start gap-2">
               <span className="min-w-0 flex-1 font-mono text-sm break-all text-foreground">
@@ -219,6 +240,16 @@ export function MemberWithdrawSheet({
         >
           Send my whole balance
         </Button>
+
+        {fromPending > 0 ? (
+          <p className="flex gap-2 rounded-lg border border-info/30 bg-info-soft p-3 text-sm text-pretty">
+            <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden="true" />
+            <span>
+              {formatUsd(fromPending, { withCode: true })} of this is money for purchases still to justify.
+              Once sent, you can justify it only with receipts; it can no longer be returned.
+            </span>
+          </p>
+        ) : null}
 
         {needsConfirmation ? (
           <div className="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning-soft p-3">

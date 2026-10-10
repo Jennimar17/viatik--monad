@@ -58,6 +58,7 @@ export class SeedBuilder {
       activity: [],
       notifications: [],
       payoutAddresses: [],
+      reminders: [],
     }
   }
 

@@ -32,8 +32,9 @@ export function useSavedAddresses(): PayoutAddress[] {
 }
 
 /**
- * Where the person can send their Viatik balance: their own account (always,
- * the default) and the addresses they saved, which they add and remove here.
+ * Where the person can send their Viatik balance: their own Viatik account
+ * (always, the default) and the addresses they saved, which they add and
+ * remove here.
  */
 export function MemberSavedAddresses({ own }: { own: OwnAccount }) {
   const saved = useSavedAddresses()
@@ -57,7 +58,7 @@ export function MemberSavedAddresses({ own }: { own: OwnAccount }) {
           </span>
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="truncate text-sm font-medium">
-              My account
+              My Viatik account
               {own.settlement === 'simulated' ? (
                 <span className="font-normal text-subtle"> (demo)</span>
               ) : null}
@@ -67,7 +68,7 @@ export function MemberSavedAddresses({ own }: { own: OwnAccount }) {
             </span>
           </span>
           <StatusBadge status={{ label: 'Default', tone: 'neutral' }} />
-          {own.address ? <CopyButton value={own.address} label="Copy my account address" /> : null}
+          {own.address ? <CopyButton value={own.address} label="Copy my Viatik account address" /> : null}
         </li>
         {saved.map((address) => (
           <li key={address.id} className="flex items-center gap-3 border-t border-border py-3">
@@ -96,7 +97,7 @@ export function MemberSavedAddresses({ own }: { own: OwnAccount }) {
       {/* The demo's placeholder address is explained under the balance. */}
       {own.settlement !== 'simulated' && !own.address ? (
         <p className="text-xs text-pretty text-subtle">
-          Your account is being created. It shows here in a moment.
+          Your Viatik account is being created. It shows here in a moment.
         </p>
       ) : null}
 
@@ -150,7 +151,7 @@ function AddAddressSheet({
         : duplicate
           ? 'You already saved this address.'
           : isOwn
-            ? 'This is your own account. It is always available, so there is no need to save it.'
+            ? 'This is your own Viatik account. It is always available, so there is no need to save it.'
             : undefined
 
   return (

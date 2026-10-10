@@ -5,14 +5,24 @@ import Link from '@/components/viatik/link'
 import { useParams } from 'next/navigation'
 import * as React from 'react'
 
+import {
+  AccountabilityKpis,
+  InvoicesPendingList,
+  OutsidePaymentsTable,
+  PeopleToJustifyList,
+  RecurringPaymentsList,
+  ReturnsList,
+  recurringEntries,
+} from '@/components/app/accountability-parts'
 import { ActivityList } from '@/components/app/activity'
 import { ButtonLink } from '@/components/app/button-link'
 import { AgreementProgress, MilestoneTimelineFor } from '@/components/app/funding-parts'
 import { InvitationLink } from '@/components/app/invitation-link'
-import { PageTabs } from '@/components/app/page-tabs'
+import { PageTabs, type PageTab } from '@/components/app/page-tabs'
 import { PaymentsTable } from '@/components/app/payments-table'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
+import { useTabParam } from '@/components/app/use-tab-param'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -28,6 +38,12 @@ import { HairlineGrid, PageHeader, Panel } from '@/components/viatik/layout'
 import { OrgAvatar, PersonAvatar } from '@/components/viatik/people'
 import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useCommand, useViatikState } from '@/data/react'
+import {
+  accountabilityByPerson,
+  agencyAccountability,
+  JUSTIFY_WITHIN_DAYS,
+  PROOF_WITHIN_DAYS,
+} from '@/domain/accountability'
 import { agencyTypeLabel, categoryLabel } from '@/domain/labels'
 import { roleLabel } from '@/domain/permissions'
 import { agreementsOf, userName } from '@/domain/queries'
@@ -38,15 +54,32 @@ import { seriesColor, seriesKey } from '@/lib/chart-colors'
 import { formatDate, pluralize } from '@/lib/format'
 
 export default function InvestorAgencyDetailPage() {
+  // useSearchParams (the ?tab= deep link) needs a boundary for the static prerender.
+  return (
+    <React.Suspense>
+      <InvestorAgencyDetail />
+    </React.Suspense>
+  )
+}
+
+function InvestorAgencyDetail() {
   const { agencyId } = useParams<{ agencyId: string }>()
   const { state, now } = useViatikState()
   const { portfolioId } = useRole()
   const href = useHref()
-  const { can } = usePermissions()
+  const { can, canView } = usePermissions()
   const pause = useCommand('setAgreementPaused')
   const [pauseOpen, setPauseOpen] = React.useState(false)
   // Fixed when the sheet opens: the refreshed status must not flip its copy.
   const [resuming, setResuming] = React.useState(false)
+  // Read-only for the Investor: outside payments, invoices, money to justify, returns, monthly payments.
+  const showAccountability = canView('pay_outside')
+  const tab = useTabParam(
+    showAccountability
+      ? ['overview', 'spending', 'accountability', 'team', 'activity']
+      : ['overview', 'spending', 'team', 'activity'],
+    'overview',
+  )
 
   const agency = state.agencies.find((a) => a.id === agencyId && a.portfolioId === portfolioId)
   if (!agency) {
@@ -95,6 +128,65 @@ export default function InvestorAgencyDetailPage() {
     6,
   )
   const hasSpend = spend.some((row) => categorySeries.some((s) => Number(row[s.key] ?? 0) > 0))
+  const accountability = agencyAccountability(state, agency.id, now)
+  // Only people with money for purchases still to justify, as the "Still to justify" figure counts:
+  // someone only missing a receipt for a vendor payment has nothing to justify or give back.
+  const people = accountabilityByPerson(state, agency.id, now).filter((person) => person.pending > 0)
+  // The tab counts what is overdue: invoices, and money for purchases not justified in time.
+  const overdueItems =
+    accountability.proofOverdue + people.reduce((total, person) => total + person.overdueCount, 0)
+  const recurring = recurringEntries(state, agency.id, now)
+
+  const accountabilityTab: PageTab = {
+    value: 'accountability',
+    label: 'Accountability',
+    count: overdueItems,
+    content: (
+      <div className="flex flex-col gap-6">
+        <AccountabilityKpis agencyId={agency.id} viewer="investor" />
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <Panel
+            title="Invoices pending"
+            description={`Paid outside Viatik and still waiting for the invoice, due within ${PROOF_WITHIN_DAYS} days of paying.`}
+          >
+            <InvoicesPendingList items={accountability.withoutProof} now={now} limit={5} />
+          </Panel>
+          <Panel
+            title="Still to justify"
+            description={`Money people received for purchases, to cover with receipts or give back within ${JUSTIFY_WITHIN_DAYS} days.`}
+          >
+            <PeopleToJustifyList people={people} now={now} expandable limit={5} />
+          </Panel>
+        </div>
+        <section className="flex flex-col gap-4" aria-labelledby="paid-outside-title">
+          <div>
+            <h2 id="paid-outside-title" className="font-display text-xl font-medium">
+              Paid outside Viatik
+            </h2>
+            <p className="text-sm text-pretty text-muted-foreground">
+              Paid by the Agency Admin to an address outside Viatik. The invoice is due within{' '}
+              {PROOF_WITHIN_DAYS} days.
+            </p>
+          </div>
+          <OutsidePaymentsTable payments={payments} now={now} pageSize={8} />
+        </section>
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <Panel
+            title="Returned to you"
+            description="Money the Agency Admin sent back to your Portfolio Vault."
+          >
+            <ReturnsList agencyId={agency.id} limit={5} />
+          </Panel>
+          <Panel
+            title="Recurring payments"
+            description="Tools and services the Agency pays outside Viatik every month, and when each is next due."
+          >
+            <RecurringPaymentsList entries={recurring} now={now} limit={5} />
+          </Panel>
+        </div>
+      </div>
+    ),
+  }
 
   return (
     <div className="flex flex-col gap-8">
@@ -197,6 +289,7 @@ export default function InvestorAgencyDetailPage() {
       </HairlineGrid>
 
       <PageTabs
+        {...tab}
         tabs={[
           {
             value: 'overview',
@@ -323,6 +416,7 @@ export default function InvestorAgencyDetailPage() {
               </div>
             ),
           },
+          ...(showAccountability ? [accountabilityTab] : []),
           {
             value: 'team',
             label: 'Team',

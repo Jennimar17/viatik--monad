@@ -43,7 +43,9 @@ export function DemoPill() {
         'no-print fixed right-4 z-40 sm:right-6',
         role === 'member' ? 'bottom-24 md:bottom-6' : 'bottom-4 sm:bottom-6',
         // On phones a screen's action bar takes the bottom edge; the pill comes back when it unmounts.
-        bottomBar && 'max-md:hidden',
+        // From md up the bar floats on the right, sticky at the bottom edge or, scrolled to the end,
+        // above the page's bottom padding: the demo pill sits above both.
+        bottomBar && 'max-md:hidden md:bottom-36',
       )}
     >
       <DropdownMenu>

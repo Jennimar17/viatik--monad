@@ -17,18 +17,22 @@ import { ApprovalSheet } from '@/components/viatik/approval-sheet'
 import { FormActions, MoneyInput } from '@/components/viatik/forms'
 import { PageHeader, Panel } from '@/components/viatik/layout'
 import { useCommand, useViatikState } from '@/data/react'
+import type { SendPaymentInput } from '@/domain/engine'
 import { categoryLabel, paymentTypeLabel } from '@/domain/labels'
 import { formatUsd, ZERO, type Cents } from '@/domain/money'
 import { roleLabel } from '@/domain/permissions'
 import { accountName, governingAgreement, receiptFor, userName } from '@/domain/queries'
 import { accountBalance, budgetUsage } from '@/domain/selectors'
-import type { PaymentType, SpendingCategory } from '@/domain/types'
+import type { SpendingCategory } from '@/domain/types'
 import { formatDate, fromDateInput } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-const TYPES: PaymentType[] = ['vendor', 'tool', 'contractor', 'team', 'reimbursement']
-const TO_MEMBER: ReadonlySet<PaymentType> = new Set(['team', 'contractor', 'reimbursement'])
-const defaultCategory: Partial<Record<PaymentType, SpendingCategory>> = {
+/** What an Admin can send here (money for purchases only comes from a Member's request). */
+type SendType = SendPaymentInput['type']
+
+const TYPES: SendType[] = ['vendor', 'tool', 'contractor', 'team', 'reimbursement']
+const TO_MEMBER: ReadonlySet<SendType> = new Set(['team', 'contractor', 'reimbursement'])
+const defaultCategory: Partial<Record<SendType, SpendingCategory>> = {
   team: 'team',
   contractor: 'contractors',
   vendor: 'cloud',
@@ -56,7 +60,7 @@ export default function NewPaymentPage() {
   // The agreement whose exception threshold the engine and the contract apply.
   const agreement = governingAgreement(state, agencyId)
 
-  const [type, setType] = React.useState<PaymentType>('vendor')
+  const [type, setType] = React.useState<SendType>('vendor')
   const [recipient, setRecipient] = React.useState<string | null>(null)
   const [accountId, setAccountId] = useChoice(
     accounts.map((a) => a.id),
@@ -144,7 +148,7 @@ export default function NewPaymentPage() {
   const sent = state.payments.find((p) => p.id === sentId)
   const receipt = receiptFor(state, sent?.receiptId)
 
-  const changeType = (next: PaymentType) => {
+  const changeType = (next: SendType) => {
     setType(next)
     setRecipient(null)
     setCategory(defaultCategory[next] ?? 'software')

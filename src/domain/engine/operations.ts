@@ -1,10 +1,29 @@
+import {
+  advanceStanding,
+  isAdvance,
+  JUSTIFY_WITHIN_DAYS,
+  otherMoneyReturnable,
+  returnableFor,
+} from '../accountability'
 import { parseAddress, shortAddress } from '../address'
 import { newId } from '../ids'
-import { cents, sum, type Cents } from '../money'
-import { evaluatePolicy, type PolicyRequest } from '../policy'
+import { cents, clampToZero, sum, type Cents } from '../money'
+import { evaluatePolicy, paysRequester, withAgreementRules, type PolicyRequest } from '../policy'
 import { accountTemplate } from '../labels'
-import { activeOperationsAccount, governingAgreement } from '../queries'
-import { accountBalance, agentSpentToday, budgetUsage, holderSpentInPeriod } from '../selectors'
+import {
+  aboveExceptionThreshold,
+  activeOperationsAccount,
+  exceptionThresholdOf,
+  isException,
+} from '../queries'
+import {
+  accountBalance,
+  agentSpentToday,
+  budgetUsage,
+  dayWindow,
+  holderSpentInPeriod,
+  memberHeld,
+} from '../selectors'
 import { assertTransition, canTransitionRequest } from '../status'
 import type {
   Account,
@@ -20,16 +39,15 @@ import type {
   Id,
   ISODate,
   Payment,
-  PaymentRecipient,
   PaymentRequest,
   PaymentType,
   PayoutAddress,
-  PolicyCheck,
   PolicyDecision,
+  RequestDestination,
   RequestType,
   SpendingAllowance,
   SpendingCategory,
-  ViatikState,
+  ViatikRecipient,
 } from '../types'
 import {
   DomainError,
@@ -525,25 +543,65 @@ export type RequestPaymentInput = {
   agencyId: Id
   budgetId: Id
   type: RequestType
-  destinationId: Id
+  /** vendor_payment / automation only. */
+  destinationId?: Id
   amount: Cents
   category: SpendingCategory
   purpose: string
+  /** reimbursement only (required there). */
+  merchant?: string
+  /** reimbursement only (optional). */
+  spentAt?: ISODate
   attachments?: EvidenceDraft[]
   idempotencyKey: string
 }
 
-/** The same evaluation the UI shows live, computed against current state. */
+/** Same decision requestPayment reaches (exception routing and the work rule included). */
 export function previewPolicy(
   tx: Tx,
-  input: Pick<RequestPaymentInput, 'budgetId' | 'amount' | 'category' | 'destinationId'>,
+  input: {
+    budgetId: Id
+    type: RequestType
+    amount: Cents
+    category: SpendingCategory
+    destinationId?: Id | null
+  },
 ): PolicyDecision {
+  return requestDecision(tx, {
+    budgetId: input.budgetId,
+    type: input.type,
+    amount: input.amount,
+    category: input.category,
+    // Money into the requester's own Viatik balance is not limited by the vendor list.
+    destinationId: paysRequester(input.type) ? null : (input.destinationId ?? null),
+  }).decision
+}
+
+/**
+ * The decision on a request: the budget policy for whoever asks, plus the
+ * agreement's rules (the Investor decides exceptions; payment for work is
+ * always reviewed by an Agency Admin and refused above the exception
+ * threshold). For requests that reach the ledger it is the same outcome as the
+ * ledger's, so nothing else may send a request to approval.
+ */
+function requestDecision(
+  tx: Tx,
+  input: {
+    budgetId: Id
+    type: RequestType
+    amount: Cents
+    category: SpendingCategory
+    destinationId: Id | null
+  },
+  actor: Actor = tx.actor,
+): { decision: PolicyDecision; isException: boolean } {
   const budget = tx.find('budgets', input.budgetId, 'Budget')
-  return policyForHolder(tx, budget, tx.actor, {
+  const decision = policyForHolder(tx, budget, actor, {
     amount: input.amount,
     category: input.category,
     destinationId: input.destinationId,
   })
+  return withAgreementRules(decision, input, exceptionThresholdOf(tx.state, budget.agencyId))
 }
 
 /**
@@ -601,10 +659,15 @@ export function requestPayment(tx: Tx, input: RequestPaymentInput): PaymentReque
     throw new DomainError('forbidden', 'This budget belongs to another Agency.')
   tx.authorize('request_payment', { agencyId: input.agencyId })
   requirePositive(input.amount)
-  const destination = tx.find('destinations', input.destinationId, 'Payment destination')
-  if (destination.agencyId !== input.agencyId)
-    throw new DomainError('forbidden', 'This payment destination belongs to another Agency.')
-  requirePayable(destination)
+  const destination = requestDestination(tx, input)
+  const reimbursement = input.type === 'reimbursement'
+  // A reimbursement carries what was bought and its receipt: its Expense is built from them when it is paid.
+  const merchant = reimbursement ? requireText(input.merchant, 'Merchant', 80) : undefined
+  if (reimbursement) {
+    if (!(input.attachments ?? []).some((item) => item.kind === 'file'))
+      throw new DomainError('validation', 'Attach the receipt of what you paid.')
+    if (input.spentAt) requireNotFuture(input.spentAt, tx.now)
+  }
 
   // A retry with the same key returns the original request, but only to the
   // person (or automation) who made it, in the same Agency: keys are not secrets.
@@ -616,21 +679,21 @@ export function requestPayment(tx: Tx, input: RequestPaymentInput): PaymentReque
       tx.actorKey(r.requester) === requester,
   )
   if (duplicate) return duplicate
+  // Every request's files back the money it asks for (a reimbursement's receipt, a vendor's invoice,
+  // a quote, proof of work): none may already back other money. Checked after the retry above, since
+  // a retried request carries the files its first try stored.
+  requireUnusedReceipts(tx, input.agencyId, input.attachments ?? [])
 
-  let decision = previewPolicy(tx, input)
   // Above the Investor's exception threshold nothing approves itself, even within the
   // budget's automatic limit: the Investor decides (M-1, the same rule as the contract).
-  const governing = governingAgreement(tx.state, input.agencyId)
-  const isException = governing ? input.amount > governing.spendingPolicy.exceptionThreshold : false
-  if (decision.outcome === 'approved' && governing && isException) {
-    const reason: PolicyCheck = {
-      rule: 'exception_threshold',
-      passed: false,
-      blocking: false,
-      message: `Above the Investor's exception threshold of ${usdText(governing.spendingPolicy.exceptionThreshold)}. The Investor decides.`,
-    }
-    decision = { ...decision, outcome: 'needs_approval', checks: [...decision.checks, reason], reason }
-  }
+  // Payment for work is always reviewed by an Agency Admin.
+  const { decision, isException: toInvestor } = requestDecision(tx, {
+    budgetId: budget.id,
+    type: input.type,
+    amount: input.amount,
+    category: input.category,
+    destinationId: destination.kind === 'destination' ? destination.destinationId : null,
+  })
   const attachments: Evidence[] = (input.attachments ?? []).map((item) =>
     evidenceFrom(item, requester, tx.now),
   )
@@ -641,11 +704,13 @@ export function requestPayment(tx: Tx, input: RequestPaymentInput): PaymentReque
     budgetId: budget.id,
     requester: tx.actor,
     type: input.type,
-    destination: { kind: 'destination', destinationId: input.destinationId },
+    destination,
     amount: input.amount,
     category: input.category,
     purpose: requireText(input.purpose, 'Purpose', 200),
     attachments,
+    merchant,
+    spentAt: reimbursement ? input.spentAt : undefined,
     status:
       decision.outcome === 'rejected'
         ? 'rejected'
@@ -660,13 +725,12 @@ export function requestPayment(tx: Tx, input: RequestPaymentInput): PaymentReque
 
   const portfolioId = tx.portfolioOfAgency(input.agencyId)
   const subjectUserId = tx.actor.kind === 'user' ? tx.actor.userId : undefined
-  const destinationName = destination.name
 
-  if (tx.actor.kind === 'ai_agent') {
+  if (tx.actor.kind === 'ai_agent' && destination.kind === 'destination') {
     tx.state.agentDecisions.unshift({
       id: newId('dec'),
       agentId: tx.actor.agentId,
-      destinationId: input.destinationId,
+      destinationId: destination.destinationId,
       amount: input.amount,
       outcome: decision.outcome,
       reason: decision.reason?.message ?? 'Within the automation policy.',
@@ -703,40 +767,128 @@ export function requestPayment(tx: Tx, input: RequestPaymentInput): PaymentReque
   )
 
   if (decision.outcome === 'needs_approval') {
-    // Exceptions are decided by the Investor, everything else by the Agency Admins.
+    // Exceptions are decided by the Investor, everything else (payment for work included) by the Agency Admins.
     tx.notify(
-      isException
+      toInvestor
         ? tx.holders('investor', { portfolioId })
         : tx.holders('agency_admin', { agencyId: input.agencyId }),
       'Request needs approval',
       `${tx.actorName()} requested ${usdText(input.amount)} for ${request.purpose}.`,
-      isException ? `/investor/${portfolioId}/approvals` : `/agency/${input.agencyId}/approvals`,
+      toInvestor ? `/investor/${portfolioId}/approvals` : `/agency/${input.agencyId}/approvals`,
     )
     return request
   }
 
   // Approved by policy: hold, then capture to the destination.
-  capture(tx, request, destinationName)
+  capture(tx, request)
   return request
 }
 
-function capture(tx: Tx, request: PaymentRequest, destinationName: string) {
+/**
+ * Where a request pays. Money for purchases, a reimbursement and payment for
+ * work go into the requester's own Viatik balance; a vendor payment (or an
+ * automation's) goes to an approved vendor of the Agency.
+ */
+function requestDestination(
+  tx: Tx,
+  input: Pick<RequestPaymentInput, 'agencyId' | 'type' | 'destinationId'>,
+): RequestDestination {
+  if (paysRequester(input.type)) {
+    if (tx.actor.kind !== 'user')
+      throw new DomainError('forbidden', 'Only a person can request money into their Viatik balance.')
+    if (input.destinationId)
+      throw new DomainError('validation', 'This request pays your Viatik balance, not a vendor.')
+    return { kind: 'member', userId: tx.actor.userId }
+  }
+  if (!input.destinationId) throw new DomainError('validation', 'Choose where the money goes.')
+  const destination = tx.find('destinations', input.destinationId, 'Payment destination')
+  if (destination.agencyId !== input.agencyId)
+    throw new DomainError('forbidden', 'This payment destination belongs to another Agency.')
+  requirePayable(destination)
+  return { kind: 'destination', destinationId: destination.id }
+}
+
+/** How a request's recipient reads on its receipt and in activity. */
+function recipientLabels(tx: Tx, destination: RequestDestination): { receipt: string; activity: string } {
+  if (destination.kind === 'member') {
+    const name = tx.nameOf(destination.userId)
+    return { receipt: `${name} · Viatik balance`, activity: `${name}'s Viatik balance` }
+  }
+  const name =
+    tx.state.destinations.find((d) => d.id === destination.destinationId)?.name ?? 'Payment destination'
+  return { receipt: name, activity: name }
+}
+
+/** The kind of payment a request becomes when it is paid. */
+function paymentTypeForRequest(request: PaymentRequest): PaymentType {
+  if (request.requester.kind === 'ai_agent') return 'automation'
+  if (request.type === 'reimbursement') return 'reimbursement'
+  // Older requests paid a vendor whatever their type: only money into a person's balance is an advance or work pay.
+  if (request.destination.kind === 'member') {
+    if (request.type === 'funds') return 'advance'
+    if (request.type === 'work') return 'team'
+  }
+  return 'tool'
+}
+
+/** What the requester hears when their request is paid. */
+function paidNotice(
+  request: PaymentRequest,
+  recipient: string,
+): { title: string; body: string; href: string } {
+  const amount = usdText(request.amount)
+  const balance = `/member/${request.agencyId}/payments`
+  if (request.destination.kind === 'member') {
+    if (request.type === 'funds') {
+      return {
+        title: 'Money for your purchase',
+        body: `${amount} is in your Viatik balance. Add its receipts within ${JUSTIFY_WITHIN_DAYS} days or return what you do not use.`,
+        href: balance,
+      }
+    }
+    if (request.type === 'reimbursement')
+      return { title: 'Reimbursement paid', body: `${amount} is back in your Viatik balance.`, href: balance }
+    if (request.type === 'work')
+      return { title: 'Payment for your work', body: `${amount} is in your Viatik balance.`, href: balance }
+  }
+  return {
+    title: 'Payment completed',
+    body: `${amount} to ${recipient} is complete.`,
+    href: `/member/${request.agencyId}/requests/${request.id}`,
+  }
+}
+
+/**
+ * The payment id of approved payment for work, taken from its request. Work is
+ * paid with the ledger's `pay`, which has no request status to stop a second
+ * approval: with one id per request, every Agency Admin who prepares the
+ * approval plans the same payment, and the ledger's claim on that id stops the
+ * same Admin from paying it twice. The claim is per signer: keeping two Admins
+ * from both paying it is up to the server, which can key its check on this id.
+ */
+export const workPaymentId = (requestId: Id): Id => `pay_${requestId}`
+
+function capture(tx: Tx, request: PaymentRequest) {
   assertTransition('Request', canTransitionRequest, request.status, 'processing')
   request.status = 'processing'
   const budget = tx.find('budgets', request.budgetId, 'Budget')
   const portfolioId = tx.portfolioOfAgency(request.agencyId)
-  const paymentId = newId('pay')
-  const recipient: PaymentRecipient =
+  const paymentId = request.type === 'work' ? workPaymentId(request.id) : newId('pay')
+  const recipient: ViatikRecipient =
     request.destination.kind === 'member'
       ? { kind: 'member', userId: request.destination.userId }
       : { kind: 'destination', destinationId: request.destination.destinationId }
+  const labels = recipientLabels(tx, request.destination)
   const receipt = tx.receipt({
     kind: 'payment',
     amount: request.amount,
     fromLabel: `${tx.state.accounts.find((a) => a.id === budget.sourceAccountId)?.name ?? 'Account'} · ${budget.name}`,
-    toLabel: destinationName,
+    toLabel: labels.receipt,
     description: request.purpose,
-    policyLabel: `${budget.name} · per-operation limit ${usdText(budget.perOperationLimit)}`,
+    policyLabel:
+      request.type === 'work'
+        ? 'Payment for work · approved by an Agency Admin'
+        : `${budget.name} · per-operation limit ${usdText(budget.perOperationLimit)}`,
     operationId: paymentId,
     portfolioId,
     agencyId: request.agencyId,
@@ -757,12 +909,7 @@ function capture(tx: Tx, request: PaymentRequest, destinationName: string) {
   const payment: Payment = {
     id: paymentId,
     agencyId: request.agencyId,
-    type:
-      request.requester.kind === 'ai_agent'
-        ? 'automation'
-        : request.type === 'reimbursement'
-          ? 'reimbursement'
-          : 'tool',
+    type: paymentTypeForRequest(request),
     sourceAccountId: budget.sourceAccountId,
     budgetId: budget.id,
     recipient,
@@ -781,26 +928,30 @@ function capture(tx: Tx, request: PaymentRequest, destinationName: string) {
   request.status = 'completed'
   request.paymentId = paymentId
 
+  // A vendor payment and a reimbursement document a purchase. Money for purchases is justified
+  // later with its own receipts (addExpense); payment for work needs none. A request that pays a
+  // vendor whatever its type (sent before money for purchases paid the requester) keeps its Expense.
   const requesterUserId = request.requester.kind === 'user' ? request.requester.userId : undefined
-  if (requesterUserId) {
+  if (requesterUserId && (request.type === 'reimbursement' || request.destination.kind === 'destination')) {
+    const reimbursement = request.type === 'reimbursement'
     const expense: Expense = {
       id: newId('exp'),
       agencyId: request.agencyId,
       userId: requesterUserId,
       budgetId: budget.id,
-      merchant: destinationName,
+      merchant: (reimbursement && request.merchant) || labels.activity,
       amount: request.amount,
       category: request.category,
-      spentAt: tx.now,
+      spentAt: reimbursement ? (request.spentAt ?? request.createdAt) : tx.now,
       paymentId,
-      receipt: request.attachments[0],
+      receipt: reimbursement ? request.attachments.find((a) => a.kind === 'file') : request.attachments[0],
       createdAt: tx.now,
     }
     tx.state.expenses.push(expense)
   }
   tx.activity(
     'payment_completed',
-    `Paid ${usdText(request.amount)} to ${destinationName}`,
+    `Paid ${usdText(request.amount)} to ${labels.activity}`,
     { kind: 'payment', id: paymentId },
     {
       portfolioId,
@@ -811,22 +962,24 @@ function capture(tx: Tx, request: PaymentRequest, destinationName: string) {
     },
   )
   if (requesterUserId) {
-    tx.notify(
-      [requesterUserId],
-      'Payment completed',
-      `${usdText(request.amount)} to ${destinationName} is complete.`,
-      `/member/${request.agencyId}/requests/${request.id}`,
-    )
+    const notice = paidNotice(request, labels.activity)
+    tx.notify([requesterUserId], notice.title, notice.body, notice.href)
   }
   return { payment, receipt }
 }
 
-/** Agency Admin (or Investor, for exceptions) approves a request that needed a decision. */
+/**
+ * Agency Admin (or Investor, for exceptions) approves a request that needed a
+ * decision. Payment for work is always an Agency Admin's to approve.
+ */
 export function approveRequest(tx: Tx, input: { requestId: Id }) {
   const request = tx.find('requests', input.requestId, 'Request')
-  const agreement = governingAgreement(tx.state, request.agencyId)
-  const isException = agreement ? request.amount > agreement.spendingPolicy.exceptionThreshold : false
-  tx.authorize('approve_payment', { agencyId: request.agencyId, createdBy: request.requester, isException })
+  const byInvestor = isException(tx.state, request)
+  tx.authorize('approve_payment', {
+    agencyId: request.agencyId,
+    createdBy: request.requester,
+    isException: byInvestor,
+  })
   // Exceptions belong to the Investor of THIS Agency's portfolio, not to anyone
   // who happens to be an Investor somewhere (e.g. of a portfolio they created).
   const portfolioOfRequest = tx.portfolioOfAgency(request.agencyId)
@@ -839,7 +992,7 @@ export function approveRequest(tx: Tx, input: { requestId: Id }) {
         m.scope.kind === 'portfolio' &&
         m.scope.portfolioId === portfolioOfRequest,
     )
-  if (isException && !isInvestor) {
+  if (byInvestor && !isInvestor) {
     throw new DomainError(
       'forbidden',
       'This operation is above the agreement exception threshold. The Investor must approve it.',
@@ -847,6 +1000,14 @@ export function approveRequest(tx: Tx, input: { requestId: Id }) {
   }
   if (request.status !== 'needs_approval')
     throw new DomainError('invalid_state', 'This request does not need a decision.')
+  // An Agency Admin pays work from the budget, which the ledger refuses above the
+  // exception threshold (it may have been lowered since the request was sent).
+  if (request.type === 'work' && aboveExceptionThreshold(tx.state, request)) {
+    throw new DomainError(
+      'limit_exceeded',
+      'Payment for work above the exception threshold cannot be paid. Decline it.',
+    )
+  }
   const budget = tx.find('budgets', request.budgetId, 'Budget')
   if (budget.status !== 'active')
     throw new DomainError('invalid_state', 'The budget is paused. Resume it before approving.')
@@ -888,20 +1049,16 @@ export function approveRequest(tx: Tx, input: { requestId: Id }) {
       subjectUserId: request.requester.kind === 'user' ? request.requester.userId : undefined,
     },
   )
-  const destinationName =
-    request.destination.kind === 'destination'
-      ? (tx.state.destinations.find(
-          (d) => d.id === (request.destination as { destinationId: Id }).destinationId,
-        )?.name ?? 'Payment destination')
-      : tx.nameOf(request.destination.userId)
-  return capture(tx, request, destinationName)
+  return capture(tx, request)
 }
 
 export function declineRequest(tx: Tx, input: { requestId: Id; reason: string }) {
   const request = tx.find('requests', input.requestId, 'Request')
-  const agreement = governingAgreement(tx.state, request.agencyId)
-  const isException = agreement ? request.amount > agreement.spendingPolicy.exceptionThreshold : false
-  tx.authorize('approve_payment', { agencyId: request.agencyId, createdBy: request.requester, isException })
+  tx.authorize('approve_payment', {
+    agencyId: request.agencyId,
+    createdBy: request.requester,
+    isException: isException(tx.state, request),
+  })
   assertTransition('Request', canTransitionRequest, request.status, 'declined')
   request.status = 'declined'
   request.declinedReason = requireText(input.reason, 'Reason', 300)
@@ -943,8 +1100,10 @@ export function cancelRequest(tx: Tx, input: { requestId: Id }) {
 
 export type SendPaymentInput = {
   agencyId: Id
-  type: PaymentType
-  recipient: PaymentRecipient
+  /** Money for purchases (an advance) only ever comes from a request. */
+  type: Exclude<PaymentType, 'advance'>
+  /** A vendor or a person's Viatik balance. Paying an address outside Viatik is payOutside, with its own rules. */
+  recipient: ViatikRecipient
   accountId: Id
   budgetId?: Id
   amount: Cents
@@ -1003,11 +1162,11 @@ export function sendPayment(tx: Tx, input: SendPaymentInput) {
     }
   }
 
-  const agreement = governingAgreement(tx.state, input.agencyId)
-  if (agreement && input.amount > agreement.spendingPolicy.exceptionThreshold) {
+  const exceptionThreshold = exceptionThresholdOf(tx.state, input.agencyId)
+  if (exceptionThreshold !== undefined && input.amount > exceptionThreshold) {
     throw new DomainError(
       'limit_exceeded',
-      `Payments above ${usdText(agreement.spendingPolicy.exceptionThreshold)} are exceptions and need the Investor's approval.`,
+      `Payments above ${usdText(exceptionThreshold)} are exceptions and need the Investor's approval.`,
     )
   }
 
@@ -1139,6 +1298,11 @@ export function sendTeamPayments(
   )
 }
 
+/** The payment type an Agency payment gets from its category (bills, payments outside Viatik). */
+export function paymentTypeForCategory(category: SpendingCategory): Exclude<PaymentType, 'advance'> {
+  return category === 'contractors' ? 'contractor' : category === 'cloud' ? 'vendor' : 'tool'
+}
+
 // ─── Bills and reconciliation ────────────────────────────────────────────────
 
 export type AddBillInput = {
@@ -1164,6 +1328,8 @@ export function addBill(tx: Tx, input: AddBillInput): Bill {
   if (destination.agencyId !== input.agencyId)
     throw new DomainError('forbidden', 'This vendor belongs to another Agency.')
   requirePayable(destination)
+  // A bill's invoice documents one purchase: it cannot also be a member's receipt or another invoice.
+  requireUnusedReceipts(tx, input.agencyId, [input.document])
   const bill: Bill = {
     id: newId('bill'),
     agencyId: input.agencyId,
@@ -1213,7 +1379,7 @@ export function payBill(
   }
   const payment = sendPayment(tx, {
     agencyId: bill.agencyId,
-    type: bill.category === 'contractors' ? 'contractor' : bill.category === 'cloud' ? 'vendor' : 'tool',
+    type: paymentTypeForCategory(bill.category),
     recipient: { kind: 'destination', destinationId: destination.id },
     accountId: input.accountId ?? bill.accountId,
     budgetId: input.budgetId === null ? undefined : (input.budgetId ?? bill.budgetId),
@@ -1235,6 +1401,12 @@ export function reconcile(tx: Tx, input: { agencyId: Id; paymentId: Id; billId?:
   const payment = tx.find('payments', input.paymentId, 'Payment')
   if (payment.agencyId !== input.agencyId)
     throw new DomainError('forbidden', 'This payment belongs to another Agency.')
+  if (payment.type === 'advance') {
+    throw new DomainError(
+      'invalid_state',
+      'Money for purchases is settled with its receipts and returns, not reconciled.',
+    )
+  }
   if (payment.status !== 'completed' || !payment.receiptId)
     throw new DomainError('invalid_state', 'Only completed payments can be reconciled.')
   if (tx.state.reconciliations.some((r) => r.paymentId === payment.id)) {
@@ -1297,57 +1469,177 @@ export function reconcile(tx: Tx, input: { agencyId: Id; paymentId: Id; billId?:
 
 // ─── Expenses (Members) ──────────────────────────────────────────────────────
 
+/**
+ * A receipt that justifies money the person requested for purchases (an
+ * advance), added in one step: what they bought, for how much, when, and the
+ * receipt itself. To get money back for something paid with their own money,
+ * a person sends a reimbursement request instead.
+ */
 export function addExpense(
   tx: Tx,
   input: {
     agencyId: Id
-    budgetId: Id
+    /** The member's own completed advance this expense justifies (required). */
+    paymentId: Id
     merchant: string
     amount: Cents
     category: SpendingCategory
     spentAt: ISODate
-    receipt?: EvidenceDraft
-    paymentId?: Id
+    /** Required, kind 'file'. */
+    receipt: EvidenceDraft
   },
 ): Expense {
   tx.authorize('upload_receipt', { agencyId: input.agencyId, ownerUserId: tx.userId })
   requirePositive(input.amount)
-  const receipt = input.receipt ? evidenceFrom(input.receipt, tx.userId, tx.now) : undefined
+  const advance = requireOwnAdvance(tx, input.paymentId, input.agencyId)
+  requireFileReceipt(input.receipt)
+  const merchant = requireText(input.merchant, 'Merchant', 80)
+  if (!advance.budgetId) throw new DomainError('invalid_state', 'This money did not come from a budget.')
+  const budget = tx.find('budgets', advance.budgetId, 'Budget')
+  if (budget.allowedCategories.length > 0 && !budget.allowedCategories.includes(input.category))
+    throw new DomainError('validation', `This category is not an approved use of ${budget.name}.`)
+  requireNotFuture(input.spentAt, tx.now)
+  // What was bought before the money was requested is not what this money paid for.
+  const requestedAt =
+    tx.state.requests.find((r) => r.id === advance.requestId)?.createdAt ?? advance.scheduledFor
+  if (Date.parse(input.spentAt) < Date.parse(dayWindow(requestedAt).start))
+    throw new DomainError('validation', 'The receipt is dated before you requested this money.')
+  // A file the person attached when requesting this same money (an invoice, a quote) may justify it:
+  // that request's files do not count as used here. Every other use still does.
+  requireUnusedReceipts(tx, input.agencyId, [input.receipt], advance.requestId)
+  // Only what is still pending can be justified: more than that is a reimbursement.
+  const { pending } = advanceStanding(tx.state, advance, tx.now)
+  if (input.amount > pending) {
+    throw new DomainError(
+      'limit_exceeded',
+      pending > 0
+        ? `You can add up to ${usdText(pending)} to this advance. For more, request a reimbursement.`
+        : 'This advance is already justified. For more, request a reimbursement.',
+    )
+  }
+  const receipt = evidenceFrom(input.receipt, tx.userId, tx.now)
   const expense: Expense = {
     id: newId('exp'),
     agencyId: input.agencyId,
     userId: tx.userId,
-    budgetId: input.budgetId,
-    merchant: requireText(input.merchant, 'Merchant', 80),
+    budgetId: budget.id,
+    merchant,
     amount: input.amount,
     category: input.category,
     spentAt: input.spentAt,
-    paymentId: input.paymentId,
+    paymentId: advance.id,
     receipt,
     createdAt: tx.now,
   }
   tx.state.expenses.push(expense)
-  tx.activity(
-    'expense_added',
-    `Added a ${usdText(input.amount)} expense at ${expense.merchant}`,
-    { kind: 'expense', id: expense.id },
-    {
-      portfolioId: tx.portfolioOfAgency(input.agencyId),
-      agencyId: input.agencyId,
-      amount: input.amount,
-      subjectUserId: tx.userId,
-    },
-  )
+  receiptAdded(tx, expense)
   return expense
 }
 
+/** Adds the receipt to an expense that has none yet (a vendor payment's, for example). Once only. */
 export function attachReceipt(tx: Tx, input: { expenseId: Id; receipt: EvidenceDraft }) {
   const expense = tx.find('expenses', input.expenseId, 'Expense')
   tx.authorize('upload_receipt', { agencyId: expense.agencyId, ownerUserId: expense.userId })
   // A receipt, once attached, may already back a reconciliation: it is never replaced.
   if (expense.receipt) throw new DomainError('invalid_state', 'This expense already has a receipt.')
+  requireFileReceipt(input.receipt)
+  // The request that paid this expense documents the same purchase: its files do not count as used.
+  const paidBy = expense.paymentId
+    ? tx.state.requests.find((r) => r.agencyId === expense.agencyId && r.paymentId === expense.paymentId)
+    : undefined
+  requireUnusedReceipts(tx, expense.agencyId, [input.receipt], paidBy?.id)
   expense.receipt = evidenceFrom(input.receipt, tx.userId, tx.now)
+  receiptAdded(tx, expense)
   return expense
+}
+
+/**
+ * The person's own money for purchases (an advance) in this Agency: the only
+ * money they justify with receipts or give back unused.
+ */
+function requireOwnAdvance(tx: Tx, paymentId: Id, agencyId: Id) {
+  const payment = tx.find('payments', paymentId, 'Payment')
+  if (payment.agencyId !== agencyId)
+    throw new DomainError('forbidden', 'This payment belongs to another Agency.')
+  if (!isAdvance(payment) || payment.recipient.userId !== tx.userId)
+    throw new DomainError('forbidden', 'This is not money you requested for purchases.')
+  return payment
+}
+
+/** A receipt is an uploaded file: a link or a note cannot be proven later. */
+function requireFileReceipt(receipt: EvidenceDraft | undefined) {
+  if (receipt?.kind !== 'file') throw new DomainError('validation', 'Attach the receipt.')
+}
+
+/** Requests whose attachments no longer back any money. */
+const CLOSED_REQUESTS: ReadonlySet<PaymentRequest['status']> = new Set<PaymentRequest['status']>([
+  'declined',
+  'cancelled',
+  'rejected',
+])
+
+/**
+ * A receipt justifies money once per Agency: a file (by its fingerprint) already
+ * on one of its expenses, attached to one of its requests that is still in play
+ * (not declined, cancelled or rejected), or the invoice of one of its outside
+ * payments, cannot back other money. Only new files are checked, when a person
+ * adds them: to a request of any type, to an expense, or as an expense's
+ * receipt. `exceptRequestId` is the request that paid the money being
+ * justified: its own files document the same purchase, so they are not a
+ * second use (a paid reimbursement's receipt that becomes its Expense's, an
+ * invoice attached when requesting money for purchases).
+ */
+export function requireUnusedReceipts(tx: Tx, agencyId: Id, drafts: EvidenceDraft[], exceptRequestId?: Id) {
+  const fingerprints = new Set(
+    drafts.flatMap((draft) => (draft.kind === 'file' && draft.sha256 ? [draft.sha256] : [])),
+  )
+  if (fingerprints.size === 0) return
+  const onExpense = tx.state.expenses.some(
+    (e) => e.agencyId === agencyId && e.receipt !== undefined && fingerprints.has(e.receipt.sha256),
+  )
+  const onRequest = tx.state.requests.some(
+    (r) =>
+      r.agencyId === agencyId &&
+      r.id !== exceptRequestId &&
+      !CLOSED_REQUESTS.has(r.status) &&
+      r.attachments.some((a) => fingerprints.has(a.sha256)),
+  )
+  const onOutsidePayment = tx.state.payments.some(
+    (p) => p.agencyId === agencyId && p.proof !== undefined && fingerprints.has(p.proof.sha256),
+  )
+  const onBill = tx.state.bills.some((b) => b.agencyId === agencyId && fingerprints.has(b.document.sha256))
+  if (onExpense || onRequest || onOutsidePayment || onBill)
+    throw new DomainError('validation', 'This file was already used as a receipt or invoice.')
+}
+
+/** A date a person picked is not in the future: anything up to the end of today (UTC) is fine. */
+function requireNotFuture(date: ISODate, now: ISODate) {
+  const time = Date.parse(date)
+  if (Number.isNaN(time)) throw new DomainError('validation', 'Enter a valid date.')
+  if (time >= Date.parse(dayWindow(now).end))
+    throw new DomainError('validation', 'Pick a date that is not in the future.')
+}
+
+/** A receipt reached an expense: it shows in activity and the Agency Admins hear about it. */
+function receiptAdded(tx: Tx, expense: Expense) {
+  const summary = `${usdText(expense.amount)} receipt from ${expense.merchant}`
+  tx.activity(
+    'receipt_added',
+    `Added a ${summary}`,
+    { kind: 'expense', id: expense.id },
+    {
+      portfolioId: tx.portfolioOfAgency(expense.agencyId),
+      agencyId: expense.agencyId,
+      amount: expense.amount,
+      subjectUserId: expense.userId,
+    },
+  )
+  tx.notify(
+    tx.holders('agency_admin', { agencyId: expense.agencyId }),
+    'Receipt uploaded',
+    `${tx.actorName()} added a ${summary}.`,
+    `/agency/${expense.agencyId}/team/${expense.userId}`,
+  )
 }
 
 export function addDestination(
@@ -1389,40 +1681,71 @@ function requirePayable(destination: { name: string; status: string }) {
   throw new DomainError('invalid_state', `${destination.name} ${why}`)
 }
 
-/** What a person holds in an agency: paid to them, minus what they returned or withdrew. */
-export function memberHeld(state: ViatikState, agencyId: Id, userId: Id): number {
-  return state.movements.reduce((total, m) => {
-    if (m.agencyId !== agencyId) return total
-    const toMe =
-      m.to.kind === 'recipient' && m.to.recipient.kind === 'member' && m.to.recipient.userId === userId
-    const fromMe =
-      m.from.kind === 'recipient' && m.from.recipient.kind === 'member' && m.from.recipient.userId === userId
-    return total + (toMe ? m.amount : 0) - (fromMe ? m.amount : 0)
-  }, 0)
-}
+/** What a person holds in an agency (kept here for existing imports; it lives in selectors). */
+export { memberHeld }
 
-/** A Member sends money they received but no longer need back to the Agency. */
-export function returnUnusedFunds(tx: Tx, input: { agencyId: Id; amount: Cents }) {
+/**
+ * A Member sends money they received but no longer need back to the Agency.
+ * The person always says what they are returning:
+ * - With `paymentId`, the unused rest of money they requested for purchases
+ *   (an advance): the return settles that much of it, up to what can be
+ *   returned of it (`returnableFor`: its pending part, within their Viatik
+ *   balance).
+ * - Without `paymentId`, "Other money": a plain return that settles no
+ *   advance. It is capped by `otherMoneyReturnable` (their Viatik balance
+ *   beyond what their open advances still have pending), so unused money for
+ *   purchases is returned against its own advance and never leaves while that
+ *   advance stays pending. Nothing is linked automatically.
+ */
+export function returnUnusedFunds(tx: Tx, input: { agencyId: Id; amount: Cents; paymentId?: Id }) {
   tx.authorize('receive_payout', { agencyId: input.agencyId, ownerUserId: tx.userId })
   requirePositive(input.amount)
   const memberLocation = { kind: 'recipient', recipient: { kind: 'member', userId: tx.userId } } as const
-  const received = memberHeld(tx.state, input.agencyId, tx.userId)
-  if (input.amount > received) {
-    throw new DomainError(
-      'insufficient_funds',
-      `You can return up to ${usdText(cents(Math.max(0, received)))} received from this Agency.`,
-    )
+  const advance = input.paymentId ? requireOwnAdvance(tx, input.paymentId, input.agencyId) : undefined
+  if (advance) {
+    const standing = advanceStanding(tx.state, advance, tx.now)
+    if (standing.pending === 0)
+      throw new DomainError('invalid_state', 'This money is already justified: nothing is left to return.')
+    // Money already withdrawn from the Viatik balance can only be justified with receipts.
+    const returnable = returnableFor(tx.state, standing)
+    if (input.amount > returnable) {
+      throw returnable < standing.pending
+        ? new DomainError(
+            'insufficient_funds',
+            `You can return up to ${usdText(returnable)}, what is left in your Viatik balance. Add receipts for the rest.`,
+          )
+        : new DomainError('limit_exceeded', `You can return up to ${usdText(returnable)} of this money.`)
+    }
+  } else {
+    const held = clampToZero(cents(memberHeld(tx.state, input.agencyId, tx.userId)))
+    const otherMoney = otherMoneyReturnable(tx.state, { agencyId: input.agencyId, userId: tx.userId }, tx.now)
+    if (input.amount > otherMoney) {
+      // Open money for purchases keeps part of the balance: that part goes back against its advance.
+      if (otherMoney < held) {
+        throw new DomainError(
+          'limit_exceeded',
+          otherMoney > 0
+            ? `Return it against your money for purchases first. You can return up to ${usdText(otherMoney)} as other money.`
+            : 'Choose which money for purchases you are returning.',
+        )
+      }
+      throw new DomainError(
+        'insufficient_funds',
+        `You can return up to ${usdText(held)} received from this Agency.`,
+      )
+    }
   }
   const operations = activeOperationsAccount(tx.state, input.agencyId)
   if (!operations) throw new DomainError('not_found', 'The Agency has no operations account.')
   const portfolioId = tx.portfolioOfAgency(input.agencyId)
   const operationId = newId('ret')
+  const name = tx.nameOf(tx.userId)
   const receipt = tx.receipt({
     kind: 'transfer',
     amount: input.amount,
-    fromLabel: tx.nameOf(tx.userId),
+    fromLabel: name,
     toLabel: operations.name,
-    description: 'Unused funds returned to the Agency',
+    description: advance ? `Unused money returned · ${advance.memo}` : 'Unused funds returned to the Agency',
     policyLabel: 'Member return · personal funds',
     operationId,
     portfolioId,
@@ -1433,11 +1756,33 @@ export function returnUnusedFunds(tx: Tx, input: { agencyId: Id; amount: Cents }
     input.amount,
     memberLocation,
     { kind: 'account', accountId: operations.id },
-    { portfolioId, agencyId: input.agencyId, refId: operationId, receiptId: receipt.id },
+    {
+      portfolioId,
+      agencyId: input.agencyId,
+      refId: operationId,
+      receiptId: receipt.id,
+      // Only a return of money for purchases settles it (and carries the key).
+      ...(advance ? { settlesPaymentId: advance.id } : {}),
+    },
   )
+  if (advance) {
+    tx.activity(
+      'advance_returned',
+      `${name} returned ${usdText(input.amount)} unused from ${advance.memo}`,
+      { kind: 'receipt', id: receipt.id },
+      { portfolioId, agencyId: input.agencyId, amount: input.amount, subjectUserId: tx.userId },
+    )
+    tx.notify(
+      tx.holders('agency_admin', { agencyId: input.agencyId }),
+      'Unused money returned',
+      `${name} returned ${usdText(input.amount)} unused from ${advance.memo} to ${operations.name}.`,
+      `/agency/${input.agencyId}/team/${tx.userId}`,
+    )
+    return receipt
+  }
   tx.activity(
     'funds_transferred',
-    `${tx.nameOf(tx.userId)} returned ${usdText(input.amount)} of unused funds`,
+    `${name} returned ${usdText(input.amount)} of unused funds`,
     { kind: 'receipt', id: receipt.id },
     {
       portfolioId,
@@ -1449,7 +1794,7 @@ export function returnUnusedFunds(tx: Tx, input: { agencyId: Id; amount: Cents }
   tx.notify(
     tx.holders('agency_admin', { agencyId: input.agencyId }),
     'Funds returned',
-    `${tx.nameOf(tx.userId)} returned ${usdText(input.amount)} to ${operations.name}.`,
+    `${name} returned ${usdText(input.amount)} to ${operations.name}.`,
     `/agency/${input.agencyId}/accounts/${operations.id}`,
   )
   return receipt
@@ -1497,6 +1842,13 @@ export function withdrawBalance(tx: Tx, input: { agencyId: Id; amount: Cents; to
     `${tx.nameOf(tx.userId)} withdrew ${usdText(input.amount)}`,
     { kind: 'receipt', id: receipt.id },
     { portfolioId, agencyId: input.agencyId, amount: input.amount, subjectUserId: tx.userId },
+  )
+  // The Agency Admins hear about it, but never where it went: the address stays the person's.
+  tx.notify(
+    tx.holders('agency_admin', { agencyId: input.agencyId }),
+    'Balance withdrawn',
+    `${tx.nameOf(tx.userId)} sent ${usdText(input.amount)} from their Viatik balance.`,
+    `/agency/${input.agencyId}/team/${tx.userId}`,
   )
   return receipt
 }

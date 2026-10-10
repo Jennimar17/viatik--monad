@@ -6,8 +6,8 @@ import { usePermissions } from '@/components/app/role-context'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { useViatikState } from '@/data/react'
-import { memberHeld } from '@/domain/engine/operations'
 import { cents, clampToZero, type Cents } from '@/domain/money'
+import { memberHeld } from '@/domain/selectors'
 
 import { useOwnAccount, type OwnAccount } from './member-own-account'
 import { useSavedAddresses } from './member-saved-addresses'
@@ -94,7 +94,7 @@ export function SettlementNote({
   if (nowhere) {
     return (
       <p className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Spinner /> Your account is being created. You can send to it in a moment.
+        <Spinner /> Your Viatik account is being created. You can send to it in a moment.
       </p>
     )
   }

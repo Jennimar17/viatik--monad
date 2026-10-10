@@ -2,10 +2,14 @@ import {
   ArrowLeftRight,
   BadgeCheck,
   Ban,
+  BellRing,
   Bot,
   Briefcase,
   Building2,
+  CalendarClock,
   CircleCheck,
+  ExternalLink,
+  FileCheck,
   FilePlus2,
   FileText,
   HandCoins,
@@ -15,8 +19,11 @@ import {
   PauseCircle,
   PieChart,
   PlayCircle,
+  ReceiptText,
+  RotateCcw,
   Send,
   ShieldX,
+  Undo2,
   UserPlus,
   UserRound,
 } from 'lucide-react'
@@ -59,6 +66,14 @@ const icons: Record<ActivityType, LucideIcon> = {
   portfolio_created: Briefcase,
   funds_withdrawn: Landmark,
   destination_updated: Building2,
+  paid_outside: ExternalLink,
+  payment_proof_added: FileCheck,
+  capital_returned: Undo2,
+  receipt_added: ReceiptText,
+  advance_returned: RotateCcw,
+  receipts_reminded: BellRing,
+  reminder_created: CalendarClock,
+  reminder_updated: CalendarClock,
 }
 
 const DANGER: ReadonlySet<ActivityType> = new Set(['policy_rejected', 'payment_declined', 'agreement_frozen'])
@@ -66,6 +81,7 @@ const SUCCESS: ReadonlySet<ActivityType> = new Set([
   'tranche_released',
   'payment_completed',
   'bill_reconciled',
+  'capital_returned',
 ])
 
 /** Domain activity records → the presentational feed (person or AI Agent, icon, tone). */

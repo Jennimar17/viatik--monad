@@ -34,7 +34,7 @@ import { pseudoAddress } from '@/domain/ids'
 import { vaultKindLabel } from '@/domain/labels'
 import { percentOf, sum, ZERO } from '@/domain/money'
 import { agencyName, receiptFor } from '@/domain/queries'
-import { accountBalance, agreementCapital, vaultBalance } from '@/domain/selectors'
+import { accountBalance, agreementCapital, returnedCapital, vaultBalance } from '@/domain/selectors'
 import type { Movement, Vault } from '@/domain/types'
 import { networkInfo } from '@/domain/verification'
 import { publicEnv } from '@/lib/env'
@@ -82,6 +82,8 @@ export default function VaultsPage() {
   const inReserves = sum(reserves, (a) => accountBalance(state, a.id))
   const deposits = movements.filter((m) => m.kind === 'deposit').length
   const withdrawals = movements.filter((m) => m.kind === 'withdrawal').length
+  // Capital Agency Admins sent back to the Portfolio Vault (also listed in Vault movements).
+  const returned = returnedCapital(state, { portfolioId })
   // Only the Portfolio Vault can be withdrawn: funding vaults follow their tranches and returns.
   const canWithdraw = Boolean(portfolioVault) && can('withdraw_funds')
 
@@ -176,6 +178,9 @@ export default function VaultsPage() {
               items={[
                 { label: 'Deposits', value: String(deposits) },
                 ...(withdrawals > 0 ? [{ label: 'Withdrawals', value: String(withdrawals) }] : []),
+                ...(returned > 0
+                  ? [{ label: 'Returned by Agencies', value: <Amount value={returned} size="sm" /> }]
+                  : []),
                 { label: 'Funding vaults funded from here', value: String(fundingVaults.length) },
               ]}
             />
@@ -336,7 +341,7 @@ export default function VaultsPage() {
             <EmptyState
               compact
               title="No vault movements yet"
-              description="Deposits, agreement funding, tranche releases and withdrawals will appear here."
+              description="Funds added, agreement funding, tranche releases, capital returned by Agencies and withdrawals will appear here."
             />
           }
         />

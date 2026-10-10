@@ -37,6 +37,7 @@ export type LedgerEvent =
   | 'PaymentPending'
   | 'PaymentRejected'
   | 'RequestClosed'
+  | 'EvidenceRecorded'
 
 /**
  * What proves one operation ran: one of `events`, carrying the indexed `id`
@@ -107,6 +108,9 @@ function witnessOf(op: LedgerOp): Witness {
       })
     case 'closeRequest':
       return one('RequestClosed', op.requestId)
+    case 'recordEvidence':
+      // The invoice anchored for an outside payment: no money, so no `Recorded`.
+      return one('EvidenceRecorded', op.paymentId, { args: { evidenceHash: op.evidenceHash } })
     case 'requestPayment':
       // Whatever the ledger decided, the request is named in one of these (the
       // second indexed topic of PaymentExecuted). The outcome is read from which
@@ -116,6 +120,7 @@ function witnessOf(op: LedgerOp): Witness {
       return one('Recorded', op.trancheId)
     case 'approvePayment':
     case 'pay':
+    case 'payOutside':
       return one('Recorded', op.paymentId)
     case 'deposit':
     case 'fundAgreement':
@@ -124,6 +129,7 @@ function witnessOf(op: LedgerOp): Witness {
     case 'returnToAgency':
     case 'withdraw':
     case 'withdrawMemberBalance':
+    case 'returnCapital':
       return one('Recorded', op.opId)
   }
 }

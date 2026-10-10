@@ -25,7 +25,7 @@ export const SCREENS = {
     {
       path: 'overview',
       title: 'Overview',
-      summary: 'KPIs, capital states, charts, pending tranches, agencies.',
+      summary: 'KPIs, capital states, charts, pending tranches, agencies; overdue invoices or receipts.',
       status: 'ready',
     },
     {
@@ -43,7 +43,7 @@ export const SCREENS = {
     {
       path: 'agencies/[agencyId]',
       title: 'Agency detail',
-      summary: 'Overview · Spending · Team · Activity; freeze agreement.',
+      summary: 'Overview · Spending · Accountability · Team · Activity; freeze agreement.',
       status: 'ready',
       open: `agencies/${DEMO.agencies.arc}`,
     },
@@ -77,7 +77,8 @@ export const SCREENS = {
     {
       path: 'vaults/add-funds',
       title: 'Add funds',
-      summary: 'USDC deposit with waiting → received → credited.',
+      summary:
+        'Viatik account and Portfolio Vault balances, account QR and address, get test funds, transfer to Portfolio.',
       status: 'ready',
     },
     {
@@ -110,7 +111,8 @@ export const SCREENS = {
     {
       path: 'overview',
       title: 'Overview',
-      summary: 'KPIs, next tranche, requests, bills due, budget health.',
+      summary:
+        'KPIs, next tranche, requests, bills due, money to justify, invoices and monthly payments due, budget health.',
       status: 'ready',
     },
     {
@@ -136,13 +138,13 @@ export const SCREENS = {
     {
       path: 'accounts',
       title: 'Accounts',
-      summary: 'Account cards with balances and sparklines.',
+      summary: 'Account cards with balances and sparklines; pay outside Viatik, return to the Investor.',
       status: 'ready',
     },
     {
       path: 'accounts/[accountId]',
       title: 'Account detail',
-      summary: 'Balance, budgets, chart, movements.',
+      summary: 'Balance, budgets, chart, movements; pay outside Viatik, return to the Investor.',
       status: 'ready',
       open: `accounts/${DEMO.accounts.arcOperations}`,
     },
@@ -156,6 +158,13 @@ export const SCREENS = {
       path: 'accounts/transfer',
       title: 'Transfer funds',
       summary: 'Between accounts of the Agency.',
+      status: 'ready',
+    },
+    {
+      path: 'accounts/pay-outside',
+      title: 'Pay outside Viatik',
+      summary:
+        'Pay an address from an account or open budget: confirmed address, payee, category, what it pays, optional invoice.',
       status: 'ready',
     },
     {
@@ -173,14 +182,14 @@ export const SCREENS = {
     {
       path: 'budgets/[budgetId]',
       title: 'Budget detail',
-      summary: 'KPIs, rules, allowances, holds, payments.',
+      summary: 'KPIs, rules, allowances, holds, payments; pay outside Viatik.',
       status: 'ready',
       open: `budgets/${DEMO.budgets.arcTools}`,
     },
     {
       path: 'payments',
       title: 'Payments',
-      summary: 'All · Team · Vendors · Reimbursements · Automation.',
+      summary: 'All · Team · Vendors · Reimbursements · Outside Viatik · Automation.',
       status: 'ready',
     },
     {
@@ -190,7 +199,12 @@ export const SCREENS = {
       status: 'ready',
     },
     { path: 'payments/team', title: 'Pay team', summary: 'Batch payouts.', status: 'ready' },
-    { path: 'bills', title: 'Bills', summary: 'To pay · Scheduled · Paid · Reconciled.', status: 'ready' },
+    {
+      path: 'bills',
+      title: 'Bills',
+      summary: 'To pay · Scheduled · Paid · Reconciled · Invoices pending · Monthly; new monthly payment.',
+      status: 'ready',
+    },
     { path: 'bills/new', title: 'Add bill', summary: 'Upload and fields.', status: 'ready' },
     {
       path: 'bills/[billId]',
@@ -218,11 +232,16 @@ export const SCREENS = {
       status: 'ready',
       open: `providers/${DEMO.destinations.vertex}`,
     },
-    { path: 'team', title: 'Team', summary: 'Members and invitations.', status: 'ready' },
+    {
+      path: 'team',
+      title: 'Team',
+      summary: 'Members with what they have to justify, receipts pending with reminders, invitations.',
+      status: 'ready',
+    },
     {
       path: 'team/[memberId]',
       title: 'Member detail',
-      summary: 'Edit allowance, revoke access.',
+      summary: 'Allowances, Viatik balance, money to justify, send reminder, revoke access.',
       status: 'ready',
       open: `team/${DEMO.users.alex}`,
     },
@@ -248,7 +267,7 @@ export const SCREENS = {
     {
       path: 'approvals',
       title: 'Approvals',
-      summary: 'Queue with approval sheet.',
+      summary: 'Queue by request type, with a type filter and per-type approval sheet.',
       status: 'ready',
     },
     {
@@ -268,7 +287,7 @@ export const SCREENS = {
     {
       path: 'overview',
       title: 'Overview',
-      summary: 'Available to spend, Viatik account, requests, receipts.',
+      summary: 'Available to spend, Viatik balance, money to justify, requests, receipts.',
       status: 'ready',
     },
     { path: 'budget', title: 'My budget', summary: 'Assigned budgets.', status: 'ready' },
@@ -284,26 +303,26 @@ export const SCREENS = {
     {
       path: 'requests/[requestId]',
       title: 'Request detail',
-      summary: 'Progress, verdict, receipt.',
+      summary: 'Progress, verdict, receipts and returns for money for purchases, receipt.',
       status: 'ready',
     },
     {
       path: 'expenses',
       title: 'Expenses',
-      summary: 'Receipt status and filters.',
+      summary: 'Money to justify, receipt status and filters.',
       status: 'ready',
     },
     {
       path: 'expenses/new',
-      title: 'New expense',
-      summary: 'Merchant, amount, receipt.',
+      title: 'Add receipt',
+      summary: 'Receipt for money for purchases: merchant, amount, file.',
       status: 'ready',
     },
     {
       path: 'payments',
       title: 'Payments',
       summary:
-        'Viatik account: balance, send to my account, return unused funds, payments received, movements, saved addresses.',
+        'Viatik balance: money to justify, send to my account, return unused funds, payments received, movements, your Viatik account (address and QR), saved addresses.',
       status: 'ready',
     },
     { path: 'activity', title: 'Activity', summary: 'Personal activity.', status: 'ready' },

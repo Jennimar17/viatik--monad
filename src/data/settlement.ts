@@ -1,6 +1,7 @@
 import { parseAddress } from '@/domain/address'
-import { attachmentsHash, decisionHash } from '@/domain/evidence'
+import { attachmentsHash, decisionHash, evidenceSetHash } from '@/domain/evidence'
 import { ZERO, type Cents } from '@/domain/money'
+import { isOutsidePayment } from '@/domain/queries'
 import type {
   Actor,
   Budget,
@@ -263,9 +264,23 @@ export function planSettlement({ before, after, actor }: PlanArgs): SettlementPl
   }
 
   // 12. Payment requests: new ones, approvals and closings. Requests of
-  // automations never reach the ledger; their money stays uncovered.
+  // automations never reach the ledger; their money stays uncovered. Payment
+  // for work never reaches it as a request either: it stays offchain until an
+  // Agency Admin approves it, and is then paid with `pay` (section 13).
   for (const request of added(before.requests, after.requests)) {
     if (request.requester.kind !== 'user') continue
+    if (request.type === 'work') {
+      // Any rejection of work is refused before the ledger, and stays in the history.
+      if (request.status === 'rejected') {
+        keepOnFailure = true
+        refusal = {
+          code: 'policy_rejected',
+          message: request.decision.reason?.message ?? 'This request is outside the budget rules.',
+          retryable: false,
+        }
+      }
+      continue
+    }
     const base = requestCall(request)
     if (request.status === 'rejected') {
       // The rejection stays in the history and is the answer, whether the ledger records it or not.
@@ -300,7 +315,9 @@ export function planSettlement({ before, after, actor }: PlanArgs): SettlementPl
     }
   }
   for (const [previous, next] of changed(before.requests, after.requests)) {
-    if (previous.status !== 'needs_approval' || next.requester.kind !== 'user') continue
+    // Work waiting for an Admin is not on the ledger: declining it closes nothing there.
+    if (previous.status !== 'needs_approval' || next.requester.kind !== 'user' || next.type === 'work')
+      continue
     if (next.status === 'declined' || next.status === 'cancelled') {
       push({ call: 'closeRequest', requestId: next.id })
     } else if (next.paymentId) {
@@ -320,6 +337,20 @@ export function planSettlement({ before, after, actor }: PlanArgs): SettlementPl
     else uncovered.push(movement.id)
   }
 
+  // 14. Invoices added to payments made outside Viatik, anchored once. The invoice of a
+  // payment made in this command travels with its `payOutside`. No receipt: the ledger
+  // emits `EvidenceRecorded`, not `Recorded`.
+  for (const [previous, next] of changed(before.payments, after.payments)) {
+    if (!isOutsidePayment(next) || previous.proof || !next.proof) continue
+    push({
+      call: 'recordEvidence',
+      agencyId: next.agencyId,
+      paymentId: next.id,
+      // The same fingerprint `payOutside` records for an invoice that comes with the payment.
+      evidenceHash: evidenceSetHash([next.proof]),
+    })
+  }
+
   if (ops.length === 0 && !refusal && uncovered.length === 0) return null
   return { ops, records, signerUserId, keepOnFailure, ...(refusal ? { refusal } : {}), uncovered }
 }
@@ -328,8 +359,9 @@ export function planSettlement({ before, after, actor }: PlanArgs): SettlementPl
  * Writes what the ledger recorded onto the state the command produced, after
  * every settlement (the mock now, Monad's confirm in step 8.3): the verified
  * details of the command's receipts, of a payment request (also a rejected
- * one) and of a tranche request. A request refused before the ledger gets no
- * ledger record, so no screen can say the ledger refused it.
+ * one), of a tranche request and of an invoice anchored after its outside
+ * payment. A request refused before the ledger gets no ledger record, so no
+ * screen can say the ledger refused it.
  *
  * It changes `after` in place, so a command's result (which points into it)
  * carries the same details.
@@ -348,7 +380,10 @@ export function applySettlement(
   const known = new Set(before.receipts.map((r) => r.id))
   for (const receipt of after.receipts) {
     if (known.has(receipt.id)) continue
-    const record = result.records.find((r) => r.opId === receipt.operationId && r.call !== 'requestTranche')
+    // Records without money (a tranche request, an invoice anchored later) belong to no receipt.
+    const record = result.records.find(
+      (r) => r.opId === receipt.operationId && r.call !== 'requestTranche' && r.call !== 'recordEvidence',
+    )
     if (!record) continue
     receipt.verified = {
       ...record.verified,
@@ -394,17 +429,36 @@ export function applySettlement(
         : undefined
       if (milestone) milestone.submissionVerified = details
     }
+    // The invoice of an outside payment, anchored after it. The payment's receipt keeps its own
+    // fingerprint: its receipt hash committed to what the payment carried when it was made.
+    if (op.call === 'recordEvidence') {
+      const record = recorded(op.paymentId, 'recordEvidence')
+      const payment = after.payments.find((p) => p.id === op.paymentId)
+      if (!record || !payment) continue
+      payment.proofVerified = {
+        ...record.verified,
+        contractPolicy: 'Invoice fingerprinted · anchored once',
+        evidenceHash: op.evidenceHash,
+      }
+    }
   }
 }
 
 /** The fingerprint a record carries: a payment's documents, or the decision behind a release. */
 function fingerprints(record: PlannedRecord | undefined): Partial<VerifiedDetails> {
   if (!record) return {}
-  if (record.kind === 'tranche_release')
-    return record.evidenceHash ? { decisionHash: record.evidenceHash } : {}
-  if (record.kind === 'payment' || record.kind === 'payment_pending' || record.kind === 'payment_rejected')
-    return { evidenceHash: record.evidenceHash }
-  return {}
+  switch (record.kind) {
+    case 'tranche_release':
+      return record.evidenceHash ? { decisionHash: record.evidenceHash } : {}
+    case 'payment':
+    case 'payment_pending':
+    case 'payment_rejected':
+    case 'outside_payment':
+    case 'capital_return':
+      return { evidenceHash: record.evidenceHash }
+    default:
+      return {}
+  }
 }
 
 /**
@@ -476,7 +530,13 @@ function movementCall(
         }
       if (from.kind === 'recipient' && from.recipient.kind === 'member' && movement.agencyId)
         return {
-          op: { call: 'withdrawMemberBalance', opId: refId, agencyId: movement.agencyId, amount, to: address },
+          op: {
+            call: 'withdrawMemberBalance',
+            opId: refId,
+            agencyId: movement.agencyId,
+            amount,
+            to: address,
+          },
           record: record(refId, 'withdrawal', amount, { member: signerUserId }, { address }),
         }
       return null
@@ -522,11 +582,28 @@ function movementCall(
     case 'payment': {
       if (settledPayments.has(refId)) return 'settled'
       const payment = after.payments.find((p) => p.id === refId)
-      // A payment for a request is settled by the request (paid at once or approved).
-      if (!payment || payment.requestId) return null
-      const bill = payment.billId ? after.bills.find((b) => b.id === payment.billId) : undefined
-      const evidenceHash = bill ? attachmentsHash([bill.document]) : null
+      if (!payment) return null
       const sourceId = payment.budgetId ?? payment.sourceAccountId
+      // Paid outside Viatik: the ledger records the address it went to, and the invoice if it came with it.
+      if (payment.recipient.kind === 'address') {
+        const address = payment.recipient.address ? parseAddress(payment.recipient.address) : null
+        if (!address) return null
+        const evidenceHash = payment.proof ? attachmentsHash([payment.proof]) : null
+        return {
+          op: { call: 'payOutside', paymentId: payment.id, sourceId, to: address, amount, evidenceHash },
+          record: record(payment.id, 'outside_payment', amount, { id: sourceId }, { address }, evidenceHash),
+        }
+      }
+      // A payment for a request is settled by the request (paid at once or approved), except
+      // payment for work, which the approving Admin pays with `pay` into the requester's balance.
+      const request = payment.requestId ? after.requests.find((r) => r.id === payment.requestId) : undefined
+      if (payment.requestId && request?.type !== 'work') return null
+      const bill = payment.billId ? after.bills.find((b) => b.id === payment.billId) : undefined
+      const evidenceHash = bill
+        ? attachmentsHash([bill.document])
+        : request
+          ? attachmentsHash(request.attachments)
+          : null
       const destinationId = payment.recipient.kind === 'destination' ? payment.recipient.destinationId : null
       const memberUserId = payment.recipient.kind === 'member' ? payment.recipient.userId : null
       return {
@@ -549,6 +626,21 @@ function movementCall(
         ),
       }
     }
+    // Capital an Admin returns from an agency account to its Portfolio Vault, under the agreement it names.
+    case 'capital_return':
+      if (from.kind !== 'account' || to.kind !== 'vault') return null
+      return {
+        op: {
+          call: 'returnCapital',
+          opId: refId,
+          fromAccountId: from.accountId,
+          portfolioVaultId: to.vaultId,
+          agreementId: movement.agreementId ?? null,
+          amount,
+          evidenceHash: null,
+        },
+        record: record(refId, 'capital_return', amount, { id: from.accountId }, { id: to.vaultId }),
+      }
     default:
       return null
   }

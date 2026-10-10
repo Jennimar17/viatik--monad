@@ -21,15 +21,19 @@ const POLL_EVERY_MS = 1_500
 type Available = Extract<LedgerAccount, { available: true }>
 
 /**
- * The person's own account on Monad, for adding funds with real tokens: it holds
+ * The person's Viatik account on Monad, for adding funds with real tokens: it holds
  * TestUSD and lets the ledger move it. Both actions are sponsored transactions the
  * person signs in the browser (no wallet UI), and each one waits until Monad shows
  * its effect, so the deposit that follows is simulated against the new balance.
  * Only with a real account: in the demo `ready` is false and nothing is sent.
+ *
+ * Keep one instance per screen: `step` is local state, so every card that shows
+ * "busy" must read it from the same instance. `refetchInterval` polls the
+ * account read (see `useLedgerAccount`).
  */
-export function useWalletActions() {
+export function useWalletActions(options: { refetchInterval?: number | false } = {}) {
   const { sendCall } = useSession()
-  const { account, isLoading, isError, refetch } = useLedgerAccount()
+  const { account, isLoading, isError, refetch } = useLedgerAccount(options)
   const [step, setStep] = React.useState<WalletStep>('idle')
   const available = account?.available ? account : null
 
@@ -62,7 +66,8 @@ export function useWalletActions() {
 
   /** Mints the test amount (`testFunds`) of TestUSD to the person's own account. */
   const getTestFunds = React.useCallback(async () => {
-    if (!available) throw new DataSourceError('Your account is still being set up.', 'account_not_ready', true)
+    if (!available)
+      throw new DataSourceError('Your Viatik account is still being set up.', 'account_not_ready', true)
     setStep('getting_funds')
     try {
       const before = available.balance
@@ -87,13 +92,18 @@ export function useWalletActions() {
    */
   const ensureAllowance = React.useCallback(
     async (amount: number) => {
-      if (!available) throw new DataSourceError('Your account is still being set up.', 'account_not_ready', true)
+      if (!available)
+        throw new DataSourceError('Your Viatik account is still being set up.', 'account_not_ready', true)
       if (available.allowance >= amount) return available
       setStep('allowing')
       try {
         await send(
           available,
-          encodeFunctionData({ abi: testUsdAbi, functionName: 'approve', args: [available.ledger, maxUint256] }),
+          encodeFunctionData({
+            abi: testUsdAbi,
+            functionName: 'approve',
+            args: [available.ledger, maxUint256],
+          }),
         )
         return await waitFor((read) => read.allowance >= amount)
       } finally {

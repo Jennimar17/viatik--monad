@@ -57,8 +57,6 @@ export type MonadLedgerConfig = {
   ledgerAddress?: Address
   /** The settlement token the ledger was deployed with (TestUSD on testnet). */
   tokenAddress?: Address
-  /** The ledger's deployment block: the earliest worth scanning for its events. */
-  deployBlock?: bigint
   /** Server key that signs role permits (`join`) and runs the genesis. */
   registrar?: LocalAccount
   /** Accounts the server may sign with (scripts, a relayer). People sign in their browser. */
@@ -196,7 +194,12 @@ export class MonadLedgerAdapter implements LedgerAdapter {
     const token = this.config.tokenAddress
     if (!token) throw new Error('The settlement token is not configured.')
     const [balance, allowance] = await Promise.all([
-      this.client.readContract({ address: token, abi: testUsdAbi, functionName: 'balanceOf', args: [account] }),
+      this.client.readContract({
+        address: token,
+        abi: testUsdAbi,
+        functionName: 'balanceOf',
+        args: [account],
+      }),
       this.client.readContract({
         address: token,
         abi: testUsdAbi,
@@ -394,10 +397,23 @@ export class MonadLedgerAdapter implements LedgerAdapter {
         verified: verified(opId, recorded.get(id(opId))),
       }))
     for (const op of tx.plan.ops) {
-      if (op.call !== 'requestTranche') continue
-      const tranche = id(op.trancheId)
-      if (events.some((event) => event.eventName === 'TrancheRequested' && event.args.tranche === tranche))
-        records.push({ opId: op.trancheId, call: 'requestTranche', verified: verified(op.trancheId) })
+      if (op.call === 'requestTranche') {
+        const tranche = id(op.trancheId)
+        if (events.some((event) => event.eventName === 'TrancheRequested' && event.args.tranche === tranche))
+          records.push({ opId: op.trancheId, call: 'requestTranche', verified: verified(op.trancheId) })
+      }
+      // An invoice anchored for an outside payment: its own event, no receipt.
+      if (op.call === 'recordEvidence') {
+        const payment = id(op.paymentId)
+        const anchored = events.some(
+          (event) =>
+            event.eventName === 'EvidenceRecorded' &&
+            event.args.opId === payment &&
+            event.args.evidenceHash === op.evidenceHash,
+        )
+        if (anchored)
+          records.push({ opId: op.paymentId, call: 'recordEvidence', verified: verified(op.paymentId) })
+      }
     }
 
     const witnesses = witnessesOf(tx.plan)
@@ -973,6 +989,7 @@ function recordCalls(ops: readonly LedgerOp[]) {
       case 'returnToAgency':
       case 'withdraw':
       case 'withdrawMemberBalance':
+      case 'returnCapital':
         calls.set(op.opId, op.call)
         break
       case 'releaseTranche':
@@ -987,6 +1004,7 @@ function recordCalls(ops: readonly LedgerOp[]) {
         break
       case 'approvePayment':
       case 'pay':
+      case 'payOutside':
         calls.set(op.paymentId, op.call)
         break
     }
@@ -1044,6 +1062,7 @@ const ID_ARG: Record<LedgerEvent, string> = {
   PaymentPending: 'requestId',
   PaymentRejected: 'requestId',
   RequestClosed: 'requestId',
+  EvidenceRecorded: 'opId',
 }
 const PERSON_ARG: Partial<Record<LedgerEvent, string>> = { RoleSet: 'account', AllowanceSet: 'holder' }
 

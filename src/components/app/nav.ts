@@ -34,7 +34,12 @@ export type NavItem<R extends Role = Role> = {
   icon: LucideIcon
   /** Rendered only when the subject can at least view this capability. */
   capability?: Capability
-  badge?: 'approvals' | 'bills' | 'requests' | 'agreements'
+  /**
+   * A count on the item (see `useBadgeCounts`): approvals waiting, Bills' to-dos (open bills,
+   * invoices pending, monthly payments overdue), my requests waiting, agreements to accept,
+   * and a Member's money for purchases overdue (`receipts`).
+   */
+  badge?: 'approvals' | 'bills' | 'requests' | 'agreements' | 'receipts'
 }
 
 export type RoleNavigation<R extends Role = Role> = {
@@ -96,7 +101,7 @@ export const NAVIGATION: { [R in Role]: RoleNavigation<R> } = {
       { key: 'overview', label: 'Overview', path: 'overview', icon: LayoutDashboard },
       { key: 'budget', label: 'My budget', path: 'budget', icon: PieChart },
       { key: 'requests', label: 'Requests', path: 'requests', icon: Layers, badge: 'requests' },
-      { key: 'expenses', label: 'Expenses', path: 'expenses', icon: WalletCards },
+      { key: 'expenses', label: 'Expenses', path: 'expenses', icon: WalletCards, badge: 'receipts' },
       { key: 'payments', label: 'Payments', path: 'payments', icon: ArrowDownLeft },
     ],
     secondary: [
@@ -106,7 +111,7 @@ export const NAVIGATION: { [R in Role]: RoleNavigation<R> } = {
     mobileTabs: [
       { key: 'overview', label: 'Overview', path: 'overview', icon: LayoutDashboard },
       { key: 'request', label: 'Request', path: 'requests/new', icon: Send },
-      { key: 'expenses', label: 'Expenses', path: 'expenses', icon: WalletCards },
+      { key: 'expenses', label: 'Expenses', path: 'expenses', icon: WalletCards, badge: 'receipts' },
       { key: 'payments', label: 'Payments', path: 'payments', icon: ArrowDownLeft },
     ],
   },

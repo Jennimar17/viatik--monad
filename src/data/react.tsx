@@ -57,6 +57,9 @@ export const STATE_KEY = ['viatik', 'state'] as const
 /** Prefix of the ledger view queries. Under `STATE_KEY`, so whatever reloads the state reloads them too. */
 export const LEDGER_KEY = [...STATE_KEY, 'ledger'] as const
 
+/** Prefix of the signed-in person's Viatik account reads (`useLedgerAccount`); not under `STATE_KEY`. */
+export const LEDGER_ACCOUNT_KEY = ['ledger-account'] as const
+
 const DEMO_LEDGER: LedgerView = { settlement: 'demo' }
 
 /** One query cache for the product: the session and the Viatik state both live in it. */
@@ -243,7 +246,7 @@ export function useCommand<N extends CommandName>(
     onSettled: () =>
       Promise.all([
         queryClient.invalidateQueries({ queryKey: STATE_KEY }),
-        queryClient.invalidateQueries({ queryKey: ['ledger-account'] }),
+        queryClient.invalidateQueries({ queryKey: LEDGER_ACCOUNT_KEY }),
       ]),
   })
 
@@ -326,20 +329,37 @@ export function useLedger() {
 }
 
 /**
- * The signed-in person's own account on Monad (TestUSD held and allowed to the
- * ledger). Disabled in the demo, which has no accounts. `refetch` after a
+ * The signed-in person's Viatik account on Monad (TestUSD held and allowed to
+ * the ledger). Disabled in the demo, which has no accounts. `refetch` after a
  * mint or an approval lands.
+ *
+ * `refetchInterval` reads it again on a timer, so TestUSD sent from another
+ * account shows up by itself. Each read costs Monad calls: only Add funds polls
+ * (every 15 s), and React Query pauses it while the tab is hidden.
  */
-export function useLedgerAccount() {
+export function useLedgerAccount(options: { refetchInterval?: number | false } = {}) {
   const { userId, mode, credentials } = useViatik()
   const source = mode ? getDataSource(mode as SessionMode) : null
   const query = useQuery({
-    queryKey: ['ledger-account', mode, userId],
+    queryKey: [...LEDGER_ACCOUNT_KEY, mode, userId],
     queryFn: () => source!.ledgerAccount!(userId as string, { credentials }),
     enabled: Boolean(userId && mode && source?.ledgerAccount),
     staleTime: 5_000,
+    refetchInterval: options.refetchInterval ?? false,
   })
   return { account: query.data, isLoading: query.isLoading, isError: query.isError, refetch: query.refetch }
+}
+
+/**
+ * Reads the Viatik account again on every screen that shows it, e.g. after a
+ * transaction sent outside `useWalletActions` (Developer settings' checks).
+ */
+export function useRefreshLedgerAccount() {
+  const queryClient = useQueryClient()
+  return React.useCallback(
+    () => queryClient.invalidateQueries({ queryKey: LEDGER_ACCOUNT_KEY }),
+    [queryClient],
+  )
 }
 
 /**

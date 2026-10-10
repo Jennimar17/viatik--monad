@@ -125,7 +125,15 @@ export class Tx {
     amount: Cents,
     from: Location,
     to: Location,
-    meta: { portfolioId: Id; agencyId?: Id; agreementId?: Id; refId?: Id; receiptId?: Id },
+    meta: {
+      portfolioId: Id
+      agencyId?: Id
+      agreementId?: Id
+      refId?: Id
+      receiptId?: Id
+      /** A give-back that settles an advance. */
+      settlesPaymentId?: Id
+    },
   ): Movement {
     const movement: Movement = { id: newId('mv'), kind, amount, from, to, createdAt: this.now, ...meta }
     this.state.movements.push(movement)
@@ -305,5 +313,6 @@ function idsIn(state: ViatikState): Set<Id> {
   for (const request of state.requests) for (const item of request.attachments) ids.add(item.id)
   for (const bill of state.bills) ids.add(bill.document.id)
   for (const expense of state.expenses) if (expense.receipt) ids.add(expense.receipt.id)
+  for (const payment of state.payments) if (payment.proof) ids.add(payment.proof.id)
   return ids
 }

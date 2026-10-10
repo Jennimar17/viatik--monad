@@ -76,6 +76,8 @@ export type Agency = {
   timeZone: string
   status: AgencyStatus
   createdAt: ISODate
+  /** Scoped states only: the governing agreement's exception threshold, for viewers who cannot see agreements. */
+  exceptionThreshold?: Cents
 }
 
 // ─── Funding ─────────────────────────────────────────────────────────────────
@@ -287,7 +289,14 @@ export type OperationStatus =
   | 'failed'
   | 'action_required'
 
-export type RequestType = 'funds' | 'vendor_payment' | 'reimbursement' | 'automation'
+/**
+ * - funds: money into the requester's Viatik balance for purchases (an advance they justify with receipts).
+ * - reimbursement: money back into the requester's Viatik balance for something they paid; carries its receipt.
+ * - work: payment for work into the requester's Viatik balance; an Agency Admin always reviews it, and it
+ *   reaches the ledger only when paid (`pay` from the budget).
+ * - vendor_payment / automation: paid to an approved vendor.
+ */
+export type RequestType = 'funds' | 'vendor_payment' | 'reimbursement' | 'work' | 'automation'
 
 export type RequestStatus =
   'needs_approval' | 'approved' | 'processing' | 'completed' | 'rejected' | 'declined' | 'cancelled'
@@ -308,6 +317,8 @@ export type PolicyRuleId =
   | 'agent_active'
   | 'approval_threshold'
   | 'exception_threshold'
+  /** Payment for work: always reviewed by an Agency Admin (non-blocking). */
+  | 'work_review'
 
 export type PolicyCheck = {
   rule: PolicyRuleId
@@ -339,6 +350,10 @@ export type PaymentRequest = {
   category: SpendingCategory
   purpose: string
   attachments: Evidence[]
+  /** Reimbursement: where the requester bought it. */
+  merchant?: string
+  /** Reimbursement: when the requester paid. */
+  spentAt?: ISODate
   status: RequestStatus
   decision: PolicyDecision
   approvedBy?: Id
@@ -352,9 +367,27 @@ export type PaymentRequest = {
 }
 
 export type PaymentType =
-  'team' | 'contractor' | 'reimbursement' | 'vendor' | 'tool' | 'refund' | 'capital_return' | 'automation'
+  | 'team'
+  | 'contractor'
+  | 'reimbursement'
+  | 'vendor'
+  | 'tool'
+  | 'refund'
+  | 'capital_return'
+  | 'automation'
+  /** Money a person requested for purchases: they justify it with receipts or return the rest. */
+  | 'advance'
 
-export type PaymentRecipient = { kind: 'destination'; destinationId: Id } | { kind: 'member'; userId: Id }
+/** Who Viatik pays inside the product: an approved vendor or a person's Viatik balance. */
+export type ViatikRecipient = { kind: 'destination'; destinationId: Id } | { kind: 'member'; userId: Id }
+
+export type PaymentRecipient =
+  | ViatikRecipient
+  /**
+   * Paid outside Viatik by an Agency Admin (a tool, a subscription). `address` is checksummed;
+   * it is absent only for viewers who may not see it (visibility).
+   */
+  | { kind: 'address'; payee: string; address?: string }
 
 export type Payment = {
   id: Id
@@ -375,6 +408,12 @@ export type Payment = {
   billId?: Id
   receiptId?: Id
   batchId?: Id
+  /** Outside payments: the invoice, attached once (with the payment or later). */
+  proof?: Evidence
+  /** What the ledger recorded when the invoice was anchored after the payment (recordEvidence). */
+  proofVerified?: VerifiedDetails
+  /** The monthly reminder this payment answered. */
+  reminderId?: Id
 }
 
 export type BillStatus = 'to_pay' | 'scheduled' | 'paid' | 'reconciled'
@@ -473,6 +512,8 @@ export type ReceiptKind =
   | 'transfer'
   | 'allocation'
   | 'withdrawal'
+  | 'outside_payment'
+  | 'capital_return'
 
 export type Receipt = {
   id: Id
@@ -494,12 +535,15 @@ export type Receipt = {
 // ─── Ledger movements (capital trail) ────────────────────────────────────────
 
 export type Location =
-  /** Outside Viatik. `address` is where a withdrawal went: only its owner sees it in full. */
+  /**
+   * Outside Viatik. `address` is where the money went: a withdrawal's only its owner sees in
+   * full; an outside payment's, the Agency's Admins and its Investors.
+   */
   | { kind: 'external'; label: string; address?: string }
   | { kind: 'vault'; vaultId: Id }
   | { kind: 'account'; accountId: Id }
   | { kind: 'budget'; budgetId: Id }
-  | { kind: 'recipient'; recipient: PaymentRecipient }
+  | { kind: 'recipient'; recipient: ViatikRecipient }
 
 export type MovementKind =
   | 'deposit'
@@ -527,6 +571,8 @@ export type Movement = {
   agreementId?: Id
   refId?: Id
   receiptId?: Id
+  /** A give-back that settles an advance: the advance payment it returns money for. */
+  settlesPaymentId?: Id
   createdAt: ISODate
 }
 
@@ -598,6 +644,14 @@ export type ActivityType =
   | 'portfolio_created'
   | 'funds_withdrawn'
   | 'destination_updated'
+  | 'paid_outside'
+  | 'payment_proof_added'
+  | 'capital_returned'
+  | 'receipt_added'
+  | 'advance_returned'
+  | 'receipts_reminded'
+  | 'reminder_created'
+  | 'reminder_updated'
 
 export type Activity = {
   id: Id
@@ -647,6 +701,35 @@ export type PayoutAddress = {
   createdAt: ISODate
 }
 
+export type ReminderStatus = 'active' | 'paused' | 'archived'
+
+/**
+ * A monthly reminder for an Agency Admin: something Viatik cannot pay directly
+ * (a tool, a subscription) that the Admin pays outside Viatik and documents with
+ * its invoice. Due dates are derived (src/domain/accountability.ts); nothing is
+ * scheduled and nothing reaches the ledger.
+ */
+export type Reminder = {
+  id: Id
+  agencyId: Id
+  /** What to do, e.g. "Pay Claude Teams and upload the invoice". */
+  title: string
+  /** Who gets paid, e.g. "Anthropic". */
+  payee: string
+  /** The usual amount, when known. */
+  amount?: Cents
+  category: SpendingCategory
+  cadence: 'monthly'
+  /** The day of the month it is due (1–28). */
+  dayOfMonth: number
+  /** The account it is usually paid from. */
+  sourceAccountId?: Id
+  status: ReminderStatus
+  createdBy: Id
+  createdAt: ISODate
+  updatedAt: ISODate
+}
+
 export type ViatikState = {
   version: number
   generatedAt: ISODate
@@ -675,4 +758,5 @@ export type ViatikState = {
   activity: Activity[]
   notifications: Notification[]
   payoutAddresses: PayoutAddress[]
+  reminders: Reminder[]
 }

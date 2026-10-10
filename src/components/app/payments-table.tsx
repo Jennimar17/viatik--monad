@@ -7,11 +7,11 @@ import * as React from 'react'
 import { Amount } from '@/components/viatik/amount'
 import { DataTable, type Facet } from '@/components/viatik/data-table'
 import { AgentAvatar, PersonAvatar } from '@/components/viatik/people'
-import { StatusBadge } from '@/components/viatik/status'
+import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useViatikState } from '@/data/react'
 import { paymentTypeLabel } from '@/domain/labels'
-import { budgetName, receiptFor, recipientName } from '@/domain/queries'
-import { operationStatus } from '@/domain/status'
+import { budgetName, isOutsidePayment, receiptFor, recipientName } from '@/domain/queries'
+import { operationStatus, type StatusDescriptor } from '@/domain/status'
 import type { Payment } from '@/domain/types'
 import { formatDate } from '@/lib/format'
 
@@ -25,6 +25,7 @@ export function PaymentsTable({
   pageSize = 10,
   showBudget = true,
   direction = 'out',
+  statusFor,
 }: {
   payments: Payment[]
   facets?: Facet<Payment>[]
@@ -34,6 +35,8 @@ export function PaymentsTable({
   showBudget?: boolean
   /** "in" renders amounts as received (Member payouts). */
   direction?: 'out' | 'in'
+  /** A row's status instead of the operation's, e.g. money for purchases shows how it is justified. */
+  statusFor?: (payment: Payment) => StatusDescriptor | undefined
 }) {
   const { state } = useViatikState()
   const receipts = useReceiptDrawer()
@@ -46,6 +49,8 @@ export function PaymentsTable({
     incoming
       ? (state.agencies.find((a) => a.id === p.agencyId)?.name ?? 'Agency')
       : recipientName(state, p.recipient)
+  // Paid by an Agency Admin outside Viatik: the payee, tagged (the address stays in the receipt).
+  const outside = (p: Payment) => !incoming && isOutsidePayment(p)
   const amount = (p: Payment) => (
     <Amount value={p.amount} size="sm" signed={incoming} tone={incoming ? 'positive' : 'default'} />
   )
@@ -74,7 +79,10 @@ export function PaymentsTable({
               <PersonAvatar name={name} size="sm" />
             )}
             <span className="flex min-w-0 flex-col">
-              <span className="truncate font-medium">{name}</span>
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="truncate font-medium">{name}</span>
+                {outside(p) ? <Tag className="shrink-0">Outside Viatik</Tag> : null}
+              </span>
               <span className="truncate text-xs text-subtle">{p.memo}</span>
             </span>
           </span>
@@ -110,7 +118,9 @@ export function PaymentsTable({
     {
       id: 'status',
       header: 'Status',
-      cell: ({ row }) => <StatusBadge status={operationStatus[row.original.status]} />,
+      cell: ({ row }) => (
+        <StatusBadge status={statusFor?.(row.original) ?? operationStatus[row.original.status]} />
+      ),
     },
     {
       id: 'receipt',
@@ -144,14 +154,18 @@ export function PaymentsTable({
         empty={empty}
         caption="Payments"
         searchPlaceholder="Search payments"
-        searchText={(p) => `${recipientName(state, p.recipient)} ${p.memo} ${paymentTypeLabel[p.type]}`}
+        searchText={(p) =>
+          `${recipientName(state, p.recipient)} ${p.memo} ${paymentTypeLabel[p.type]}${outside(p) ? ' Outside Viatik' : ''}`
+        }
         onRowClick={(p) => receipts.show(receiptFor(state, p.receiptId))}
         renderMobile={(p) => (
           <div className="flex items-center justify-between gap-3">
             <span className="flex min-w-0 flex-col gap-0.5">
               <span className="truncate text-sm font-medium">{incoming ? p.memo : counterparty(p)}</span>
               <span className="truncate text-xs text-subtle">
-                {formatDate(p.completedAt ?? p.scheduledFor)} · {operationStatus[p.status].label}
+                {formatDate(p.completedAt ?? p.scheduledFor)} ·{' '}
+                {(statusFor?.(p) ?? operationStatus[p.status]).label}
+                {outside(p) ? ' · Outside Viatik' : ''}
               </span>
             </span>
             {amount(p)}

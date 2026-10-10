@@ -1,4 +1,4 @@
-import { BaseError, decodeErrorResult, type Hex } from 'viem'
+import { BaseError, decodeErrorResult, zeroHash, type Hex } from 'viem'
 
 import { formatUsd, type Cents } from '@/domain/money'
 import { testUsdAbi } from '@/web3/abi/test-usd'
@@ -16,12 +16,16 @@ import { unitsToCents } from './units'
 
 const usd = (units: bigint) => formatUsd(unitsToCents(units).cents as Cents, { withCode: true })
 
-/** `LimitRule` in the contract. */
+/**
+ * `LimitRule` in the contract. The exception threshold only reverts a payment an
+ * Admin makes (`pay`, `payOutside`, a schedule), which has no Investor path, so its message
+ * says only the limit (the mock words it the same way).
+ */
 const LIMIT_MESSAGE: Record<number, (limit: bigint) => string> = {
   0: (limit) => `The amount exceeds the per-operation limit of ${usd(limit)}.`,
   1: (limit) => `Funding would exceed what is left of the commitment (${usd(limit)}).`,
   2: () => 'Tranches must add up to the commitment.',
-  3: (limit) => `Above the Investor’s exception threshold of ${usd(limit)}. The Investor decides.`,
+  3: (limit) => `Above the Investor's exception threshold of ${usd(limit)}.`,
   4: (limit) => `A single deposit can be up to ${usd(limit)}.`,
 }
 
@@ -41,7 +45,13 @@ function fromContractError(name: string, args: readonly unknown[]): LedgerError 
         LIMIT_MESSAGE[Number(args[0])]?.(args[1] as bigint) ?? 'The amount is above a limit of the rules.',
       )
     case 'DestinationNotAllowed':
-      return error('destination_not_allowed', 'This payment destination is not approved for this budget.')
+      // No destination named: `payOutside` from a budget limited to approved vendors.
+      return args[1] === zeroHash
+        ? error(
+            'destination_not_allowed',
+            'This budget only pays approved vendors. Pay outside Viatik from an account instead.',
+          )
+        : error('destination_not_allowed', 'This payment destination is not approved for this budget.')
     case 'BudgetPaused':
       return error('budget_paused', 'This budget is paused. New payments are on hold.')
     case 'AgreementPaused':

@@ -1,4 +1,4 @@
-import { cents, clampToZero, sum } from './money'
+import { cents, clampToZero, sum, type Cents } from './money'
 import { budgetUsage, committedAt } from './selectors'
 import type {
   Actor,
@@ -7,9 +7,11 @@ import type {
   Evidence,
   FundingAgreement,
   Id,
+  Payment,
   PaymentRecipient,
   PaymentRequest,
   RequestDestination,
+  Vault,
   ViatikState,
 } from './types'
 
@@ -45,6 +47,7 @@ export function findEvidence(state: ViatikState, evidenceId: Id): Evidence | und
     const found = request.attachments.find((e) => e.id === evidenceId)
     if (found) return found
   }
+  for (const payment of state.payments) if (payment.proof?.id === evidenceId) return payment.proof
   return undefined
 }
 
@@ -68,9 +71,18 @@ export function holderName(state: ViatikState, holder: AllowanceHolder): string 
 }
 
 export function recipientName(state: ViatikState, recipient: PaymentRecipient | RequestDestination): string {
+  if (recipient.kind === 'address') return recipient.payee
   return recipient.kind === 'member'
     ? userName(state, recipient.userId)
     : destinationName(state, recipient.destinationId)
+}
+
+/** A payment an Agency Admin made outside Viatik, to an address. */
+export const isOutsidePayment = (payment: Payment): boolean => payment.recipient.kind === 'address'
+
+/** A Portfolio's main vault: where deposits land and returned capital goes back. */
+export function portfolioVaultOf(state: ViatikState, portfolioId: Id): Vault | undefined {
+  return state.vaults.find((v) => v.portfolioId === portfolioId && v.kind === 'portfolio')
 }
 
 export function activeAgreement(state: ViatikState, agencyId: Id): FundingAgreement | undefined {
@@ -103,10 +115,32 @@ export function governingAgreement(state: ViatikState, agencyId: Id): FundingAgr
   )
 }
 
-/** Above the agreement's exception threshold → the Investor decides. */
+/**
+ * The exception threshold that governs an Agency's payments: its governing
+ * agreement's. A Member's scoped state has no agreements, so the Agency carries
+ * the threshold there (`scopeStateForUser`) and their previews reach the same
+ * decision as the server. Undefined when no agreement governs the Agency.
+ */
+export function exceptionThresholdOf(state: ViatikState, agencyId: Id): Cents | undefined {
+  return (
+    governingAgreement(state, agencyId)?.spendingPolicy.exceptionThreshold ??
+    state.agencies.find((a) => a.id === agencyId)?.exceptionThreshold
+  )
+}
+
+/** The request is above its agreement's exception threshold (whatever its type). */
+export function aboveExceptionThreshold(state: ViatikState, request: PaymentRequest): boolean {
+  const threshold = exceptionThresholdOf(state, request.agencyId)
+  return threshold !== undefined && request.amount > threshold
+}
+
+/**
+ * Above the agreement's exception threshold → the Investor decides. Never for
+ * payment for work: an Agency Admin always decides it (above the threshold it
+ * cannot be paid, even if the threshold was lowered after it was sent).
+ */
 export function isException(state: ViatikState, request: PaymentRequest): boolean {
-  const agreement = governingAgreement(state, request.agencyId)
-  return agreement ? request.amount > agreement.spendingPolicy.exceptionThreshold : false
+  return request.type !== 'work' && aboveExceptionThreshold(state, request)
 }
 
 export function investorApprovals(state: ViatikState, portfolioId: Id) {

@@ -24,8 +24,12 @@ import { requireUser } from './user'
 
 const noStore = { 'cache-control': 'no-store' }
 
-/** What one press of "Get test funds" mints: 100,000 TestUSD. */
-const TEST_FUNDS_CENTS = 10_000_000
+/**
+ * What one press of "Get test funds" mints: 1,000,000 TestUSD, exactly TestUSD.MAX_MINT
+ * (contracts/src/TestUSD.sol:13); more in one call reverts. The client mints
+ * `testFunds * 10_000` units, so never raise this above 100_000_000.
+ */
+const TEST_FUNDS_CENTS = 100_000_000
 const ACCOUNT_READ_MS = 5_000
 
 /** Token units in cents; an unlimited approval is shown as the largest safe number. */
@@ -239,7 +243,11 @@ export const ledgerView = new Hono<AppEnv>()
       return c.json(account, 200, noStore)
     } catch (error) {
       console.error(`[api] ${c.get('requestId')} account read: ${decodeLedgerError(error).raw}`)
-      throw new ApiError(503, 'network_unavailable', 'Monad could not be read right now. Try again in a moment.')
+      throw new ApiError(
+        503,
+        'network_unavailable',
+        'Monad could not be read right now. Try again in a moment.',
+      )
     }
   })
   .post('/refresh', requireAccount, requireUser, async (c) => {

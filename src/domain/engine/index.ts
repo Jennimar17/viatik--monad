@@ -2,6 +2,7 @@ import type { ViatikState } from '../types'
 import { execute, type CommandContext, type Tx } from './core'
 import * as funding from './funding'
 import * as operations from './operations'
+import * as outside from './outside'
 import * as people from './people'
 
 /**
@@ -49,6 +50,12 @@ export const commands = {
   removePayoutAddress: operations.removePayoutAddress,
   updateDestination: operations.updateDestination,
   setDestinationStatus: operations.setDestinationStatus,
+  payOutside: outside.payOutside,
+  addPaymentProof: outside.addPaymentProof,
+  returnToInvestor: outside.returnToInvestor,
+  remindReceipts: outside.remindReceipts,
+  createReminder: outside.createReminder,
+  setReminderStatus: outside.setReminderStatus,
   invite: people.invite,
   acceptInvitation: people.acceptInvitation,
   cancelInvitation: people.cancelInvitation,
@@ -76,7 +83,7 @@ export function runCommand<N extends CommandName>(
 }
 
 export { DomainError, execute, Tx, type CommandContext, type DomainErrorCode, type VerifyInput } from './core'
-export { previewPolicy } from './operations'
+export { previewPolicy, workPaymentId } from './operations'
 export type {
   AllowanceDraft,
   CreateBudgetInput,
@@ -91,4 +98,12 @@ export type {
   TrancheDraft,
   EvidenceDraft,
 } from './funding'
+export type {
+  AddPaymentProofInput,
+  CreateReminderInput,
+  PayOutsideInput,
+  RemindReceiptsInput,
+  ReturnToInvestorInput,
+  SetReminderStatusInput,
+} from './outside'
 export type { CreateAgentInput } from './people'

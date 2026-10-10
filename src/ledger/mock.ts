@@ -1,3 +1,5 @@
+import { isAddress, isAddressEqual, zeroAddress, zeroHash } from 'viem'
+
 import { pseudoHash } from '@/domain/ids'
 import { formatUsd, type Cents } from '@/domain/money'
 import type { Id, LedgerReason, Location, ViatikState } from '@/domain/types'
@@ -37,6 +39,9 @@ const usd = (value: number) => formatUsd(value as Cents, { withCode: true })
 
 /** TestUSD mints at most 1,000,000 USD per call; the ledger refuses larger deposits. */
 const MAX_DEPOSIT = 100_000_000
+
+/** `DestinationNotAllowed(budget, 0)` from `payOutside`: a vendor list names vendors, never an address. */
+const ONLY_VENDORS = 'This budget only pays approved vendors. Pay outside Viatik from an account instead.'
 
 type Options = {
   /** Simulated confirmation time of the one transaction. Monad finalizes in ~0.8 s; the mock stays close. */
@@ -80,13 +85,10 @@ export class MockLedgerAdapter implements LedgerAdapter {
     }
 
     // Simulate first, as the Monad adapter does: a revert sends nothing.
-    let run: Run
-    try {
-      run = new LedgerView(before).run(plan, this.now())
-    } catch (error) {
-      if (!(error instanceof Revert)) throw error
+    const run = simulateLedger(plan, before, this.now())
+    if (run.status === 'reverted') {
       emit('failed')
-      return { status: 'failed', records: [], error: error.error }
+      return { status: 'failed', records: [], error: run.error }
     }
 
     emit('waiting_for_confirmation')
@@ -95,7 +97,7 @@ export class MockLedgerAdapter implements LedgerAdapter {
     await sleep((this.options.latencyMs ?? 600) / 2)
 
     // A rejection the ledger recorded is a successful transaction that still answers no.
-    if (run.rejected) {
+    if (run.status === 'rejected') {
       emit('failed')
       return {
         status: 'failed',
@@ -113,12 +115,39 @@ export class MockLedgerAdapter implements LedgerAdapter {
   }
 }
 
+/** What the ledger holds after a run: every balance it keeps, and the outside payments it knows. */
+export type LedgerStorage = Pick<LedgerSnapshot, 'places' | 'members' | 'outside'>
+
+/**
+ * A plan run on the mock ledger: what it recorded (`rejected` when it recorded a
+ * payment request's rejection) and its storage afterwards, or the revert.
+ */
+export type LedgerSimulation =
+  | ({ status: 'completed' | 'rejected'; records: LedgerRecord[] } & LedgerStorage)
+  | { status: 'reverted'; error: LedgerError }
+
+/**
+ * Runs a plan the way `settle` does, over the state the command ran on, without
+ * waiting. Besides the records it returns the ledger's storage afterwards, so a
+ * check can compare the ledger's own bookkeeping with the state the command
+ * produced (`ledgerSnapshot(after)`). A revert comes back as `reverted`.
+ */
+export function simulateLedger(plan: SettlementPlan, before: ViatikState, now: string): LedgerSimulation {
+  try {
+    const { rejected, ...run } = new LedgerView(before).run(plan, now)
+    return { status: rejected ? 'rejected' : 'completed', ...run }
+  } catch (error) {
+    if (!(error instanceof Revert)) throw error
+    return { status: 'reverted', error: error.error }
+  }
+}
+
 // ─── The contract, over the product state ───────────────────────────────────
 
 /** What a money operation leaves in the ledger's receipt, besides its id. */
 type Written = Omit<PlannedRecord, 'opId'>
 
-type Run = { records: LedgerRecord[]; rejected: boolean }
+type Run = { records: LedgerRecord[]; rejected: boolean } & LedgerStorage
 
 class Revert extends Error {
   constructor(readonly error: LedgerError) {
@@ -150,6 +179,7 @@ class LedgerView {
   private readonly allowances: LedgerSnapshot['allowances']
   private readonly requests: LedgerSnapshot['requests']
   private readonly members: LedgerSnapshot['members']
+  private readonly outside: LedgerSnapshot['outside']
   private readonly processed: LedgerSnapshot['processed']
 
   private actor: Id | null = null
@@ -174,6 +204,7 @@ class LedgerView {
     this.allowances = snapshot.allowances
     this.requests = snapshot.requests
     this.members = snapshot.members
+    this.outside = snapshot.outside
     this.processed = snapshot.processed
   }
 
@@ -193,7 +224,13 @@ class LedgerView {
         'rule_drift',
         'The ledger would record this operation differently from the app. Nothing was moved.',
       )
-    return { records: this.records, rejected: this.rejected }
+    return {
+      records: this.records,
+      rejected: this.rejected,
+      places: this.places,
+      members: this.members,
+      outside: this.outside,
+    }
   }
 
   private apply(op: LedgerOp, plan: SettlementPlan) {
@@ -511,7 +548,7 @@ class LedgerView {
         const budget = this.budgetOf(op.budgetId)
         this.requireHolder(op.budgetId, budget, requester)
         if (op.memberUserId && (op.memberUserId !== requester || op.destinationId))
-          revert('not_authorized', 'A reimbursement can only pay the person who asks.')
+          revert('not_authorized', 'A request can only pay the Viatik balance of the person who asks.')
         if (op.amount === 0) revert('invalid_state', 'Enter an amount.')
         if (this.requests.has(op.requestId))
           revert('already_processed', 'This request was already submitted.')
@@ -723,6 +760,77 @@ class LedgerView {
         )
         return
       }
+      case 'payOutside': {
+        this.claim(op.paymentId)
+        const source = this.places.get(op.sourceId)
+        if (!source || (source.kind !== 'account' && source.kind !== 'budget'))
+          revert('not_registered', 'The source of this payment is not registered.')
+        const agency = source.scope
+        this.requireRole(agency, 'admin')
+        // The contract also refuses its own address and the token's, which the mock cannot know.
+        if (op.amount === 0 || !isAddress(op.to, { strict: false }) || isAddressEqual(op.to, zeroAddress))
+          revert('invalid_state', 'Pay an amount to a valid address.')
+        if (source.kind === 'budget') {
+          const budget = this.budgetOf(op.sourceId)
+          if (budget.paused) revert('budget_paused', 'This budget is paused.')
+          if (op.amount > budget.perOperationLimit)
+            revert(
+              'limit_exceeded',
+              `The amount exceeds the per-operation limit of ${usd(budget.perOperationLimit)}.`,
+            )
+          // `anyDestination` is false: its list names vendors, and an address is not one of them.
+          if (budget.destinations.size > 0) revert('destination_not_allowed', ONLY_VENDORS)
+        }
+        const threshold = this.exceptionThreshold(agency)
+        if (op.amount > threshold)
+          revert('limit_exceeded', `Above the Investor's exception threshold of ${usd(threshold)}.`)
+        this.payOut(op.sourceId, agency, null, op.amount)
+        this.outside.set(`${agency}|${op.paymentId}`, { evidenceHash: anchored(op.evidenceHash) })
+        this.record(
+          op.paymentId,
+          'payOutside',
+          'Paid outside Viatik · within the exception threshold',
+          written('outside_payment', op.amount, { id: op.sourceId }, { address: op.to }, op.evidenceHash),
+        )
+        return
+      }
+      case 'recordEvidence': {
+        // No claim: the invoice is anchored once per payment, whoever sends it.
+        this.requireRole(op.agencyId, 'admin')
+        const proof = this.outside.get(`${op.agencyId}|${op.paymentId}`)
+        if (!proof) revert('not_registered', 'The ledger has no payment outside Viatik with this id.')
+        if (!anchored(op.evidenceHash)) revert('invalid_state', 'The invoice has no fingerprint.')
+        if (proof.evidenceHash)
+          revert('already_processed', 'This payment already has its invoice on the ledger.')
+        proof.evidenceHash = op.evidenceHash
+        this.confirm(op.paymentId, 'recordEvidence', 'Invoice fingerprinted · anchored once')
+        return
+      }
+      case 'returnCapital': {
+        this.claim(op.opId)
+        const agency = this.placeOf(op.fromAccountId, 'account').scope
+        this.requireRole(agency, 'admin')
+        if (this.placeOf(op.portfolioVaultId, 'portfolio_vault').scope !== this.portfolioOf(agency))
+          revert('invalid_state', 'Capital goes back to the Portfolio Vault of this Agency’s portfolio.')
+        if (op.agreementId && this.agreements.get(op.agreementId)?.agency !== agency)
+          revert('invalid_state', 'This agreement belongs to another Agency.')
+        if (op.amount === 0) revert('invalid_state', 'Enter an amount.')
+        // No exception threshold: returning capital is never an exception, even while the agreement is paused.
+        this.move(op.fromAccountId, op.portfolioVaultId, op.amount)
+        this.record(
+          op.opId,
+          'returnCapital',
+          'Capital returns go to the Portfolio Vault',
+          written(
+            'capital_return',
+            op.amount,
+            { id: op.fromAccountId },
+            { id: op.portfolioVaultId },
+            op.evidenceHash,
+          ),
+        )
+        return
+      }
     }
   }
 
@@ -909,7 +1017,7 @@ class LedgerView {
     })
   }
 
-  /** An operation the ledger confirms with its own event, without a receipt (a tranche request). */
+  /** An operation the ledger confirms with its own event, without a receipt (a tranche request, an invoice). */
   private confirm(opId: Id, call: LedgerCall, contractPolicy: string) {
     const verified = this.verified(`${opId}:${call}`, contractPolicy)
     delete verified.receiptHash
@@ -964,6 +1072,11 @@ function sameEnd(a: RecordEnd, b: RecordEnd) {
   if (a === null || b === null) return a === b
   if ('address' in a) return 'address' in b && a.address.toLowerCase() === b.address.toLowerCase()
   return 'member' in a ? 'member' in b && a.member === b.member : 'id' in b && a.id === b.id
+}
+
+/** A fingerprint as the contract stores it: zero is none. */
+function anchored(hash: Hash | null): Hash | null {
+  return hash && hash !== zeroHash ? hash : null
 }
 
 function allowed(budget: BudgetView, destinationId: Id | null) {

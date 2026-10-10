@@ -1,13 +1,15 @@
 'use client'
 
-import { Pencil, UserMinus } from 'lucide-react'
+import { Pencil, ReceiptText, UserMinus } from 'lucide-react'
 import Link from '@/components/viatik/link'
 import { useParams, useRouter } from 'next/navigation'
 import * as React from 'react'
 
+import { AdvanceRows, RemindButton } from '@/components/app/accountability-parts'
 import { ButtonLink } from '@/components/app/button-link'
 import { FormField } from '@/components/app/form-controls'
 import { PaymentsTable } from '@/components/app/payments-table'
+import { requestRecipientLabel } from '@/components/app/request-parts'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
 import { Button } from '@/components/ui/button'
@@ -21,12 +23,18 @@ import { KeyValueList, PageHeader, Panel } from '@/components/viatik/layout'
 import { PersonAvatar } from '@/components/viatik/people'
 import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useCommand, useViatikState } from '@/data/react'
+import {
+  accountabilityByPerson,
+  advancesOf,
+  JUSTIFY_WITHIN_DAYS,
+  lastReminded,
+  missingReceipts,
+} from '@/domain/accountability'
 import { budgetPeriodUnit } from '@/domain/labels'
-import { formatUsd, type Cents } from '@/domain/money'
+import { cents, formatUsd, type Cents } from '@/domain/money'
 import { roleLabel } from '@/domain/permissions'
-import { recipientName } from '@/domain/queries'
-import { holderSpentInPeriod, spendByMonth } from '@/domain/selectors'
-import { requestStatus } from '@/domain/status'
+import { holderSpentInPeriod, memberHeld, spendByMonth } from '@/domain/selectors'
+import { requestStatusFor } from '@/domain/status'
 import { formatDate, formatRelative, pluralize } from '@/lib/format'
 
 export default function MemberDetailPage() {
@@ -89,6 +97,11 @@ export default function MemberDetailPage() {
   const editingBudget = state.budgets.find((b) => b.id === editing?.budgetId)
   const overLimit = Boolean(amount && editingBudget && amount > editingBudget.periodLimit)
   const firstName = user.name.split(' ')[0] ?? user.name
+  // Money for purchases they received, and what is still to justify.
+  const advances = advancesOf(state, { agencyId, userId: memberId }, now)
+  const owing = accountabilityByPerson(state, agencyId, now).find((p) => p.userId === memberId)
+  const vendorReceipts = missingReceipts(state, { agencyId, userId: memberId }).length
+  const remindedAt = lastReminded(state, agencyId, memberId)
 
   return (
     <div className="flex flex-col gap-8">
@@ -206,10 +219,56 @@ export default function MemberDetailPage() {
                 label: 'Payments received',
                 value: String(payouts.filter((p) => p.status === 'completed').length),
               },
+              {
+                label: 'Viatik balance',
+                hint: 'Money they hold in the Agency',
+                value: <Amount value={cents(memberHeld(state, agencyId, memberId))} size="sm" />,
+              },
+              {
+                label: 'Last reminded',
+                value: remindedAt ? formatRelative(remindedAt, now) : 'Never',
+              },
             ]}
           />
         </Panel>
       </div>
+
+      <Panel
+        title="Money to justify"
+        description={
+          owing && owing.pending > 0
+            ? `${formatUsd(owing.pending, { withCode: true })} pending${owing.overdue > 0 ? ` · ${formatUsd(owing.overdue, { withCode: true })} overdue` : ', nothing overdue'}`
+            : `Money for purchases is justified with receipts within ${JUSTIFY_WITHIN_DAYS} days.`
+        }
+        // On phones the button goes under the list: beside the title it squeezes the text.
+        action={
+          owing ? <RemindButton agencyId={agencyId} person={owing} className="max-sm:hidden" /> : undefined
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <AdvanceRows
+            advances={advances}
+            showReceipts
+            empty={
+              <EmptyState
+                compact
+                icon={<ReceiptText />}
+                title="Nothing to justify"
+                description={`Money for purchases ${firstName} receives shows here until its receipts, or what they give back, cover it.`}
+              />
+            }
+          />
+          {vendorReceipts > 0 ? (
+            <p className="rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-sm text-pretty">
+              {vendorReceipts === 1
+                ? `1 expense from a vendor payment still needs its receipt.`
+                : `${vendorReceipts} expenses from vendor payments still need their receipt.`}{' '}
+              {firstName} adds {vendorReceipts === 1 ? 'it' : 'them'} from Expenses.
+            </p>
+          ) : null}
+          {owing ? <RemindButton agencyId={agencyId} person={owing} className="w-fit sm:hidden" /> : null}
+        </div>
+      </Panel>
 
       <Panel
         title="Spending through requests"
@@ -248,12 +307,12 @@ export default function MemberDetailPage() {
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-sm font-medium">{r.purpose}</span>
                     <span className="truncate text-xs text-subtle">
-                      {recipientName(state, r.destination)} · {formatRelative(r.createdAt, now)}
+                      {requestRecipientLabel(state, r, userId)} · {formatRelative(r.createdAt, now)}
                     </span>
                   </span>
                   <span className="flex flex-col items-end gap-1">
                     <Amount value={r.amount} size="sm" />
-                    <StatusBadge status={requestStatus[r.status]} />
+                    <StatusBadge status={requestStatusFor(r)} />
                   </span>
                 </li>
               ))}

@@ -59,6 +59,14 @@ const GROUP_OF: Record<ActivityType, Group> = {
   portfolio_created: 'funding',
   funds_withdrawn: 'payments',
   destination_updated: 'payments',
+  paid_outside: 'payments',
+  payment_proof_added: 'bills',
+  capital_returned: 'funding',
+  receipt_added: 'bills',
+  advance_returned: 'payments',
+  receipts_reminded: 'bills',
+  reminder_created: 'bills',
+  reminder_updated: 'bills',
 }
 
 const GROUP_OPTIONS = [

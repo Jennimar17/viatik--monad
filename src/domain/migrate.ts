@@ -7,5 +7,6 @@ import type { ViatikState } from './types'
  */
 export function upgradeState(state: ViatikState): ViatikState {
   state.payoutAddresses ??= []
+  state.reminders ??= []
   return state
 }

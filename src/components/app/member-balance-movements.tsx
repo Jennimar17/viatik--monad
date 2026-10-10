@@ -61,7 +61,7 @@ function describe(
       incoming: false,
       icon: ArrowUpRight,
       title: sameAddress(address, ownAddress)
-        ? 'Sent to my account'
+        ? 'Sent to my Viatik account'
         : saved
           ? `Sent to ${saved.label}`
           : 'Sent to an address',
@@ -69,12 +69,21 @@ function describe(
     }
   }
   if (movement.kind === 'transfer') {
+    // A return of money for purchases names what it was for; other money names where it went.
+    const settles = movement.settlesPaymentId
+      ? state.payments.find((p) => p.id === movement.settlesPaymentId)
+      : undefined
+    const purpose = settles
+      ? (state.requests.find((r) => r.id === settles.requestId)?.purpose ?? settles.memo)
+      : undefined
     return {
       movement,
       incoming: false,
       icon: Undo2,
       title: `Returned to ${agencyName}`,
-      detail: receiptFor(state, movement.receiptId)?.toLabel ?? 'Unused funds',
+      detail: purpose
+        ? `Unused from “${purpose}”`
+        : (receiptFor(state, movement.receiptId)?.toLabel ?? 'Unused funds'),
     }
   }
   return {

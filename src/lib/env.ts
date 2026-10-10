@@ -70,8 +70,6 @@ const serverEnvSchema = z.object({
   VIATIK_LEDGER_ADDRESS: address.optional(),
   /** Settlement token the ledger was deployed with (TestUSD on testnet). Must equal the ledger's TOKEN(). */
   TEST_USD_ADDRESS: address.optional(),
-  /** Block of the ledger's deployment: the earliest block worth scanning for its events. */
-  LEDGER_DEPLOY_BLOCK: z.coerce.bigint().nonnegative().optional(),
   /** Signs role permits and runs the genesis. Server only; on testnet, the deployer's key. */
   LEDGER_REGISTRAR_PRIVATE_KEY: z
     .string()

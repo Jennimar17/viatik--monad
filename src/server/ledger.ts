@@ -32,7 +32,6 @@ export function getMonadLedger(): MonadLedgerAdapter | null {
           rpcUrl: env.MONAD_RPC_URL,
           ledgerAddress: env.VIATIK_LEDGER_ADDRESS,
           tokenAddress: env.TEST_USD_ADDRESS,
-          deployBlock: env.LEDGER_DEPLOY_BLOCK,
           registrar: env.LEDGER_REGISTRAR_PRIVATE_KEY
             ? privateKeyToAccount(env.LEDGER_REGISTRAR_PRIVATE_KEY)
             : undefined,

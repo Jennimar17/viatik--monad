@@ -1,6 +1,16 @@
 'use client'
 
-import { Building2, FileText, type LucideIcon, PieChart, Plus, Send, UserRound } from 'lucide-react'
+import {
+  ArrowUpRight,
+  Building2,
+  CalendarClock,
+  FileText,
+  type LucideIcon,
+  PieChart,
+  Plus,
+  Send,
+  UserRound,
+} from 'lucide-react'
 import type { Route } from 'next'
 import { useRouter } from 'next/navigation'
 
@@ -19,8 +29,7 @@ import { formatUsd } from '@/domain/money'
 import { destinationName, memberBudgets, recipientName, userName } from '@/domain/queries'
 
 import { NAVIGATION } from '../nav'
-import { useHref, usePermissions, useRole } from '../role-context'
-import type { ScreenPath } from '../screens'
+import { useHref, usePermissions, useRole, type ScreenTarget } from '../role-context'
 
 /** ⌘K: jump to any screen of the current role or find its records. */
 export function CommandMenu({
@@ -46,7 +55,8 @@ export function CommandMenu({
   const inScope = <T extends { agencyId: string }>(items: T[]) =>
     agencyId ? items.filter((i) => i.agencyId === agencyId) : items
 
-  const actions: { label: string; path: ScreenPath; icon: LucideIcon }[] = []
+  // A screen, or a screen with a query that opens a tab or a sheet on it (see use-tab-param.ts).
+  const actions: { label: string; path: ScreenTarget; icon: LucideIcon }[] = []
   if (role === 'investor') {
     actions.push({ label: 'Create agreement', path: 'funding/new', icon: Plus })
     actions.push({ label: 'Create Agency', path: 'agencies/new', icon: Plus })
@@ -56,11 +66,21 @@ export function CommandMenu({
     if (can('create_budget')) actions.push({ label: 'Create budget', path: 'budgets/new', icon: Plus })
     if (can('send_payment')) actions.push({ label: 'Send payment', path: 'payments/new', icon: Send })
     if (can('manage_bills')) actions.push({ label: 'Add bill', path: 'bills/new', icon: Plus })
+    const payable = state.accounts.some((a) => a.agencyId === agencyId && a.status === 'active')
+    if (can('pay_outside') && payable)
+      actions.push({ label: 'Pay outside Viatik', path: 'accounts/pay-outside', icon: ArrowUpRight })
+    // Bills opens its Monthly tab with the new monthly payment sheet (`useOpenParam('new', 'monthly')`).
+    if (can('manage_reminders') && canView('manage_bills'))
+      actions.push({
+        label: 'New monthly payment',
+        path: 'bills?tab=monthly&new=monthly',
+        icon: CalendarClock,
+      })
     actions.push({ label: 'Request funding', path: 'funding', icon: Plus })
   }
   if (role === 'member') {
     actions.push({ label: 'New request', path: 'requests/new', icon: Send })
-    actions.push({ label: 'Add expense', path: 'expenses/new', icon: Plus })
+    actions.push({ label: 'Add receipt', path: 'expenses/new', icon: Plus })
   }
 
   const agencies = role === 'investor' ? state.agencies.filter((a) => a.portfolioId === portfolioId) : []

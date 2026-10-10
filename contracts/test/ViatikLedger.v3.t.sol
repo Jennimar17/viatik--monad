@@ -375,6 +375,37 @@ contract ViatikLedgerV3Test is LedgerFixture {
         );
     }
 
+    /// The same literal vectors are pinned in the app's smoke (scripts/smoke/settlement.ts), which
+    /// computes them with `receiptHashOf` under the namespace "vector": opId = keccak256("vector:op"),
+    /// from = keccak256("vector:from"). Amounts are whole cents (1 cent = 10,000 units), so the app can
+    /// express them. If either side changes the receipt format, one of the two stops matching.
+    function test_ReceiptHashVectorsMatchTheApp() public view {
+        bytes32 opId = keccak256("vector:op");
+        bytes32 from = keccak256("vector:from");
+        bytes32 toAddress = bytes32(uint256(uint160(address(0xBEEF))));
+        bytes32 toVault = keccak256("vector:to");
+        // An outside payment of 123,456 cents to 0xBEEF, with its invoice.
+        assertEq(
+            ledger.receiptHash(opId, ViatikLedger.ReceiptKind.OutsidePayment, 1_234_560_000, from, toAddress, INVOICE),
+            0x7b03f76c2f04595ab0ef89b901aee5e2ef55cdab8bf4a0487bec61969097b728
+        );
+        // The same payment without an invoice.
+        assertEq(
+            ledger.receiptHash(opId, ViatikLedger.ReceiptKind.OutsidePayment, 1_234_560_000, from, toAddress, NONE),
+            0xac41098eb6048e754f545530e257bab4b2825c2cf0b7c8298e6a829853a60dfb
+        );
+        // A capital return of 98,765 cents from an account to a Portfolio Vault.
+        assertEq(
+            ledger.receiptHash(opId, ViatikLedger.ReceiptKind.CapitalReturn, 987_650_000, from, toVault, NONE),
+            0x0307a06e88d043740bdeebcf56fa6a5beb6ba365c3401620baf462d47c2b900f
+        );
+        // A withdrawal with the outside payment's ends: only the kind differs.
+        assertEq(
+            ledger.receiptHash(opId, ViatikLedger.ReceiptKind.Withdrawal, 1_234_560_000, from, toAddress, NONE),
+            0x1222343280ac359833494b4db3dd16b1dccb5f2bf928030a388dd01c109953f0
+        );
+    }
+
     // ─── The whole thing ────────────────────────────────────────────────────
 
     /// Fund, release, pay a tool outside Viatik with its invoice, return what is left.

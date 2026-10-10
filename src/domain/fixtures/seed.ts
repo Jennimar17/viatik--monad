@@ -1,7 +1,8 @@
 import { evidenceSetHash } from '../evidence'
 import { budgetTemplate } from '../labels'
 import { cents, usd, type Cents } from '../money'
-import { evaluatePolicy } from '../policy'
+import { evaluatePolicy, paysRequester, withAgreementRules } from '../policy'
+import { exceptionThresholdOf } from '../queries'
 import { agentSpentToday, budgetUsage, holderSpentInPeriod } from '../selectors'
 import type {
   Account,
@@ -15,6 +16,7 @@ import type {
   PaymentDestination,
   PaymentRequest,
   PaymentType,
+  RequestDestination,
   RequestType,
   SpendingCategory,
   User,
@@ -1020,9 +1022,13 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     requestId?: Id
     billId?: Id
     silent?: boolean
+    /** How the recipient reads on the receipt and in activity, when not just its name (a request's). */
+    labels?: { receipt: string; activity: string }
+    policyLabel?: string
   }) => {
     const paymentId = b.id('pay')
-    const recipientLabel = input.to.kind === 'member' ? nameOf(input.to.id) : destinationName(input.to.id)
+    const recipientName = input.to.kind === 'member' ? nameOf(input.to.id) : destinationName(input.to.id)
+    const labels = input.labels ?? { receipt: recipientName, activity: recipientName }
     const bud = input.fromBudget ? budgetById(input.fromBudget) : undefined
     const sourceName = s.accounts.find((a) => a.id === input.fromAccount)?.name ?? 'Account'
     const actorKey =
@@ -1035,9 +1041,10 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
       kind: 'payment',
       amount: input.amount,
       fromLabel: bud ? `${sourceName} · ${bud.name}` : sourceName,
-      toLabel: recipientLabel,
+      toLabel: labels.receipt,
       description: input.memo,
-      policyLabel: bud ? policyLabel(bud) : 'Agency account payment · Agency Admin authorization',
+      policyLabel:
+        input.policyLabel ?? (bud ? policyLabel(bud) : 'Agency account payment · Agency Admin authorization'),
       operationId: paymentId,
       at: input.at,
       portfolioId: P,
@@ -1079,7 +1086,7 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
       b.activity(
         'payment_completed',
         input.createdBy,
-        `Paid ${usdLabel(input.amount)} to ${recipientLabel}`,
+        `Paid ${usdLabel(input.amount)} to ${labels.activity}`,
         { kind: 'payment', id: paymentId },
         input.at,
         {
@@ -1093,16 +1100,25 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     return { paymentId, receiptId: receipt.id }
   }
 
-  /** Runs the real policy engine, then records the request and, when approved, the payment. */
+  /**
+   * Runs the real policy engine, then records the request and, when approved, the payment.
+   * It mirrors the engine's requestPayment and capture: money for purchases, a reimbursement and
+   * payment for work pay the requester's own Viatik balance; the other types pay `destinationId`.
+   */
   const request = (input: {
     agencyId: Id
     budgetId: Id
     requester: Actor
     type: RequestType
-    destinationId: Id
+    /** vendor_payment / automation only. */
+    destinationId?: Id
     amount: Cents
     category: SpendingCategory
     purpose: string
+    /** reimbursement only (required there). */
+    merchant?: string
+    /** reimbursement only: when the requester paid (defaults to `at`). */
+    spentAt?: ISODate
     at: ISODate
     approver?: Id
     /** Leave approved-by-policy requests pending (for the current approval queue). */
@@ -1111,6 +1127,18 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     silentPayment?: boolean
   }): PaymentRequest | null => {
     const bud = budgetById(input.budgetId)
+    const requesterUserId = input.requester.kind === 'user' ? input.requester.userId : undefined
+    let destination: RequestDestination
+    if (paysRequester(input.type)) {
+      if (!requesterUserId) throw new Error(`Seed: a ${input.type} request is made by a person.`)
+      destination = { kind: 'member', userId: requesterUserId }
+    } else {
+      if (!input.destinationId) throw new Error(`Seed: a ${input.type} request needs a destinationId.`)
+      destination = { kind: 'destination', destinationId: input.destinationId }
+    }
+    const vendorId = destination.kind === 'destination' ? destination.destinationId : null
+    if (input.type === 'reimbursement' && !input.merchant)
+      throw new Error('Seed: a reimbursement needs its merchant.')
     const holder =
       input.requester.kind === 'ai_agent'
         ? ({ kind: 'ai_agent', agentId: input.requester.agentId } as const)
@@ -1127,19 +1155,37 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     const agentRecord =
       holder.kind === 'ai_agent' ? (s.agents.find((x) => x.id === holder.agentId) ?? null) : null
     const usage = budgetUsage(s, bud, input.at)
-    const decision = evaluatePolicy({
-      budget: bud,
-      allowance: allowanceRecord,
-      agent: agentRecord,
-      request: { amount: input.amount, category: input.category, destinationId: input.destinationId },
-      usage: {
-        budgetAvailable: usage.available,
-        holderSpentThisPeriod: holderSpentInPeriod(s, bud, holder, input.at),
-        budgetSpentThisPeriod: usage.committedThisPeriod,
-        agentSpentToday: agentRecord ? agentSpentToday(s, agentRecord.id, input.at) : undefined,
-      },
-      now: input.at,
-    })
+    // The agreement's rules too, as the engine applies them: the Investor decides exceptions, and
+    // payment for work is always reviewed by an Agency Admin.
+    const { decision } = withAgreementRules(
+      evaluatePolicy({
+        budget: bud,
+        allowance: allowanceRecord,
+        agent: agentRecord,
+        request: { amount: input.amount, category: input.category, destinationId: vendorId },
+        usage: {
+          budgetAvailable: usage.available,
+          holderSpentThisPeriod: holderSpentInPeriod(s, bud, holder, input.at),
+          budgetSpentThisPeriod: usage.committedThisPeriod,
+          agentSpentToday: agentRecord ? agentSpentToday(s, agentRecord.id, input.at) : undefined,
+        },
+        now: input.at,
+      }),
+      input,
+      exceptionThresholdOf(s, input.agencyId),
+    )
+
+    // A reimbursement carries the receipt of what was bought.
+    const spentAt = input.spentAt ?? input.at
+    const attachments =
+      input.type === 'reimbursement' && requesterUserId
+        ? [
+            b.evidence('file', `${input.merchant} receipt.pdf`, requesterUserId, spentAt, {
+              mimeType: 'application/pdf',
+              sizeBytes: b.random.int(80_000, 420_000),
+            }),
+          ]
+        : []
 
     const req: PaymentRequest = {
       id: b.id('req'),
@@ -1147,11 +1193,12 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
       budgetId: bud.id,
       requester: input.requester,
       type: input.type,
-      destination: { kind: 'destination', destinationId: input.destinationId },
+      destination,
       amount: input.amount,
       category: input.category,
       purpose: input.purpose,
-      attachments: [],
+      attachments,
+      ...(input.type === 'reimbursement' ? { merchant: input.merchant, spentAt: input.spentAt } : {}),
       status:
         decision.outcome === 'rejected'
           ? 'rejected'
@@ -1164,15 +1211,14 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     }
     s.requests.push(req)
 
-    const requesterUserId = input.requester.kind === 'user' ? input.requester.userId : undefined
     const requesterName =
       input.requester.kind === 'user' ? nameOf(input.requester.userId) : (agentRecord?.name ?? 'Automation')
 
-    if (agentRecord) {
+    if (agentRecord && vendorId) {
       s.agentDecisions.push({
         id: b.id('dec'),
         agentId: agentRecord.id,
-        destinationId: input.destinationId,
+        destinationId: vendorId,
         amount: input.amount,
         outcome: decision.outcome,
         reason: decision.reason?.message ?? 'Within the automation policy.',
@@ -1237,17 +1283,26 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
       paidAt = new Date(new Date(decidedAt).getTime() + 20 * 60 * 1000).toISOString()
     }
 
+    // The same payment types and labels as the engine's capture.
     const paymentType: PaymentType = agentRecord
       ? 'automation'
-      : input.type === 'reimbursement'
-        ? 'reimbursement'
-        : 'tool'
+      : input.type === 'funds'
+        ? 'advance'
+        : input.type === 'reimbursement'
+          ? 'reimbursement'
+          : input.type === 'work'
+            ? 'team'
+            : 'tool'
+    const memberName = destination.kind === 'member' ? nameOf(destination.userId) : undefined
     const { paymentId } = pay({
       agencyId: input.agencyId,
       type: paymentType,
       fromBudget: bud.id,
       fromAccount: bud.sourceAccountId,
-      to: { kind: 'destination', id: input.destinationId },
+      to:
+        destination.kind === 'member'
+          ? { kind: 'member', id: destination.userId }
+          : { kind: 'destination', id: destination.destinationId },
       amount: input.amount,
       category: input.category,
       memo: input.purpose,
@@ -1256,33 +1311,48 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
       approvedBy: req.approvedBy,
       requestId: req.id,
       silent: input.silentPayment,
+      labels: memberName
+        ? { receipt: `${memberName} · Viatik balance`, activity: `${memberName}'s Viatik balance` }
+        : undefined,
+      policyLabel: input.type === 'work' ? 'Payment for work · approved by an Agency Admin' : undefined,
     })
     Object.assign(req, { status: 'completed', paymentId })
 
-    if (requesterUserId) {
+    // Only a vendor payment and a reimbursement document a purchase: money for purchases is
+    // justified later with its own receipts, and payment for work needs none.
+    if (requesterUserId && vendorId && input.type === 'vendor_payment') {
       const withReceipt = input.withReceipt ?? true
       s.expenses.push({
         id: b.id('exp'),
         agencyId: input.agencyId,
         userId: requesterUserId,
         budgetId: bud.id,
-        merchant: destinationName(input.destinationId),
+        merchant: destinationName(vendorId),
         amount: input.amount,
         category: input.category,
         spentAt: paidAt,
         paymentId,
         receipt: withReceipt
-          ? b.evidence(
-              'file',
-              `${destinationName(input.destinationId)} receipt.pdf`,
-              requesterUserId,
-              paidAt,
-              {
-                mimeType: 'application/pdf',
-                sizeBytes: b.random.int(80_000, 420_000),
-              },
-            )
+          ? b.evidence('file', `${destinationName(vendorId)} receipt.pdf`, requesterUserId, paidAt, {
+              mimeType: 'application/pdf',
+              sizeBytes: b.random.int(80_000, 420_000),
+            })
           : undefined,
+        createdAt: paidAt,
+      })
+    }
+    if (requesterUserId && input.type === 'reimbursement' && input.merchant) {
+      s.expenses.push({
+        id: b.id('exp'),
+        agencyId: input.agencyId,
+        userId: requesterUserId,
+        budgetId: bud.id,
+        merchant: input.merchant,
+        amount: input.amount,
+        category: input.category,
+        spentAt,
+        paymentId,
+        receipt: attachments[0],
         createdAt: paidAt,
       })
     }

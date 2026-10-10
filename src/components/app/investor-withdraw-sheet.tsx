@@ -58,7 +58,7 @@ function withdrawSteps(phase: OperationPhase, reached: number): Step[] {
     {
       id: 'approved',
       label: 'Approved',
-      detail: 'Your account signs it. Viatik pays the network fee.',
+      detail: 'Your Viatik account signs it. Viatik pays the network fee.',
       state: stateAt(1),
     },
     {
@@ -114,8 +114,9 @@ function DestinationOption({
 }
 
 /**
- * The Investor takes money out of the Portfolio Vault: to their own account by
- * default, or to another address they confirm in full. Funding vaults never
+ * The Investor takes money out of the Portfolio Vault: to their Viatik account
+ * (their embedded account, where Add funds starts) by default, or to another
+ * address they confirm in full. Funding vaults never
  * appear here: committed capital follows its tranches and returns.
  */
 export function InvestorWithdrawSheet({
@@ -138,7 +139,7 @@ export function InvestorWithdrawSheet({
   const testLedger = !demo && view?.settlement === 'demo'
   const paused = Boolean(monad && !monad.available)
 
-  // The demo has no real account: a stand-in address, explained as simulated.
+  // The demo has no real Viatik account: a stand-in address, explained as simulated.
   const ownAddress = parseAddress(demo ? pseudoAddress(userId) : (session.account?.address ?? ''))
 
   const [amount, setAmount] = React.useState<Cents | null>(null)
@@ -160,7 +161,7 @@ export function InvestorWithdrawSheet({
   // While the withdrawal runs, what it was confirmed with cannot change.
   const locked = withdraw.isPending
 
-  // Without an account address yet, only another address can be named.
+  // Without a Viatik account address yet, only another address can be named.
   const destination: Destination = ownAddress ? choice : 'other'
   const available = vaultBalance(state, vault.id)
   const over = Boolean(amount && amount > available)
@@ -193,8 +194,8 @@ export function InvestorWithdrawSheet({
   const toLabel =
     destination === 'own'
       ? ownAddress
-        ? `Your account · ${shortAddress(ownAddress)}`
-        : 'Your account'
+        ? `Your Viatik account · ${shortAddress(ownAddress)}`
+        : 'Your Viatik account'
       : otherAddress
         ? shortAddress(otherAddress)
         : 'Another address'
@@ -220,7 +221,7 @@ export function InvestorWithdrawSheet({
       summary={{
         what:
           destination === 'own'
-            ? `Funds leave ${vault.name} and go to your own account.`
+            ? `Funds leave ${vault.name} and go to your Viatik account.`
             : `Funds leave ${vault.name} and go to the address you enter below.`,
         amount: amount ?? undefined,
         from: vault.name,
@@ -244,13 +245,13 @@ export function InvestorWithdrawSheet({
         body: sent ? (
           <>
             {formatUsd(sent.amount, { withCode: true })} left {vault.name} for{' '}
-            {sent.own ? 'your account' : shortAddress(sent.to)}.{' '}
+            {sent.own ? 'your Viatik account' : shortAddress(sent.to)}.{' '}
             {demo
               ? 'This demo is simulated: nothing was sent to a real address.'
               : testLedger
                 ? 'Viatik recorded it; this test environment does not send funds yet.'
                 : sent.own
-                  ? 'It is in your account now.'
+                  ? 'It is in your Viatik account now.'
                   : 'It is at that address now.'}
             {sent.own && demo ? null : (
               <span className="mt-1 block font-mono text-xs break-all text-muted-foreground">{sent.to}</span>
@@ -301,7 +302,7 @@ export function InvestorWithdrawSheet({
               checked={destination === 'own'}
               disabled={locked || !ownAddress}
               onSelect={() => setChoice('own')}
-              title="My account"
+              title="My Viatik account"
               detail={
                 ownAddress ? (
                   <span className="inline-flex items-center gap-1">
@@ -309,7 +310,7 @@ export function InvestorWithdrawSheet({
                     {demo ? ' · a placeholder address for this demo' : ''}
                   </span>
                 ) : (
-                  'Your account is still being set up.'
+                  'Your Viatik account is still being set up.'
                 )
               }
             />
@@ -324,7 +325,7 @@ export function InvestorWithdrawSheet({
           {destination === 'own' && ownAddress && !demo ? (
             <p className="flex items-center gap-1 text-xs text-subtle">
               <span className="min-w-0 font-mono break-all">{ownAddress}</span>
-              <CopyButton value={ownAddress} label="Copy your account address" />
+              <CopyButton value={ownAddress} label="Copy your Viatik account address" />
             </p>
           ) : null}
         </div>

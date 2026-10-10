@@ -230,12 +230,53 @@ function sumMovements(state: ViatikState, predicate: (m: Movement) => boolean): 
   return sum(state.movements.filter(predicate), (m) => m.amount)
 }
 
+/**
+ * Money a person gives back from their Viatik balance to an Agency account
+ * (unused money for purchases, for example). It undoes part of a payment.
+ */
+export function isGiveBack(m: Movement): boolean {
+  return (
+    m.kind === 'transfer' &&
+    m.from.kind === 'recipient' &&
+    m.from.recipient.kind === 'member' &&
+    m.to.kind === 'account'
+  )
+}
+
+/** Payments minus give-backs: advances that come back do not count as spent. */
+function netSpent(movements: readonly Movement[]): Cents {
+  let total = 0
+  for (const m of movements) {
+    if (m.kind === 'payment') total += m.amount
+    else if (isGiveBack(m)) total -= m.amount
+  }
+  return clampToZero(cents(total))
+}
+
+/**
+ * Capital sent back to the Investor's Portfolio Vault, whether or not it names
+ * an agreement (the ledger makes the agreement optional).
+ */
+export function returnedCapital(
+  state: ViatikState,
+  filter: { portfolioId?: Id; agencyId?: Id; agreementId?: Id },
+): Cents {
+  return sumMovements(
+    state,
+    (m) =>
+      m.kind === 'capital_return' &&
+      (!filter.portfolioId || m.portfolioId === filter.portfolioId) &&
+      (!filter.agencyId || m.agencyId === filter.agencyId) &&
+      (!filter.agreementId || m.agreementId === filter.agreementId),
+  )
+}
+
 export function agreementCapital(state: ViatikState, agreementId: Id) {
   const agreement = state.agreements.find((a) => a.id === agreementId)
   const committed = agreement?.committed ?? ZERO
   const funded = sumMovements(state, (m) => m.kind === 'fund_agreement' && m.agreementId === agreementId)
   const released = sumMovements(state, (m) => m.kind === 'release_tranche' && m.agreementId === agreementId)
-  const returned = sumMovements(state, (m) => m.kind === 'capital_return' && m.agreementId === agreementId)
+  const returned = returnedCapital(state, { agreementId })
   return {
     committed,
     funded,
@@ -284,16 +325,14 @@ export function agencyCapital(state: ViatikState, agencyId: Id, now: ISODate) {
   const reserved = sum(budgets, (b) => reservedForBudget(state, b.id))
   const budgetBalances = sum(budgets, (b) => budgetBalance(state, b.id))
   const monthWindow = periodWindow('monthly', now)
-  const spentThisPeriod = sumMovements(
-    state,
-    (m) => m.kind === 'payment' && m.agencyId === agencyId && inWindow(m.createdAt, monthWindow),
-  )
+  const agencyMovements = state.movements.filter((m) => m.agencyId === agencyId)
+  const spentThisPeriod = netSpent(agencyMovements.filter((m) => inWindow(m.createdAt, monthWindow)))
 
   const committed = sum(agreements, (a) => a.committed)
   const funded = sum(agreements, (a) => agreementCapital(state, a.id).funded)
   const released = sum(agreements, (a) => agreementCapital(state, a.id).released)
-  const returned = sum(agreements, (a) => agreementCapital(state, a.id).returned)
-  const spent = sumMovements(state, (m) => m.kind === 'payment' && m.agencyId === agencyId)
+  const returned = returnedCapital(state, { agencyId })
+  const spent = netSpent(agencyMovements)
 
   return {
     availableToOperate,
@@ -324,7 +363,7 @@ export function portfolioCapital(state: ViatikState, portfolioId: Id, now: ISODa
   )
   const funded = sum(agreements, (a) => agreementCapital(state, a.id).funded)
   const released = sum(agreements, (a) => agreementCapital(state, a.id).released)
-  const returned = sum(agreements, (a) => agreementCapital(state, a.id).returned)
+  const returned = returnedCapital(state, { portfolioId })
   const agencyStates = agencies.map((a) => agencyCapital(state, a.id, now))
 
   return {
@@ -393,10 +432,7 @@ export function capitalOverTime(
         upTo.filter((m) => m.kind === 'release_tranche'),
         (m) => m.amount,
       ),
-      spent: sum(
-        upTo.filter((m) => m.kind === 'payment'),
-        (m) => m.amount,
-      ),
+      spent: netSpent(upTo),
     }
   })
 }
@@ -445,4 +481,16 @@ export function isOverdue(dueDate: ISODate, now: ISODate): boolean {
 
 export function daysBetween(from: ISODate, to: ISODate): number {
   return Math.round((new Date(to).getTime() - new Date(from).getTime()) / (24 * 60 * 60 * 1000))
+}
+
+/** What a person holds in an agency: paid to them, minus what they returned or withdrew. */
+export function memberHeld(state: ViatikState, agencyId: Id, userId: Id): number {
+  return state.movements.reduce((total, m) => {
+    if (m.agencyId !== agencyId) return total
+    const toMe =
+      m.to.kind === 'recipient' && m.to.recipient.kind === 'member' && m.to.recipient.userId === userId
+    const fromMe =
+      m.from.kind === 'recipient' && m.from.recipient.kind === 'member' && m.from.recipient.userId === userId
+    return total + (toMe ? m.amount : 0) - (fromMe ? m.amount : 0)
+  }, 0)
 }

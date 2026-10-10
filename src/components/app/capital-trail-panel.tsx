@@ -30,7 +30,8 @@ export function locationLabel(state: ViatikState, location: Location): string {
     case 'external':
       return location.label
     case 'vault':
-      return state.vaults.find((v) => v.id === location.vaultId)?.name ?? 'Vault'
+      // Agency Admins see their funding vaults, not the Portfolio Vault their returned capital goes to.
+      return state.vaults.find((v) => v.id === location.vaultId)?.name ?? 'Portfolio Vault'
     case 'account':
       return accountName(state, location.accountId)
     case 'budget':
@@ -184,6 +185,7 @@ export function CapitalTrailPanel({ state, agreementId }: { state: ViatikState; 
               { value: 'allocate', label: 'Allocations' },
               { value: 'payment', label: 'Payments' },
               { value: 'transfer', label: 'Transfers' },
+              { value: 'capital_return', label: 'Capital returns' },
             ],
           },
         ]}

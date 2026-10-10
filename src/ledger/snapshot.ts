@@ -72,6 +72,11 @@ export type LedgerSnapshot = {
   requests: Map<Id, RequestView>
   /** `agencyId|userId` → what the Member holds. */
   members: Map<string, number>
+  /**
+   * `agencyId|paymentId` → a payment made outside Viatik (`payOutside`) and the
+   * invoice anchored for it (null: none yet). The money already left the ledger.
+   */
+  outside: Map<string, { evidenceHash: Hash | null }>
   processed: Set<Id>
 }
 
@@ -96,6 +101,7 @@ export function ledgerSnapshot(state: ViatikState): LedgerSnapshot {
     allowances: new Map(),
     requests: new Map(),
     members: new Map(),
+    outside: new Map(),
     processed: new Set(),
   }
   const { places } = snapshot
@@ -189,7 +195,8 @@ export function ledgerSnapshot(state: ViatikState): LedgerSnapshot {
   }
   for (const request of state.requests) {
     snapshot.processed.add(request.id)
-    if (request.requester.kind !== 'user') continue
+    // Payment for work never exists on the ledger as a request: an Agency Admin pays it with `pay`.
+    if (request.requester.kind !== 'user' || request.type === 'work') continue
     snapshot.requests.set(request.id, {
       budget: request.budgetId,
       agency: request.agencyId,
@@ -201,12 +208,22 @@ export function ledgerSnapshot(state: ViatikState): LedgerSnapshot {
       status: requestState(request.status),
     })
   }
-  for (const payment of state.payments) snapshot.processed.add(payment.id)
+  for (const payment of state.payments) {
+    snapshot.processed.add(payment.id)
+    if (payment.recipient.kind === 'address' && payment.status === 'completed')
+      snapshot.outside.set(`${payment.agencyId}|${payment.id}`, {
+        evidenceHash: payment.proof ? attachmentsHash([payment.proof]) : null,
+      })
+  }
   for (const receipt of state.receipts) snapshot.processed.add(receipt.operationId)
   return snapshot
 }
 
-/** Moves a balance in the snapshot: a ledger location, or what a Member holds in an agency. */
+/**
+ * Moves a balance in the snapshot: a ledger location, or what a Member holds in an agency.
+ * Money that leaves the ledger (a vendor payout, an outside payment, a withdrawal) only
+ * debits its source: an `external` end or a vendor holds nothing on the ledger.
+ */
 export function adjustBalance(
   snapshot: Pick<LedgerSnapshot, 'places' | 'members'>,
   location: Location,
