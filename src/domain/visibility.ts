@@ -1,5 +1,5 @@
 import { governingAgreement } from './queries'
-import type { Agency, Id, Receipt, ViatikState } from './types'
+import type { Agency, Id, Location, Movement, Receipt, User, ViatikState } from './types'
 
 /**
  * Returns only the records a user may see. Used by the API before anything
@@ -8,7 +8,9 @@ import type { Agency, Id, Receipt, ViatikState } from './types'
  * - Investors see their portfolio and every Agency in it.
  * - Agency Admins see their Agency, plus the agreement terms that fund it.
  * - Members see the budgets assigned to them and their personal records —
- *   never the Agency's full treasury.
+ *   never the Agency's full treasury. What a budget they hold paid another
+ *   person shows as paid to "Team member", never who it was or its receipt.
+ *   They read their Agency Admins' names, never the other Members'.
  */
 export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
   const memberships = state.memberships.filter((m) => m.userId === userId && m.status === 'active')
@@ -93,24 +95,48 @@ export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
     (v) => portfolioIds.has(v.portfolioId) || (v.agencyId !== undefined && adminAgencyIds.has(v.agencyId)),
   )
 
-  const movementVisible = (m: ViatikState['movements'][number]) => {
+  const isPerson = (end: Location, which: (personId: Id) => boolean) =>
+    end.kind === 'recipient' && end.recipient.kind === 'member' && which(end.recipient.userId)
+  const isMine = (end: Location) => isPerson(end, (personId) => personId === userId)
+  const isSomeoneElse = (end: Location) => isPerson(end, (personId) => personId !== userId)
+  // The viewer's own money: what they received or sent back themselves, or a payment of theirs.
+  const ownMovement = (m: Movement) =>
+    isMine(m.from) || isMine(m.to) || (m.refId !== undefined && paymentIds.has(m.refId))
+
+  const movementVisible = (m: Movement) => {
     if (m.agencyId && fullAgencyIds.has(m.agencyId)) return true
     if (portfolioIds.has(m.portfolioId)) return true
     if (m.agencyId && memberOnly(m.agencyId)) {
-      if (m.refId && paymentIds.has(m.refId)) return true
-      // Money the Member received or sent back themselves (e.g. returning unused funds).
-      const mine = (end: typeof m.from) =>
-        end.kind === 'recipient' && end.recipient.kind === 'member' && end.recipient.userId === userId
-      if (mine(m.from) || mine(m.to)) return true
+      if (ownMovement(m)) return true
       if (m.from.kind === 'budget' && budgetIds.has(m.from.budgetId)) return true
       if (m.to.kind === 'budget' && budgetIds.has(m.to.budgetId)) return true
     }
     return false
   }
+  // What a budget a Member holds paid (or got back from) another person: the Member sees the
+  // budget's side and the amount, so its balance and usage add up, but never who the other
+  // person was. Only the fields below are kept: no receipt, no link to that person's payment.
+  const teamMember: Location = { kind: 'external', label: 'Team member' }
+  const withoutOtherPeople = (m: Movement): Movement => {
+    if (!m.agencyId || !memberOnly(m.agencyId) || ownMovement(m)) return m
+    if (!isSomeoneElse(m.from) && !isSomeoneElse(m.to)) return m
+    const hidden: Movement = {
+      id: m.id,
+      kind: m.kind,
+      amount: m.amount,
+      from: isSomeoneElse(m.from) ? teamMember : m.from,
+      to: isSomeoneElse(m.to) ? teamMember : m.to,
+      portfolioId: m.portfolioId,
+      agencyId: m.agencyId,
+      createdAt: m.createdAt,
+    }
+    if (m.agreementId) hidden.agreementId = m.agreementId
+    return hidden
+  }
   // Who sees the whole address money went to; everyone else sees only the label.
   // - An outside payment: the Agency's Admins and its Investors (a Member who holds the budget sees the payee).
   // - A withdrawal: its owner only (the Investor from their Portfolio Vault, a person from their balance).
-  const seesAddress = (m: ViatikState['movements'][number]) => {
+  const seesAddress = (m: Movement) => {
     if (m.kind === 'payment') return m.agencyId !== undefined && fullAgencyIds.has(m.agencyId)
     if (m.from.kind === 'vault') return portfolioIds.has(m.portfolioId)
     return (
@@ -119,11 +145,13 @@ export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
   }
   const movements = state.movements
     .filter(movementVisible)
+    .map(withoutOtherPeople)
     .map((m) =>
       m.to.kind === 'external' && m.to.address && !seesAddress(m)
         ? { ...m, to: { kind: 'external' as const, label: m.to.label } }
         : m,
     )
+  // From the movements as the viewer sees them: another person's receipt is never sent.
   const receiptIds = new Set(movements.map((m) => m.receiptId).filter(Boolean) as Id[])
   // An outside payment's receipt names its payee and a short address: a Member who holds the
   // budget it came from sees the payee only. Its verified details still point to the public
@@ -141,16 +169,49 @@ export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
       ? { ...receipt, toLabel: payeeOf(receipt) }
       : receipt
 
+  // Portfolios the viewer works in, as its Investor or as an Admin of one of its Agencies: their
+  // people are seen in full. A Member only reaches a portfolio through their Agency.
+  const fullPortfolioIds = new Set([
+    ...portfolioIds,
+    ...state.agencies.filter((a) => adminAgencyIds.has(a.id)).map((a) => a.portfolioId),
+  ])
   const agencyUserIds = new Set(
     state.memberships
       .filter(
         (m) =>
           (m.scope.kind === 'agency' && fullAgencyIds.has(m.scope.agencyId)) ||
-          (m.scope.kind === 'portfolio' && visiblePortfolioIds.has(m.scope.portfolioId)),
+          (m.scope.kind === 'portfolio' && fullPortfolioIds.has(m.scope.portfolioId)),
       )
       .map((m) => m.userId),
   )
   agencyUserIds.add(userId)
+  // A Member reads their Agency Admins' names ("Approved by Maya Chen"), nothing else about them,
+  // and nothing of the other Members.
+  // The same for the Investors of a portfolio a Member only reaches through their Agency.
+  const memberAdminIds = new Set(
+    state.memberships
+      .filter(
+        (m) =>
+          m.status === 'active' &&
+          ((m.role === 'agency_admin' && m.scope.kind === 'agency' && memberOnly(m.scope.agencyId)) ||
+            (m.scope.kind === 'portfolio' &&
+              visiblePortfolioIds.has(m.scope.portfolioId) &&
+              !fullPortfolioIds.has(m.scope.portfolioId))),
+      )
+      .map((m) => m.userId),
+  )
+  const nameOnly = (u: User): User => ({
+    id: u.id,
+    name: u.name,
+    title: u.title,
+    email: '',
+    timeZone: '',
+    locale: '',
+    createdAt: '',
+  })
+  const users = state.users.flatMap((u) =>
+    agencyUserIds.has(u.id) ? [u] : memberAdminIds.has(u.id) ? [nameOnly(u)] : [],
+  )
   const adminVisibleUserIds = new Set(
     state.memberships
       .filter(
@@ -161,7 +222,7 @@ export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
 
   return {
     ...state,
-    users: state.users.filter((u) => agencyUserIds.has(u.id)),
+    users,
     memberships: state.memberships.filter(
       (m) =>
         m.userId === userId ||

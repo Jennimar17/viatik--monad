@@ -307,6 +307,7 @@ export default function MemberOverviewPage() {
                 ...describeBudgetPolicy(main.budget, {
                   destinationNames: main.budget.allowedDestinationIds.map((id) => destinationName(state, id)),
                   categoryLabels: categoryLabel,
+                  allowance: main.allowance,
                 }).slice(1),
               ]}
             />

@@ -60,6 +60,7 @@ export default function MemberBudgetDetailPage() {
   const rules = describeBudgetPolicy(budget, {
     destinationNames: budget.allowedDestinationIds.map((id) => destinationName(state, id)),
     categoryLabels: categoryLabel,
+    allowance,
   })
 
   return (
@@ -115,7 +116,7 @@ export default function MemberBudgetDetailPage() {
           <PolicySummary
             title="In plain language"
             lines={[
-              `You can spend up to ${formatUsd(allowance.periodLimit, { withCode: true })} per ${unit}${allowance.perOperationLimit ? ` and ${formatUsd(allowance.perOperationLimit, { withCode: true })} per payment` : ''}.`,
+              `You can spend up to ${formatUsd(allowance.periodLimit, { withCode: true })} per ${unit}.`,
               ...rules.slice(1),
             ]}
           />

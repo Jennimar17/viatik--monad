@@ -68,6 +68,8 @@ export const DEMO = {
     arcTools: 'bud_arc_tools',
     arcResearch: 'bud_arc_research',
     arcTravel: 'bud_arc_travel',
+    /** Money for purchases (pilot devices and supplies), justified with receipts. */
+    arcPurchases: 'bud_arc_purchases',
     lumenPayroll: 'bud_lumen_payroll',
     lumenInfra: 'bud_lumen_infra',
     lumenSecurity: 'bud_lumen_security',
@@ -86,6 +88,15 @@ export const DEMO = {
     sentinel: 'dest_sentinel_audits',
   },
   agent: 'agent_research_assistant',
+  /**
+   * Where Arc Studio pays tools outside Viatik. Placeholders derived from a hash, held by
+   * nobody: never the ledger's, TestUSD's or anyone's own account. Nothing sent here
+   * arrives anywhere (Monad Testnet only).
+   */
+  outsideAddresses: {
+    anthropic: '0xc2714Fef2414F88A7FDE8B88C2E7Bd88f29F16B3',
+    figma: '0xbC049CB818564EeA52ca8E3eEf0Eb76e66A86DA5',
+  },
 } as const
 
 export type DemoPersonaKey = 'investor' | 'admin' | 'member'

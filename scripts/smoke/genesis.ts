@@ -56,12 +56,66 @@ function seedGenesis(t: Checker) {
   )
   const seeded = w.state.payments.filter((p) => isOutsidePayment(p) && p.status === 'completed')
   t.note(`the seed has ${seeded.length} payments made outside Viatik`)
+
+  // The demo story: both payments made outside Viatik, each with its invoice or none; Alex's
+  // payment for work waiting for an Admin left out; what Lumen Labs returned in the Portfolio Vault.
+  const id = (productId: Id) => ledgerId(namespace, productId)
+  t.check(
+    'H1: the seed has two payments made outside Viatik, one with its invoice',
+    seeded.length === 2 && seeded.filter((p) => p.proof).length === 1,
+  )
+  const outsideCalls = calls.filter((c) => c.name === 'importOutsidePayment')
+  for (const payment of seeded) {
+    const proof = payment.proof ? attachmentsHash([payment.proof]) : null
+    checkSame(
+      t,
+      `H1: ${payment.recipient.kind === 'address' ? payment.recipient.payee : payment.id} is imported once, ${proof ? 'with its invoice' : 'without an invoice'}`,
+      outsideCalls.filter((c) => c.args[1] === id(payment.id)).map((c) => c.args),
+      [[id(payment.agencyId), id(payment.id), proof ?? zeroHash]],
+    )
+  }
+  const waitingWork = w.state.requests.filter(
+    (r) => r.status === 'needs_approval' && r.requester.kind === 'user' && r.type === 'work',
+  )
+  const imported = calls
+    .filter((c) => c.name === 'importPendingRequest')
+    .map((c) => (c.args[0] as PendingImport).requestId)
+  t.check(
+    "H1: Alex's payment for work waiting for an Admin is not imported, and the genesis says so",
+    waitingWork.length === 1 &&
+      !imported.includes(id(waitingWork[0]?.id ?? '')) &&
+      built.skipped.some((note) => note.startsWith('1 payments for work waiting')),
+    built.skipped.join(' | '),
+  )
+  t.check(
+    "H1: the requests waiting for approval that are imported are the people's other ones",
+    imported.length > 0 &&
+      imported.every((requestId) =>
+        w.state.requests.some(
+          (r) => id(r.id) === requestId && r.status === 'needs_approval' && r.type !== 'work',
+        ),
+      ),
+  )
+  const vault = calls.find((c) => c.name === 'importLocation' && c.args[0] === id(DEMO.vaults.portfolio))
+  t.check(
+    'H1: the Portfolio Vault is imported with the 5,000 Lumen Labs returned in it',
+    vault?.args[3] === centsToUnits(vaultBalance(w.state, DEMO.vaults.portfolio)) &&
+      w.state.movements.some(
+        (m) =>
+          m.kind === 'capital_return' &&
+          m.amount === usd(5_000) &&
+          m.to.kind === 'vault' &&
+          m.to.vaultId === DEMO.vaults.portfolio,
+      ),
+  )
 }
 
 // ─── H2. After a story ───────────────────────────────────────────────────────
 
 async function storyGenesis(t: Checker) {
   const w = new World(t, 'genesis-story')
+  // The seed's own payment for work waiting for an Admin (the demo story's), left out too.
+  const seededWaitingWork = waitingWorkOf(w.state)
   await w.gather(U.maya, ACC.arcReserve, usd(40))
   const mintedAtStart = buildGenesis(w.state, 'smoke-g2', () => undefined).minted
 
@@ -265,8 +319,9 @@ async function storyGenesis(t: Checker) {
   )
   t.check("H2: Alex's payment for work is not imported", !requests.some((r) => r.requestId === id(work.id)))
   t.check(
-    'H2: the genesis says one payment for work is left out',
-    built.skipped.some((note) => note.startsWith('1 payments for work waiting')),
+    "H2: the genesis says this payment for work is left out (with the seed's)",
+    waitingWorkOf(w.state) === seededWaitingWork + 1 &&
+      built.skipped.some((note) => note.startsWith(`${seededWaitingWork + 1} payments for work waiting`)),
     built.skipped.join(' | '),
   )
 
@@ -393,6 +448,13 @@ function commonChecks(t: Checker, label: string, state: ViatikState, built: Gene
         address === placeholderAddress(built.namespace, userId) && address !== zeroAddress,
     ) && Object.keys(built.placeholders).length > 0,
   )
+}
+
+/** Payment for work waiting for an Agency Admin (never on the ledger until it is paid). */
+function waitingWorkOf(state: ViatikState): number {
+  return state.requests.filter(
+    (r) => r.status === 'needs_approval' && r.requester.kind === 'user' && r.type === 'work',
+  ).length
 }
 
 function countsOf(calls: DecodedCall[]): string {

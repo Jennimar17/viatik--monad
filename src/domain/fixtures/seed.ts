@@ -1,27 +1,40 @@
-import { evidenceSetHash } from '../evidence'
+import {
+  accountabilityByPerson,
+  advanceStanding,
+  JUSTIFY_WITHIN_DAYS,
+  missingReceipts,
+} from '../accountability'
+import { shortAddress } from '../address'
+import { paymentTypeForCategory, workPaymentId } from '../engine/operations'
+import { attachmentsHash, evidenceSetHash } from '../evidence'
 import { budgetTemplate } from '../labels'
 import { cents, usd, type Cents } from '../money'
 import { evaluatePolicy, paysRequester, withAgreementRules } from '../policy'
-import { exceptionThresholdOf } from '../queries'
-import { agentSpentToday, budgetUsage, holderSpentInPeriod } from '../selectors'
+import { exceptionThresholdOf, governingAgreement } from '../queries'
+import { agentSpentToday, budgetUsage, holderSpentInPeriod, memberHeld } from '../selectors'
 import type {
   Account,
   AccountTemplate,
   Actor,
   AiAgent,
   Budget,
+  Evidence,
+  Expense,
   Id,
   ISODate,
   Location,
+  Payment,
   PaymentDestination,
   PaymentRequest,
   PaymentType,
+  Reminder,
   RequestDestination,
   RequestType,
   SpendingCategory,
   User,
   ViatikState,
 } from '../types'
+import { simulatedVerification } from '../verification'
 import { SeedBuilder, usdLabel } from './builder'
 import { DEMO } from './ids'
 
@@ -29,7 +42,10 @@ import { DEMO } from './ids'
  * Fictional, globally neutral demo data: Northstar Capital funds Arc Studio,
  * Lumen Labs and Fieldwork Collective. The state is the moment right before
  * the hackathon demo — Arc Studio has submitted "Prototype delivered" and is
- * waiting for its second tranche.
+ * waiting for its second tranche. Its people have money for purchases to justify
+ * (one of them overdue), payment for work paid and waiting, and Maya has paid two
+ * tools outside Viatik (one invoice still missing); Lumen Labs has returned part
+ * of its second tranche to the Portfolio Vault.
  *
  * All history is generated as ledger movements so every total in the product
  * is derived and consistent. Dates are relative to `now`.
@@ -1025,8 +1041,12 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     /** How the recipient reads on the receipt and in activity, when not just its name (a request's). */
     labels?: { receipt: string; activity: string }
     policyLabel?: string
+    /** Payment for work is paid under its request's own id (the engine's `workPaymentId`). */
+    paymentId?: Id
+    /** A request's files, listed on its receipt as the engine's capture does. */
+    evidenceIds?: Id[]
   }) => {
-    const paymentId = b.id('pay')
+    const paymentId = input.paymentId ?? b.id('pay')
     const recipientName = input.to.kind === 'member' ? nameOf(input.to.id) : destinationName(input.to.id)
     const labels = input.labels ?? { receipt: recipientName, activity: recipientName }
     const bud = input.fromBudget ? budgetById(input.fromBudget) : undefined
@@ -1050,6 +1070,7 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
       portfolioId: P,
       agencyId: input.agencyId,
       account: actorKey,
+      evidenceIds: input.evidenceIds,
     })
     const from = input.fromBudget ? budget(input.fromBudget) : account(input.fromAccount)
     const to = input.to.kind === 'member' ? toMember(input.to.id) : toDestination(input.to.id)
@@ -1119,6 +1140,8 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     merchant?: string
     /** reimbursement only: when the requester paid (defaults to `at`). */
     spentAt?: ISODate
+    /** Files a person attaches (proof of work, a quote). A reimbursement's receipt is made here. */
+    files?: { name: string; sizeBytes: number }[]
     at: ISODate
     approver?: Id
     /** Leave approved-by-policy requests pending (for the current approval queue). */
@@ -1175,8 +1198,9 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
       exceptionThresholdOf(s, input.agencyId),
     )
 
-    // A reimbursement carries the receipt of what was bought.
+    // A reimbursement carries the receipt of what was bought; other requests the files given.
     const spentAt = input.spentAt ?? input.at
+    if (input.files?.length && !requesterUserId) throw new Error('Seed: only a person attaches files.')
     const attachments =
       input.type === 'reimbursement' && requesterUserId
         ? [
@@ -1185,7 +1209,12 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
               sizeBytes: b.random.int(80_000, 420_000),
             }),
           ]
-        : []
+        : (input.files ?? []).map((file) =>
+            b.evidence('file', file.name, requesterUserId!, input.at, {
+              mimeType: 'application/pdf',
+              sizeBytes: file.sizeBytes,
+            }),
+          )
 
     const req: PaymentRequest = {
       id: b.id('req'),
@@ -1315,6 +1344,8 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
         ? { receipt: `${memberName} · Viatik balance`, activity: `${memberName}'s Viatik balance` }
         : undefined,
       policyLabel: input.type === 'work' ? 'Payment for work · approved by an Agency Admin' : undefined,
+      paymentId: input.type === 'work' ? workPaymentId(req.id) : undefined,
+      evidenceIds: req.attachments.map((a) => a.id),
     })
     Object.assign(req, { status: 'completed', paymentId })
 
@@ -1827,19 +1858,21 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
 
   // ─── Lumen Labs ────────────────────────────────────────────────────────────
 
+  // Tranche 2 was larger, for a second data hire. The hire moved to next quarter, so Ren returned
+  // 5,000 of it to the Portfolio Vault (see the end of the story); Tranche 3 is smaller to match.
   const lumenTranches = [
-    [DEMO.tranches.lumen1, b.ago(125, 12)],
-    [DEMO.tranches.lumen2, b.ago(32, 12)],
-    [DEMO.tranches.lumen3, b.ahead(58, 12)],
-    [DEMO.tranches.lumen4, b.ahead(148, 12)],
+    [DEMO.tranches.lumen1, b.ago(125, 12), usd(15_000)],
+    [DEMO.tranches.lumen2, b.ago(32, 12), usd(20_000)],
+    [DEMO.tranches.lumen3, b.ahead(58, 12), usd(10_000)],
+    [DEMO.tranches.lumen4, b.ahead(148, 12), usd(15_000)],
   ] as const
-  lumenTranches.forEach(([id, date], i) => {
+  lumenTranches.forEach(([id, date, amount], i) => {
     s.tranches.push({
       id,
       agreementId: DEMO.agreements.lumen,
       index: i + 1,
       name: `Tranche ${i + 1}`,
-      amount: usd(15_000),
+      amount,
       releaseCondition: 'scheduled',
       scheduledFor: date,
       status: 'planned',
@@ -1939,8 +1972,9 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
         secondRelease,
         U.elena,
       )
-      transfer(A.lumen, ACC.lumenOperations, ACC.lumenPeople, usd(6_000), b.ago(31, 9), U.ren)
-      transfer(A.lumen, ACC.lumenOperations, ACC.lumenVendors, usd(1_500), b.ago(31, 9, 5), U.ren)
+      // Split the same day: a day later can fall after next month's top-ups, which counted on it.
+      transfer(A.lumen, ACC.lumenOperations, ACC.lumenPeople, usd(6_000), b.ago(32, 15), U.ren)
+      transfer(A.lumen, ACC.lumenOperations, ACC.lumenVendors, usd(1_500), b.ago(32, 15, 5), U.ren)
     }
     const payoutAt = b.inMonth(offset, 25, 9)
     const memo = `${new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(new Date(payoutAt))} contractor payment`
@@ -2042,6 +2076,605 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     })
   })
 
+  // ─── Money to justify, payments outside Viatik, capital returned ───────────
+  //
+  // The accountability story, recorded the way the engine records it (requestPayment and its
+  // capture, addExpense, returnUnusedFunds, payOutside, addPaymentProof, createReminder,
+  // remindReceipts, returnToInvestor), with the same texts, links and shapes:
+  // - Alex, Priya and Daniel get spending access to Team payments (payment for work) and to a
+  //   Pilot purchases budget (money for purchases), funded from the Reserve while Tranche 2 waits.
+  // - Money for purchases: Daniel's is 40 days old, nothing justified, overdue, and Maya reminded
+  //   him; Priya's is justified with two receipts and the unused rest given back; Alex's is 11
+  //   days old and partly justified.
+  // - Alex: payment for work paid (approved by Maya) and another waiting; a reimbursement paid.
+  // - Maya pays Claude Teams outside Viatik (its invoice the next day, a monthly reminder next due
+  //   in about two weeks) and Figma (no invoice yet: overdue after 7 days).
+  // - Lumen Labs returns 5,000 of Tranche 2 to the Portfolio Vault.
+  // It comes after the rest of the history, so it draws nothing from the seeded randomness the
+  // amounts above depend on. A budget a story payment uses is first given that amount, so no
+  // balance the history already had is lower at any time in between.
+
+  const arcAdmins = [U.maya, U.jordan]
+  const investors = [U.elena, U.marcus]
+  const accountName = (id: Id) => s.accounts.find((a) => a.id === id)?.name ?? 'Account'
+  const agencyNameOf = (id: Id) => s.agencies.find((a) => a.id === id)?.name ?? 'Agency'
+  const notifyAll = (userIds: Id[], title: string, body: string, href: string, at: ISODate, read = false) => {
+    for (const userId of userIds) b.notify(userId, title, body, href, at, read)
+  }
+  const balanceHref = `/member/${A.arc}/payments`
+  const personHref = (userId: Id) => `/agency/${A.arc}/team/${userId}`
+  const approvalsHref = `/agency/${A.arc}/approvals`
+  const monthName = (at: ISODate) =>
+    new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(new Date(at))
+  const memberOf = (payment: Payment): Id => {
+    if (payment.recipient.kind !== 'member') throw new Error(`Seed: ${payment.id} does not pay a person.`)
+    return payment.recipient.userId
+  }
+
+  /** A budget gets what a story payment takes, from Operations (through its own source account). */
+  const fundFromOperations = (budgetId: Id, amount: Cents, at: ISODate) => {
+    const bud = budgetById(budgetId)
+    if (bud.sourceAccountId !== ACC.arcOperations)
+      transfer(A.arc, ACC.arcOperations, bud.sourceAccountId, amount, at, U.maya)
+    b.move('allocate', amount, account(bud.sourceAccountId), budget(budgetId), {
+      at,
+      portfolioId: P,
+      agencyId: A.arc,
+      refId: b.id('alloc'),
+    })
+  }
+
+  /** A story request the policy pays, as the engine would decide it; anything else is a seed bug. */
+  const mustBePaid = (req: PaymentRequest | null, what: string): Payment => {
+    const payment = req?.paymentId ? s.payments.find((p) => p.id === req.paymentId) : undefined
+    if (!req || req.status !== 'completed' || !payment)
+      throw new Error(`Seed: ${what} was not paid (${req?.status}: ${req?.decision.reason?.message ?? ''})`)
+    return payment
+  }
+
+  /** What the requester hears when a request into their Viatik balance is paid (the engine's paidNotice). */
+  const paidNotice = (payment: Payment, type: RequestType, read: boolean) => {
+    const amount = usdLabel(payment.amount)
+    const [title, body]: [string, string] =
+      type === 'funds'
+        ? [
+            'Money for your purchase',
+            `${amount} is in your Viatik balance. Add its receipts within ${JUSTIFY_WITHIN_DAYS} days or return what you do not use.`,
+          ]
+        : type === 'reimbursement'
+          ? ['Reimbursement paid', `${amount} is back in your Viatik balance.`]
+          : ['Payment for your work', `${amount} is in your Viatik balance.`]
+    b.notify(memberOf(payment), title, body, balanceHref, payment.completedAt ?? payment.scheduledFor, read)
+  }
+
+  /** A receipt that justifies part of an advance, added in one step (the engine's addExpense). */
+  const addReceipt = (
+    advance: Payment,
+    input: {
+      merchant: string
+      amount: Cents
+      category: SpendingCategory
+      spentAt: ISODate
+      at: ISODate
+      sizeBytes: number
+      read: boolean
+    },
+  ) => {
+    const userId = memberOf(advance)
+    const bud = budgetById(advance.budgetId ?? '')
+    const requestedAt = s.requests.find((r) => r.id === advance.requestId)?.createdAt ?? advance.scheduledFor
+    const { pending } = advanceStanding(s, advance, input.at)
+    if (
+      advance.type !== 'advance' ||
+      input.amount > pending ||
+      !bud.allowedCategories.includes(input.category) ||
+      input.spentAt.slice(0, 10) < requestedAt.slice(0, 10) ||
+      input.spentAt > input.at
+    )
+      throw new Error(`Seed: the ${input.merchant} receipt does not fit ${advance.id}.`)
+    const expense: Expense = {
+      id: b.id('exp'),
+      agencyId: advance.agencyId,
+      userId,
+      budgetId: bud.id,
+      merchant: input.merchant,
+      amount: input.amount,
+      category: input.category,
+      spentAt: input.spentAt,
+      paymentId: advance.id,
+      receipt: b.evidence('file', `${input.merchant} receipt.pdf`, userId, input.at, {
+        mimeType: 'application/pdf',
+        sizeBytes: input.sizeBytes,
+      }),
+      createdAt: input.at,
+    }
+    s.expenses.push(expense)
+    const summary = `${usdLabel(input.amount)} receipt from ${input.merchant}`
+    b.activity(
+      'receipt_added',
+      user(userId),
+      `Added a ${summary}`,
+      { kind: 'expense', id: expense.id },
+      input.at,
+      { portfolioId: P, agencyId: advance.agencyId, amount: input.amount, subjectUserId: userId },
+    )
+    notifyAll(
+      arcAdmins,
+      'Receipt uploaded',
+      `${nameOf(userId)} added a ${summary}.`,
+      personHref(userId),
+      input.at,
+      input.read,
+    )
+    return expense
+  }
+
+  /** "Return the rest": the unused part of an advance back to Operations (the engine's returnUnusedFunds). */
+  const giveBack = (advance: Payment, amount: Cents, at: ISODate, read: boolean) => {
+    const userId = memberOf(advance)
+    const name = nameOf(userId)
+    if (amount > advanceStanding(s, advance, at).pending || amount > memberHeld(s, advance.agencyId, userId))
+      throw new Error(`Seed: ${name} cannot give back ${amount} of ${advance.id}.`)
+    const operations = ACC.arcOperations
+    const operationId = b.id('ret')
+    const receipt = b.receipt({
+      kind: 'transfer',
+      amount,
+      fromLabel: name,
+      toLabel: accountName(operations),
+      description: `Unused money returned · ${advance.memo}`,
+      policyLabel: 'Member return · personal funds',
+      operationId,
+      at,
+      portfolioId: P,
+      agencyId: advance.agencyId,
+      account: userId,
+    })
+    b.move('transfer', amount, toMember(userId), account(operations), {
+      at,
+      portfolioId: P,
+      agencyId: advance.agencyId,
+      refId: operationId,
+      receiptId: receipt.id,
+      settlesPaymentId: advance.id,
+    })
+    b.activity(
+      'advance_returned',
+      user(userId),
+      `${name} returned ${usdLabel(amount)} unused from ${advance.memo}`,
+      { kind: 'receipt', id: receipt.id },
+      at,
+      { portfolioId: P, agencyId: advance.agencyId, amount, subjectUserId: userId },
+    )
+    notifyAll(
+      arcAdmins,
+      'Unused money returned',
+      `${name} returned ${usdLabel(amount)} unused from ${advance.memo} to ${accountName(operations)}.`,
+      personHref(userId),
+      at,
+      read,
+    )
+  }
+
+  /** Maya pays an address outside Viatik from an Arc account (the engine's payOutside, invoice to follow). */
+  const payOutsideViatik = (input: {
+    accountId: Id
+    payee: string
+    address: string
+    amount: Cents
+    category: SpendingCategory
+    memo: string
+    at: ISODate
+    reminderId?: Id
+    read: boolean
+  }) => {
+    const id = b.id('pay')
+    const receipt = b.receipt({
+      kind: 'outside_payment',
+      amount: input.amount,
+      fromLabel: accountName(input.accountId),
+      toLabel: `${input.payee} · ${shortAddress(input.address)}`,
+      description: input.memo,
+      policyLabel: 'Paid outside Viatik · Agency Admin authorization',
+      operationId: id,
+      at: input.at,
+      portfolioId: P,
+      agencyId: A.arc,
+      account: U.maya,
+    })
+    b.move(
+      'payment',
+      input.amount,
+      account(input.accountId),
+      { kind: 'external', label: input.payee, address: input.address },
+      { at: input.at, portfolioId: P, agencyId: A.arc, refId: id, receiptId: receipt.id },
+    )
+    const payment: Payment = {
+      id,
+      agencyId: A.arc,
+      type: paymentTypeForCategory(input.category),
+      sourceAccountId: input.accountId,
+      recipient: { kind: 'address', payee: input.payee, address: input.address },
+      amount: input.amount,
+      category: input.category,
+      memo: input.memo,
+      status: 'completed',
+      createdBy: user(U.maya),
+      scheduledFor: input.at,
+      completedAt: input.at,
+      receiptId: receipt.id,
+      reminderId: input.reminderId,
+    }
+    s.payments.push(payment)
+    b.activity(
+      'paid_outside',
+      user(U.maya),
+      `Paid ${usdLabel(input.amount)} to ${input.payee} outside Viatik`,
+      { kind: 'payment', id },
+      input.at,
+      { portfolioId: P, agencyId: A.arc, amount: input.amount },
+    )
+    notifyAll(
+      investors,
+      'Paid outside Viatik',
+      `${agencyNameOf(A.arc)} paid ${usdLabel(input.amount)} to ${input.payee}. Invoice pending.`,
+      `/receipts/${receipt.id}`,
+      input.at,
+      input.read,
+    )
+    return payment
+  }
+
+  /** Its invoice, added after the payment and anchored once (the engine's addPaymentProof). */
+  const addInvoice = (payment: Payment, name: string, at: ISODate, read: boolean) => {
+    const recipient = payment.recipient
+    if (recipient.kind !== 'address' || payment.proof)
+      throw new Error(`Seed: ${payment.id} does not take an invoice.`)
+    const payee = recipient.payee
+    const proof: Evidence = b.evidence('file', name, U.maya, at, {
+      mimeType: 'application/pdf',
+      sizeBytes: 182_400,
+    })
+    payment.proof = proof
+    payment.proofVerified = {
+      ...simulatedVerification({
+        operationId: `${payment.id}:invoice`,
+        account: U.maya,
+        timestamp: at,
+        contractPolicy: 'Invoice fingerprinted · anchored once',
+      }),
+      evidenceHash: attachmentsHash([proof]),
+    }
+    const receipt = s.receipts.find((r) => r.id === payment.receiptId)
+    if (receipt && !receipt.evidenceIds.includes(proof.id)) receipt.evidenceIds.push(proof.id)
+    b.activity(
+      'payment_proof_added',
+      user(U.maya),
+      `Added the invoice for ${usdLabel(payment.amount)} paid to ${payee}`,
+      { kind: 'payment', id: payment.id },
+      at,
+      { portfolioId: P, agencyId: payment.agencyId, amount: payment.amount },
+    )
+    notifyAll(
+      investors,
+      'Invoice uploaded',
+      `${agencyNameOf(payment.agencyId)} added the invoice for ${usdLabel(payment.amount)} paid to ${payee}.`,
+      `/receipts/${payment.receiptId}`,
+      at,
+      read,
+    )
+  }
+
+  // Spending access, and the money behind money for purchases: Arc runs low while Tranche 2 is
+  // reviewed, so Maya moves part of the Reserve to Operations.
+  transfer(A.arc, ACC.arcReserve, ACC.arcOperations, usd(1_000), b.ago(51, 10), U.maya)
+  const accessAt = b.ago(50, 11)
+  createBudget({
+    id: BUD.arcPurchases,
+    agencyId: A.arc,
+    sourceAccountId: ACC.arcOperations,
+    name: 'Pilot purchases',
+    purpose: 'Devices, supplies and printing for pilot sessions, justified with receipts.',
+    template: 'team_spend',
+    period: 'monthly',
+    perOperationLimit: usd(400),
+    periodLimit: usd(1_000),
+    approvalThreshold: usd(200),
+    allowedDestinationIds: [],
+    createdBy: U.maya,
+    createdAt: accessAt,
+  })
+  fundFromOperations(BUD.arcPurchases, usd(700), b.ago(50, 11, 30))
+  for (const [budgetId, periodLimit, perOperationLimit] of [
+    [BUD.arcPurchases, usd(400), undefined],
+    [BUD.arcTeam, usd(3_000), usd(1_000)],
+  ] as const) {
+    for (const memberId of [U.alex, U.priya, U.daniel]) {
+      allowance(budgetId, memberId, periodLimit, accessAt, U.maya, A.arc, perOperationLimit)
+      b.notify(
+        memberId,
+        'New spending access',
+        `You can now spend up to ${usdLabel(periodLimit)} from ${budgetById(budgetId).name}.`,
+        `/member/${A.arc}/budget/${budgetId}`,
+        accessAt,
+        true,
+      )
+    }
+  }
+
+  // Daniel: money for test phones, 40 days ago. Nothing justified yet: overdue.
+  const danielAdvance = mustBePaid(
+    request({
+      agencyId: A.arc,
+      budgetId: BUD.arcPurchases,
+      requester: user(U.daniel),
+      type: 'funds',
+      amount: usd(180),
+      category: 'equipment',
+      purpose: 'Test phones for the pilot',
+      at: b.ago(40, 11),
+    }),
+    "Daniel's money for purchases",
+  )
+  paidNotice(danielAdvance, 'funds', true)
+
+  // The monthly reminder to pay Claude Teams, next due in about two weeks: its day of the month is
+  // the one 14 days from now (1–28, a day every month has). Last month's Claude Teams was paid
+  // outside Viatik on that day (two to three weeks ago) and its invoice added the next day; Maya
+  // set the reminder up a few days before that payment. (Recorded here, ahead of stories that
+  // come before it in time: activity, notifications and movements are sorted at the end.)
+  const claudePayee = 'Anthropic · Claude Teams'
+  const claudeDay = Math.min(28, Math.max(1, new Date(b.ahead(14)).getUTCDate()))
+  const claudeMonth = monthOffsetOf(b.ahead(14), now) - 1
+  const claudeAt = b.inMonth(claudeMonth, claudeDay, 15)
+  const reminderAt = b.inMonth(claudeMonth, claudeDay - 4, 9)
+  const claudeReminder: Reminder = {
+    id: b.id('rmd'),
+    agencyId: A.arc,
+    title: 'Pay Claude Teams and upload the invoice',
+    payee: claudePayee,
+    amount: usd(150),
+    category: 'ai_services',
+    cadence: 'monthly',
+    dayOfMonth: claudeDay,
+    sourceAccountId: ACC.arcOperations,
+    status: 'active',
+    createdBy: U.maya,
+    createdAt: reminderAt,
+    updatedAt: reminderAt,
+  }
+  s.reminders.push(claudeReminder)
+  b.activity(
+    'reminder_created',
+    user(U.maya),
+    `Created the monthly reminder "${claudeReminder.title}"`,
+    { kind: 'reminder', id: claudeReminder.id },
+    reminderAt,
+    { portfolioId: P, agencyId: A.arc, amount: claudeReminder.amount },
+  )
+  const claude = payOutsideViatik({
+    accountId: ACC.arcOperations,
+    payee: claudePayee,
+    address: DEMO.outsideAddresses.anthropic,
+    amount: usd(150),
+    category: 'ai_services',
+    memo: `Claude Teams, ${monthName(claudeAt)} · 5 seats`,
+    at: claudeAt,
+    reminderId: claudeReminder.id,
+    read: true,
+  })
+  addInvoice(
+    claude,
+    `Anthropic invoice, ${monthName(claudeAt)}.pdf`,
+    b.inMonth(claudeMonth, claudeDay + 1, 10),
+    true,
+  )
+
+  // Priya: a paper prototyping kit. Two receipts and the unused rest given back: settled.
+  const priyaAdvance = mustBePaid(
+    request({
+      agencyId: A.arc,
+      budgetId: BUD.arcPurchases,
+      requester: user(U.priya),
+      type: 'funds',
+      amount: usd(120),
+      category: 'equipment',
+      purpose: 'Paper prototyping kit',
+      at: b.ago(26, 10),
+    }),
+    "Priya's money for purchases",
+  )
+  paidNotice(priyaAdvance, 'funds', true)
+  addReceipt(priyaAdvance, {
+    merchant: 'PaperLab Supplies',
+    amount: cents(6_480),
+    category: 'equipment',
+    spentAt: b.ago(25, 12),
+    at: b.ago(24, 15),
+    sizeBytes: 96_300,
+    read: true,
+  })
+  addReceipt(priyaAdvance, {
+    merchant: 'Print House',
+    amount: cents(4_320),
+    category: 'research',
+    spentAt: b.ago(23, 17),
+    at: b.ago(22, 11),
+    sizeBytes: 121_800,
+    read: true,
+  })
+  giveBack(priyaAdvance, advanceStanding(s, priyaAdvance, b.ago(21, 12)).pending, b.ago(21, 12), true)
+
+  // Alex: paid back for a screen recording app he bought himself.
+  const reimbursed = request({
+    agencyId: A.arc,
+    budgetId: BUD.arcPurchases,
+    requester: user(U.alex),
+    type: 'reimbursement',
+    amount: usd(49),
+    category: 'software',
+    purpose: 'Screen recording app for pilot sessions',
+    merchant: 'Capturely',
+    spentAt: b.ago(21, 18),
+    at: b.ago(20, 15),
+  })
+  paidNotice(mustBePaid(reimbursed, "Alex's reimbursement"), 'reimbursement', true)
+
+  // Alex: payment for work, reviewed and approved by Maya, paid from Team payments with `pay`.
+  const workPurpose = 'On-call support for the pilot launch'
+  const workAt = b.ago(15, 9)
+  fundFromOperations(BUD.arcTeam, usd(180), b.ago(15, 8, 30))
+  const workPaid = mustBePaid(
+    request({
+      agencyId: A.arc,
+      budgetId: BUD.arcTeam,
+      requester: user(U.alex),
+      type: 'work',
+      amount: usd(180),
+      category: 'team',
+      purpose: workPurpose,
+      files: [{ name: 'Pilot launch on-call log.pdf', sizeBytes: 148_200 }],
+      at: workAt,
+      approver: U.maya,
+    }),
+    "Alex's payment for work",
+  )
+  notifyAll(
+    arcAdmins,
+    'Request needs approval',
+    `${nameOf(U.alex)} requested ${usdLabel(workPaid.amount)} for ${workPurpose}.`,
+    approvalsHref,
+    workAt,
+    true,
+  )
+  paidNotice(workPaid, 'work', true)
+
+  // Alex: money for a field kit 11 days ago (well inside its 30 days), partly justified so far.
+  const alexAdvance = mustBePaid(
+    request({
+      agencyId: A.arc,
+      budgetId: BUD.arcPurchases,
+      requester: user(U.alex),
+      type: 'funds',
+      amount: usd(150),
+      category: 'equipment',
+      purpose: 'Field kit for the pilot visit',
+      at: b.ago(11, 10),
+    }),
+    "Alex's money for purchases",
+  )
+  paidNotice(alexAdvance, 'funds', true)
+  addReceipt(alexAdvance, {
+    merchant: 'Northline Electronics',
+    amount: cents(6_490),
+    category: 'equipment',
+    spentAt: b.ago(10, 15),
+    at: b.ago(9, 17),
+    sizeBytes: 88_700,
+    read: false,
+  })
+
+  // Figma, paid outside Viatik ten days ago: its invoice is overdue.
+  payOutsideViatik({
+    accountId: ACC.arcOperations,
+    payee: 'Figma',
+    address: DEMO.outsideAddresses.figma,
+    amount: usd(45),
+    category: 'software',
+    memo: 'Figma Professional · 3 editor seats',
+    at: b.ago(10, 16),
+    read: false,
+  })
+
+  // Lumen Labs returns the unused part of Tranche 2 (no inflow reaches its Operations after it).
+  const returnAt = b.ago(3, 11)
+  const returnedCapital = usd(5_000)
+  const capitalReturnId = b.id('cret')
+  const capitalReceipt = b.receipt({
+    kind: 'capital_return',
+    amount: returnedCapital,
+    fromLabel: accountName(ACC.lumenOperations),
+    toLabel: `${s.portfolios.find((p) => p.id === P)?.name ?? 'Portfolio'} · Portfolio Vault`,
+    description: 'Unused part of Tranche 2: the second data hire moved to next quarter',
+    policyLabel: 'Capital return · from an Agency account to its Portfolio Vault',
+    operationId: capitalReturnId,
+    at: returnAt,
+    portfolioId: P,
+    agencyId: A.lumen,
+    account: U.ren,
+  })
+  b.move('capital_return', returnedCapital, account(ACC.lumenOperations), vault(DEMO.vaults.portfolio), {
+    at: returnAt,
+    portfolioId: P,
+    agencyId: A.lumen,
+    agreementId: governingAgreement(s, A.lumen)?.id,
+    refId: capitalReturnId,
+    receiptId: capitalReceipt.id,
+  })
+  b.activity(
+    'capital_returned',
+    user(U.ren),
+    `Returned ${usdLabel(returnedCapital)} from ${accountName(ACC.lumenOperations)} to the Portfolio Vault`,
+    { kind: 'receipt', id: capitalReceipt.id },
+    returnAt,
+    { portfolioId: P, agencyId: A.lumen, amount: returnedCapital },
+  )
+  notifyAll(
+    investors,
+    'Capital returned',
+    `${agencyNameOf(A.lumen)} returned ${usdLabel(returnedCapital)} to the Portfolio Vault.`,
+    `/investor/${P}/vaults`,
+    returnAt,
+  )
+
+  // Maya reminds Daniel about his receipts (the engine's remindReceipts, for one person).
+  const remindedAt = b.ago(2, 9)
+  const danielOwes = accountabilityByPerson(s, A.arc, remindedAt).find((p) => p.userId === U.daniel)
+  if (!danielOwes || danielOwes.pending <= 0) throw new Error('Seed: Daniel has nothing to justify.')
+  b.activity(
+    'receipts_reminded',
+    user(U.maya),
+    `Reminded ${nameOf(U.daniel)} to add receipts for ${usdLabel(danielOwes.pending)}`,
+    { kind: 'user', id: U.daniel },
+    remindedAt,
+    { portfolioId: P, agencyId: A.arc, amount: danielOwes.pending, subjectUserId: U.daniel },
+  )
+  b.notify(
+    U.daniel,
+    'Receipts needed',
+    `${usdLabel(danielOwes.pending)} from ${agencyNameOf(A.arc)} still needs receipts${danielOwes.overdueCount > 0 ? ', some overdue' : ''}.`,
+    `/member/${A.arc}/expenses`,
+    remindedAt,
+  )
+
+  // Alex: more payment for work, waiting for an Agency Admin (never on the ledger until it is paid).
+  // Team payments must hold it to be approvable; after the month's payouts it is given the rest.
+  const waitingAt = b.ago(1, 11, 30)
+  const waitingAmount = usd(350)
+  const teamFree = budgetUsage(s, budgetById(BUD.arcTeam), waitingAt).available
+  if (teamFree < waitingAmount) fundFromOperations(BUD.arcTeam, cents(waitingAmount - teamFree), b.ago(1, 11))
+  const waitingWork = request({
+    agencyId: A.arc,
+    budgetId: BUD.arcTeam,
+    requester: user(U.alex),
+    type: 'work',
+    amount: waitingAmount,
+    category: 'team',
+    purpose: 'Pilot onboarding guide',
+    files: [{ name: 'Pilot onboarding guide v1.pdf', sizeBytes: 1_260_000 }],
+    at: waitingAt,
+    leavePending: true,
+  })
+  if (!waitingWork || waitingWork.status !== 'needs_approval')
+    throw new Error(`Seed: Alex's payment for work is ${waitingWork?.status}, not waiting.`)
+  notifyAll(
+    arcAdmins,
+    'Request needs approval',
+    `${nameOf(U.alex)} requested ${usdLabel(waitingAmount)} for ${waitingWork.purpose}.`,
+    approvalsHref,
+    waitingAt,
+  )
+
   // ─── Notifications ─────────────────────────────────────────────────────────
 
   const agencyHref = (path: string) => `/agency/${A.arc}/${path}`
@@ -2099,13 +2732,23 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     agencyHref('approvals'),
     b.ago(1, 16, 10),
   )
-  b.notify(
-    U.alex,
-    'Receipts missing',
-    'Two recent expenses still need a receipt.',
-    `/member/${A.arc}/expenses`,
-    b.ago(1, 8),
-  )
+  // Only vendor payments' expenses miss receipts now (money for purchases is "to justify"), and
+  // only those there were when Alex was told.
+  const missingNoticeAt = b.ago(1, 8)
+  const alexMissing = missingReceipts(s, { agencyId: A.arc, userId: U.alex }).filter(
+    (e) => Date.parse(e.createdAt) <= Date.parse(missingNoticeAt),
+  ).length
+  if (alexMissing > 0) {
+    b.notify(
+      U.alex,
+      'Receipts missing',
+      alexMissing === 1
+        ? 'A vendor payment you requested still needs its receipt.'
+        : `${alexMissing} vendor payments you requested still need their receipts.`,
+      `/member/${A.arc}/expenses`,
+      missingNoticeAt,
+    )
+  }
   b.notify(
     U.ren,
     'Exception sent to Investor',

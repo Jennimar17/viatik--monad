@@ -119,7 +119,16 @@ export class SeedBuilder {
     amount: Cents,
     from: Location,
     to: Location,
-    meta: { at: ISODate; portfolioId: Id; agencyId?: Id; agreementId?: Id; refId?: Id; receiptId?: Id },
+    meta: {
+      at: ISODate
+      portfolioId: Id
+      agencyId?: Id
+      agreementId?: Id
+      refId?: Id
+      receiptId?: Id
+      /** A give-back: the advance (money for purchases) it returns money for. */
+      settlesPaymentId?: Id
+    },
   ): Movement {
     if (amount <= 0) throw new Error(`Movement amount must be positive (${kind})`)
     if (!this.canMove(amount, from)) {
@@ -142,6 +151,8 @@ export class SeedBuilder {
       agreementId: meta.agreementId,
       refId: meta.refId,
       receiptId: meta.receiptId,
+      // Only a give-back carries the key, as the engine's returnUnusedFunds does.
+      ...(meta.settlesPaymentId ? { settlesPaymentId: meta.settlesPaymentId } : {}),
       createdAt: meta.at,
     }
     this.state.movements.push(movement)

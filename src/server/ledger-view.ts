@@ -162,7 +162,8 @@ async function ledgerViewFor(world: World, user: UserRow): Promise<LedgerView> {
         and(
           inArray(
             users.id,
-            visible.users.map((u) => u.id),
+            // Name-only records (a Member's view of their Admins and Investors) carry no account details.
+            visible.users.filter((u) => u.email !== '').map((u) => u.id),
           ),
           isNotNull(users.walletAddress),
         ),

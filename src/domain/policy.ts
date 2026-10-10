@@ -290,13 +290,17 @@ export function describeBudgetPolicy(
     destinationNames?: string[]
     categoryLabels?: Record<SpendingCategory, string>
     locale?: string
+    /** A Member's spending access: their own per-payment cap, when lower, is the one that applies. */
+    allowance?: Pick<SpendingAllowance, 'perOperationLimit'>
   } = {},
 ): string[] {
   const lines: string[] = []
   const periodWord =
     budget.period === 'one_time' ? 'in total' : `per ${budget.period === 'monthly' ? 'month' : 'quarter'}`
   lines.push(`Up to ${fmt(budget.periodLimit)} can be spent ${periodWord}.`)
-  lines.push(`A single payment cannot exceed ${fmt(budget.perOperationLimit)}.`)
+  lines.push(
+    `A single payment cannot exceed ${fmt(minDefined(budget.perOperationLimit, options.allowance?.perOperationLimit))}.`,
+  )
   lines.push(
     budget.approvalThreshold > 0
       ? `Payments up to ${fmt(budget.approvalThreshold)} are approved automatically. Anything above needs an Agency Admin.`

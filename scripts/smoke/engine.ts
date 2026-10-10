@@ -1,4 +1,4 @@
-import { getAddress } from 'viem'
+import { getAddress, keccak256, slice, stringToHex } from 'viem'
 
 import {
   accountabilityByPerson,
@@ -18,7 +18,7 @@ import {
   returnableFor,
 } from '@/domain/accountability'
 import { planSettlement } from '@/data/settlement'
-import { shortAddress } from '@/domain/address'
+import { parseAddress, shortAddress } from '@/domain/address'
 import {
   execute,
   previewPolicy,
@@ -39,6 +39,7 @@ import {
   governingAgreement,
   investorApprovals,
   isException,
+  isOutsidePayment,
   userName,
 } from '@/domain/queries'
 import {
@@ -47,6 +48,7 @@ import {
   agreementCapital,
   budgetUsage,
   holderSpentInPeriod,
+  isGiveBack,
   memberHeld,
   portfolioCapital,
   vaultBalance,
@@ -54,19 +56,25 @@ import {
 import { justificationStatus, proofStatus, reminderStatus } from '@/domain/status'
 import type {
   Budget,
+  Evidence,
   Id,
+  ISODate,
+  Location,
+  Movement,
   PaymentRequest,
   PaymentType,
   PolicyDecision,
   RequestType,
   ViatikState,
 } from '@/domain/types'
+import { scopeStateForUser } from '@/domain/visibility'
 import { buildGenesis } from '@/ledger/genesis'
 import { ledgerId } from '@/ledger/ids'
 import { simulateLedger } from '@/ledger/mock'
 import { ledgerSnapshot } from '@/ledger/snapshot'
 import { heldByCommand, heldByOperation, sharesAny } from '@/server/conflicts'
 import { parseCommandInput } from '@/server/schemas'
+import { USDC } from '@/web3/addresses'
 
 import {
   bookedTotal,
@@ -102,6 +110,7 @@ const TOOL = getAddress('0x8ba1f109551bd432803012645ac136ddd64dba72')
 /** A person's own wallet. */
 const WALLET = '0x19F79Be75A05360af0BED0D99d9317eE3Df6D6c9'
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+const DAY_MS = 24 * 60 * 60 * 1000
 
 const usdText = (value: Cents) => formatUsd(value, { withCode: true })
 
@@ -131,6 +140,7 @@ export default async function engine(t: Checker) {
   await t.scenario('K6. The server holds the files and bills of operations waiting to be signed', () =>
     filesAndBillsHeld(t),
   )
+  await t.scenario("L. The seed's demo story, as the read models show it, and going on", () => seedStory(t))
 }
 
 // ─── A. Money for purchases ──────────────────────────────────────────────────
@@ -148,6 +158,8 @@ async function moneyForPurchases(t: Checker) {
   await w.fund(U.maya, B.arcTools, amount)
   const held = memberHeld(w.state, ARC, U.alex)
   const pendingBefore = personPending(w.state, ARC, U.alex, w.now)
+  // The seed's own money for purchases of Daniel's (the demo story), older than anything below.
+  const danielSeeded = advancesOf(w.state, { agencyId: ARC, userId: U.daniel }, w.now).length
   const spentBefore = agencyCapital(w.state, ARC, w.now).states.spent
   const portfolioSpentBefore = portfolioCapital(w.state, DEMO.portfolio, w.now).states.spent
 
@@ -846,7 +858,7 @@ async function moneyForPurchases(t: Checker) {
   const danielAdvances = advancesOf(w.state, { agencyId: ARC, userId: U.daniel }, w.now)
   t.check(
     "A11: Daniel's money for purchases, newest first",
-    danielAdvances.length === 2 &&
+    danielAdvances.length === danielSeeded + 2 &&
       danielAdvances[0]?.payment.id === a11.result.paymentId &&
       danielAdvances[1]?.payment.id === paid.id,
     danielAdvances.map((s) => s.payment.id).join(', '),
@@ -1073,12 +1085,13 @@ async function paymentForWork(t: Checker) {
     ...extra,
   })
 
-  // Without spending access on the budget, payment for work is refused like any request.
+  // Without spending access on the budget, payment for work is refused like any request. (The seed
+  // gives Alex, Priya and Daniel access to Team payments; Sofia has none.)
   const c0 = await w.run(
-    U.alex,
+    U.sofia,
     'requestPayment',
     work(usd(400), 'no-access'),
-    'C0 Alex asks without spending access',
+    'C0 Sofia asks without spending access',
     {
       ops: [],
       settle: 'failed',
@@ -1092,7 +1105,7 @@ async function paymentForWork(t: Checker) {
     U.maya,
     'assignAllowance',
     { budgetId: B.arcTeam, holder: { kind: 'member', userId: U.alex }, periodLimit: usd(1000) },
-    'C setup: Maya gives Alex spending access to Team payments, up to 1,000 a month',
+    "C setup: Maya sets Alex's spending access to Team payments to 1,000 a month",
     { ops: ['setAllowance'] },
   )
   checkSame(t, 'C setup: the ledger knows Alex may spend from it', setup.plan?.ops[0], {
@@ -1192,6 +1205,8 @@ async function paymentForWork(t: Checker) {
   // C3. An Agency Admin approves it: paid with exactly one `pay`, from the budget to Alex.
   const held = memberHeld(w.state, ARC, U.alex)
   const pendingBefore = personPending(w.state, ARC, U.alex, w.now)
+  // The seed's paid work of Alex's may fall in this month too.
+  const alexTeamSpent = holderSpentInPeriod(w.state, team, { kind: 'member', userId: U.alex }, w.now)
   const c3 = await w.run(
     U.maya,
     'approveRequest',
@@ -1250,7 +1265,8 @@ async function paymentForWork(t: Checker) {
   t.check('C3: and it creates no expense', !w.state.expenses.some((e) => e.paymentId === payment.id))
   t.check(
     "C3: it counts against Alex's monthly limit",
-    holderSpentInPeriod(w.state, team, { kind: 'member', userId: U.alex }, w.now) === first.amount,
+    holderSpentInPeriod(w.state, team, { kind: 'member', userId: U.alex }, w.now) - alexTeamSpent ===
+      first.amount,
   )
   const c3b = await w.run(
     U.alex,
@@ -2179,10 +2195,11 @@ async function visibility(t: Checker) {
     "F: the outside address appears nowhere in Alex's view",
     !JSON.stringify(alexView).toLowerCase().includes(TOOL.toLowerCase()),
   )
-  const priyaView = w.view(U.priya)
+  // (The seed gives Priya access to Team payments too; Sofia has none.)
+  const sofiaView = w.view(U.sofia)
   t.check(
-    'F: Priya, without access to Team payments, sees neither',
-    !priyaView.movements.some((m) => m.refId && outsideIds.includes(m.refId)),
+    'F: Sofia, without access to Team payments, sees neither',
+    !sofiaView.movements.some((m) => m.refId && outsideIds.includes(m.refId)),
   )
   const renView = w.view(U.ren)
   t.check(
@@ -2240,6 +2257,29 @@ async function visibility(t: Checker) {
     [U.alex, U.priya].every((id) => people(U.maya).includes(id)),
     JSON.stringify(people(U.maya)),
   )
+
+  // Alex holds Tools too: Priya's money for purchases from it reads "Team member", with no receipt.
+  const priyaFromTools = w.state.movements.find(
+    (m) =>
+      m.kind === 'payment' &&
+      m.from.kind === 'budget' &&
+      m.from.budgetId === B.arcTools &&
+      m.to.kind === 'recipient' &&
+      m.to.recipient.kind === 'member' &&
+      m.to.recipient.userId === U.priya,
+  )
+  const seenByAlex = alexView.movements.find((m) => m.id === priyaFromTools?.id)
+  t.check(
+    "F: Alex sees what Tools paid Priya as paid to 'Team member', without its receipt",
+    priyaFromTools !== undefined &&
+      seenByAlex?.amount === priyaFromTools.amount &&
+      same(seenByAlex.from, priyaFromTools.from) &&
+      same(seenByAlex.to, { kind: 'external', label: 'Team member' }) &&
+      !seenByAlex.receiptId &&
+      !alexView.receipts.some((r) => r.id === priyaFromTools.receiptId),
+    JSON.stringify(seenByAlex),
+  )
+  memberViewChecks(t, 'F', w.state, w.now)
 }
 
 // ─── G. Reminders ────────────────────────────────────────────────────────────
@@ -2422,13 +2462,14 @@ async function reminders(t: Checker) {
     !w.view(U.maya).reminders.some((r) => r.id === lumenReminder.result.id),
   )
 
-  // Receipt reminders: only people with money to justify, at most once a day each.
+  // Receipt reminders: only people with money to justify, at most once a day each. (In Arc Studio the
+  // seed already has some: Lumen Labs has nobody.)
   const nobody = w.refuse(
-    U.maya,
+    U.ren,
     'remindReceipts',
-    { agencyId: ARC },
+    { agencyId: LUMEN },
     'invalid_state',
-    'G4 nobody has receipts to send yet',
+    'G4 nobody in Lumen Labs has receipts to send',
   )
   t.check("G4: it says 'Nobody has receipts to send.'", nobody === 'Nobody has receipts to send.', nobody)
 
@@ -2462,7 +2503,7 @@ async function reminders(t: Checker) {
   w.refuse(
     U.maya,
     'remindReceipts',
-    { agencyId: ARC, userId: U.daniel },
+    { agencyId: ARC, userId: U.sofia },
     'invalid_state',
     'G4 reminding someone with nothing pending',
   )
@@ -2873,11 +2914,17 @@ async function labelsAndSeed(t: Checker) {
       .filter((r) => r.type === 'vendor_payment' || r.type === 'reimbursement')
       .map((r) => r.paymentId),
   )
+  // Receipts added later to money for purchases (addExpense) are not created when it is paid.
+  const advanceIds = new Set(w.state.payments.filter((p) => p.type === 'advance').map((p) => p.id))
   const strayExpenses = w.state.expenses.filter(
-    (e) => e.paymentId && completed.some((r) => r.paymentId === e.paymentId) && !documenting.has(e.paymentId),
+    (e) =>
+      e.paymentId &&
+      completed.some((r) => r.paymentId === e.paymentId) &&
+      !documenting.has(e.paymentId) &&
+      !(advanceIds.has(e.paymentId) && e.receipt?.kind === 'file'),
   )
   t.check(
-    'J: seeded expenses only document vendor payments and reimbursements',
+    'J: seeded expenses only document vendor payments and reimbursements (or justify money for purchases)',
     strayExpenses.length === 0,
     strayExpenses.map((e) => e.id).join(', '),
   )
@@ -4099,6 +4146,866 @@ async function filesAndBillsHeld(t: Checker) {
     'invalid_state',
     "K6 Maya's payment of the bill, run again once it is reconciled (its confirmation would not fit)",
   )
+}
+
+// ─── L. The seed's demo story ────────────────────────────────────────────────
+
+/**
+ * Addresses an outside payment of the seed must never use: the ledger (v3 and the superseded v2),
+ * TestUSD and the keeper on Monad Testnet, USDC, and the smoke's own.
+ */
+const NOT_A_PAYEE = [
+  '0x4BB74305A0e4ad5d55652B9d32b15d86d3E42908',
+  '0xf3e82D8608F688483695A70694f267374300193C',
+  '0xE14D62136Bcc0C668755f69F04Cfa97b079BB246',
+  USDC.testnet,
+  USDC.mainnet,
+  WALLET,
+  TOOL,
+  ZERO_ADDRESS,
+].map((address) => address.toLowerCase())
+
+/** The seed's placeholders, derived from a hash: nobody holds their keys. */
+const PLACEHOLDER_OF: Record<string, string> = {
+  [DEMO.outsideAddresses.anthropic]: 'viatik:demo:anthropic-claude-teams',
+  [DEMO.outsideAddresses.figma]: 'viatik:demo:figma',
+}
+
+/**
+ * L. What the demo shows at the seed's `now`, read through the engine's read models: money to
+ * justify per person, payment for work, payments outside Viatik with and without their invoice, the
+ * monthly reminder, capital returned, the notifications that tell it, files used once, balances
+ * never negative while it happens, and the story going on through real commands.
+ */
+async function seedStory(t: Checker) {
+  const w = new World(t, 'engine-l')
+  const s = w.state
+  const now = w.now
+  const daysAgo = (at: ISODate | undefined) => (Date.parse(now) - Date.parse(at ?? now)) / DAY_MS
+  const within = (at: ISODate | undefined, from: number, to: number) =>
+    daysAgo(at) >= from && daysAgo(at) <= to
+  const notes = (userId: Id, title: string) =>
+    s.notifications.filter((n) => n.userId === userId && n.title === title)
+
+  // L1. Money for purchases: one advance each, in the three states.
+  const single = (userId: Id) => {
+    const all = advancesOf(s, { agencyId: ARC, userId }, now)
+    t.check(`L1: ${userName(s, userId)} has one money for purchases`, all.length === 1, String(all.length))
+    return must(all[0], `${userId}'s money for purchases`)
+  }
+  const alex = single(U.alex)
+  const priya = single(U.priya)
+  const daniel = single(U.daniel)
+  t.check(
+    'L1: Alex’s is under two weeks old (about 11 days), partly justified with a receipt, not overdue',
+    within(alex.payment.completedAt, 10, 12) &&
+      alex.justified > 0 &&
+      alex.pending > 0 &&
+      alex.returned === 0 &&
+      !alex.overdue,
+    JSON.stringify({ age: daysAgo(alex.payment.completedAt), j: alex.justified, p: alex.pending }),
+  )
+  const in18Days = addDays(now, 18)
+  t.check(
+    'L1: …and Alex is still not overdue 18 days after the seed (the demo has that long)',
+    !advanceStanding(s, alex.payment, in18Days).overdue &&
+      accountabilityByPerson(s, ARC, in18Days).every((p) => p.userId !== U.alex || p.overdueCount === 0),
+    alex.dueAt,
+  )
+  t.check(
+    'L1: Priya’s is 3–4 weeks old and fully justified: receipts and the unused rest given back',
+    within(priya.payment.completedAt, 21, 28) &&
+      priya.settled &&
+      priya.justified > 0 &&
+      priya.returned > 0 &&
+      priya.justified + priya.returned === priya.amount &&
+      priya.returns.every((m) => isGiveBack(m) && m.settlesPaymentId === priya.payment.id),
+    JSON.stringify({ j: priya.justified, r: priya.returned, a: priya.amount }),
+  )
+  t.check(
+    'L1: Daniel’s is about 40 days old, nothing justified, overdue',
+    within(daniel.payment.completedAt, 39, 41) &&
+      daniel.justified === 0 &&
+      daniel.pending === daniel.amount &&
+      daniel.overdue,
+  )
+  t.check(
+    'L1: every receipt of them is a file, on the advance’s budget',
+    [alex, priya].every((a) =>
+      a.expenses.every((e) => e.receipt?.kind === 'file' && e.budgetId === a.payment.budgetId),
+    ),
+  )
+  const people = accountabilityByPerson(s, ARC, now)
+  const mostOverdue = people[0]
+  t.check(
+    'L1: per person, Daniel (overdue) comes first, then Alex; Priya has nothing open',
+    mostOverdue?.userId === U.daniel &&
+      mostOverdue.overdueCount === 1 &&
+      people.some((p) => p.userId === U.alex && p.pending === alex.pending && p.overdue === 0) &&
+      !people.some((p) => p.userId === U.priya),
+    JSON.stringify(people.map((p) => [p.userId, p.pending, p.overdue])),
+  )
+  const arc = agencyAccountability(s, ARC, now)
+  t.check(
+    'L1: Arc Studio’s totals: pending, overdue, one person overdue',
+    arc.pending === alex.pending + daniel.pending &&
+      arc.overdue === daniel.pending &&
+      arc.peopleOverdue === 1,
+    JSON.stringify({ pending: arc.pending, overdue: arc.overdue, people: arc.peopleOverdue }),
+  )
+  const reminded = lastReminded(s, ARC, U.daniel)
+  t.check(
+    'L1: Maya reminded Daniel about two days ago',
+    within(reminded, 1, 3) &&
+      s.activity.some(
+        (a) =>
+          a.type === 'receipts_reminded' &&
+          a.subjectUserId === U.daniel &&
+          a.actor.kind === 'user' &&
+          a.actor.userId === U.maya,
+      ),
+    reminded,
+  )
+  t.check(
+    "L1: …and Daniel was told 'Receipts needed', some overdue, pointing to his expenses",
+    notes(U.daniel, 'Receipts needed').some(
+      (n) =>
+        n.createdAt === reminded &&
+        n.href === `/member/${ARC}/expenses` &&
+        n.body === `${usdText(daniel.pending)} from Arc Studio still needs receipts, some overdue.`,
+    ),
+  )
+  const advances = [alex, priya, daniel]
+  t.check(
+    'L1: each was asked from a budget where its person has spending access, and approved by policy',
+    advances.every((a) => {
+      const request = a.request
+      const budget = s.budgets.find((b) => b.id === a.payment.budgetId)
+      return (
+        request?.type === 'funds' &&
+        request.decision.outcome === 'approved' &&
+        Boolean(budget?.allowedCategories.includes(request.category)) &&
+        s.allowances.some(
+          (x) =>
+            x.budgetId === budget?.id &&
+            x.status === 'active' &&
+            x.holder.kind === 'member' &&
+            x.holder.userId === a.userId,
+        )
+      )
+    }),
+  )
+
+  // L2. Payment for work and a reimbursement, for Alex.
+  t.check(
+    'L2: Alex, Priya and Daniel may ask for payment for work from Team payments',
+    [U.alex, U.priya, U.daniel].every((userId) =>
+      s.allowances.some(
+        (a) =>
+          a.budgetId === B.arcTeam &&
+          a.status === 'active' &&
+          a.holder.kind === 'member' &&
+          a.holder.userId === userId,
+      ),
+    ),
+  )
+  const works = s.requests.filter(
+    (r) => r.type === 'work' && r.requester.kind === 'user' && r.requester.userId === U.alex,
+  )
+  const paidWork = must(
+    works.find((r) => r.status === 'completed'),
+    "Alex's paid work",
+  )
+  const waitingWork = must(
+    works.find((r) => r.status === 'needs_approval'),
+    "Alex's waiting work",
+  )
+  const workPayment = must(
+    s.payments.find((p) => p.id === paidWork.paymentId),
+    'the payment for work',
+  )
+  t.check(
+    'L2: paid work: a team payment under the request’s own id, approved by Maya, from Team payments to Alex',
+    workPayment.id === workPaymentId(paidWork.id) &&
+      workPayment.type === 'team' &&
+      workPayment.approvedBy === U.maya &&
+      paidWork.approvedBy === U.maya &&
+      workPayment.budgetId === B.arcTeam &&
+      same(workPayment.recipient, { kind: 'member', userId: U.alex }) &&
+      within(workPayment.completedAt, 13, 16),
+    JSON.stringify({ id: workPayment.id, type: workPayment.type, age: daysAgo(workPayment.completedAt) }),
+  )
+  t.check(
+    'L2: …with no expense, and nothing to justify',
+    !s.expenses.some((e) => e.paymentId === workPayment.id),
+  )
+  t.check(
+    'L2: the other waits for an Agency Admin, in their queue, and on the ledger nowhere',
+    waitingWork.decision.reason?.rule === 'work_review' &&
+      adminApprovals(s, ARC).mine.some((r) => r.id === waitingWork.id) &&
+      !investorApprovals(s, DEMO.portfolio).exceptions.some((r) => r.id === waitingWork.id) &&
+      !ledgerSnapshot(s).requests.has(waitingWork.id),
+  )
+  const team = budgetOf(s, B.arcTeam)
+  t.check(
+    'L2: Team payments holds what the waiting work asks, so an Admin can pay it',
+    budgetUsage(s, team, now).available >= waitingWork.amount,
+  )
+  const reimbursement = must(
+    s.requests.find(
+      (r) =>
+        r.type === 'reimbursement' &&
+        r.status === 'completed' &&
+        r.requester.kind === 'user' &&
+        r.requester.userId === U.alex,
+    ),
+    "Alex's reimbursement",
+  )
+  const reimbursed = must(
+    s.payments.find((p) => p.id === reimbursement.paymentId),
+    'the reimbursement payment',
+  )
+  const reimbursementExpense = s.expenses.find((e) => e.paymentId === reimbursed.id)
+  const reimbursementFile = reimbursement.attachments.find((a) => a.kind === 'file')
+  t.check(
+    'L2: the reimbursement: its merchant and receipt file, an Expense with that receipt, into Alex’s balance',
+    reimbursed.type === 'reimbursement' &&
+      Boolean(reimbursement.merchant) &&
+      reimbursementExpense !== undefined &&
+      reimbursementExpense.merchant === reimbursement.merchant &&
+      reimbursementExpense.receipt?.id === reimbursementFile?.id &&
+      same(reimbursed.recipient, { kind: 'member', userId: U.alex }) &&
+      Boolean(
+        s.receipts
+          .find((r) => r.id === reimbursed.receiptId)
+          ?.evidenceIds.includes(reimbursementFile?.id ?? ''),
+      ),
+  )
+
+  // L3. Payments outside Viatik, and the monthly reminder.
+  const outside = s.payments.filter(isOutsidePayment)
+  const payee = (p: (typeof outside)[number]) => (p.recipient.kind === 'address' ? p.recipient.payee : '')
+  const claude = must(
+    outside.find((p) => payee(p) === 'Anthropic · Claude Teams'),
+    'Claude Teams',
+  )
+  const figma = must(
+    outside.find((p) => payee(p) === 'Figma'),
+    'Figma',
+  )
+  t.check(
+    'L3: two payments outside Viatik, by Maya, from an Arc Studio account',
+    outside.length === 2 &&
+      outside.every(
+        (p) =>
+          p.agencyId === ARC &&
+          p.status === 'completed' &&
+          p.budgetId === undefined &&
+          s.accounts.some((a) => a.id === p.sourceAccountId && a.agencyId === ARC) &&
+          p.createdBy.kind === 'user' &&
+          p.createdBy.userId === U.maya,
+      ),
+  )
+  const addresses = outside.map((p) => (p.recipient.kind === 'address' ? (p.recipient.address ?? '') : ''))
+  t.check(
+    'L3: their addresses are checksummed placeholders nobody holds, never the ledger’s, TestUSD’s or a person’s',
+    addresses.every(
+      (address) =>
+        parseAddress(address) === address &&
+        PLACEHOLDER_OF[address] !== undefined &&
+        getAddress(slice(keccak256(stringToHex(PLACEHOLDER_OF[address] ?? '')), 12)) === address &&
+        !NOT_A_PAYEE.includes(address.toLowerCase()),
+    ) && new Set(addresses).size === addresses.length,
+    addresses.join(', '),
+  )
+  t.check(
+    'L3: each has an outside payment receipt and a movement to its payee and address',
+    outside.every((p) => {
+      const receipt = s.receipts.find((r) => r.id === p.receiptId)
+      const movement = s.movements.find((m) => m.refId === p.id)
+      const address = p.recipient.kind === 'address' ? p.recipient.address : undefined
+      return (
+        receipt?.kind === 'outside_payment' &&
+        receipt.toLabel === `${payee(p)} · ${shortAddress(address ?? '')}` &&
+        movement?.kind === 'payment' &&
+        same(movement.to, { kind: 'external', label: payee(p), address })
+      )
+    }),
+  )
+  const claudePaidAt = must(claude.completedAt, 'its date')
+  t.check(
+    'L3: Claude Teams, two to three weeks ago, has its invoice from the next day, anchored once and listed on its receipt',
+    within(claudePaidAt, 13, 21) &&
+      claude.proof?.kind === 'file' &&
+      within(claude.proof.addedAt, daysAgo(claudePaidAt) - 1.5, daysAgo(claudePaidAt) - 0.5) &&
+      claude.proofVerified?.evidenceHash === attachmentsHash([claude.proof]) &&
+      Boolean(s.receipts.find((r) => r.id === claude.receiptId)?.evidenceIds.includes(claude.proof.id)),
+  )
+  const pendingInvoices = outsidePaymentsWithoutProof(s, ARC, now)
+  const pendingInvoice = pendingInvoices[0]
+  t.check(
+    'L3: Figma, about ten days ago, has none: its invoice is overdue',
+    within(figma.completedAt, 9, 11) &&
+      !figma.proof &&
+      pendingInvoices.length === 1 &&
+      pendingInvoice?.payment.id === figma.id &&
+      pendingInvoice.overdue &&
+      pendingInvoice.dueAt === addDays(must(figma.completedAt, 'its date'), PROOF_WITHIN_DAYS) &&
+      arc.proofOverdue === 1,
+  )
+  const reminder = must(s.reminders[0], 'the monthly reminder')
+  const due = remindersDue(s, ARC, now)
+  const paidMonth = new Date(claudePaidAt)
+  const nextDue = new Date(
+    Date.UTC(paidMonth.getUTCFullYear(), paidMonth.getUTCMonth() + 1, reminder.dayOfMonth),
+  ).toISOString()
+  t.check(
+    'L3: one active monthly reminder to pay Claude Teams, answered by that payment',
+    s.reminders.length === 1 &&
+      reminder.agencyId === ARC &&
+      reminder.status === 'active' &&
+      reminder.title === 'Pay Claude Teams and upload the invoice' &&
+      reminder.payee === 'Anthropic · Claude Teams' &&
+      reminder.payee === payee(claude) &&
+      reminder.sourceAccountId === claude.sourceAccountId &&
+      reminder.dayOfMonth >= 1 &&
+      reminder.dayOfMonth <= 28 &&
+      claude.reminderId === reminder.id &&
+      within(reminder.createdAt, daysAgo(claudePaidAt) + 1, daysAgo(claudePaidAt) + 7),
+    JSON.stringify({ payee: reminder.payee, created: reminder.createdAt, paid: claudePaidAt }),
+  )
+  // Its day is the one 14 days from now (1–28), and the payment was on that day the month before.
+  const dueDay = Math.min(28, Math.max(1, new Date(Date.parse(now) + 14 * DAY_MS).getUTCDate()))
+  t.check(
+    'L3: its day of the month is the one 14 days from now (1–28), the day Claude Teams was paid',
+    reminder.dayOfMonth === dueDay && paidMonth.getUTCDate() === dueDay,
+    JSON.stringify({ day: reminder.dayOfMonth, expected: dueDay, paid: claudePaidAt }),
+  )
+  const next = due[0]
+  t.check(
+    'L3: next due on its day of the month after that payment',
+    due.length === 1 &&
+      next?.lastPayment?.id === claude.id &&
+      next.dueAt === nextDue &&
+      next.overdue === Date.parse(now) > Date.parse(nextDue),
+    JSON.stringify(due.map((d) => [d.dueAt, d.overdue])),
+  )
+  const dueIn = (Date.parse(next?.dueAt ?? now) - Date.parse(now)) / DAY_MS
+  t.check(
+    'L3: …which is about two weeks from now: not overdue at the seed',
+    next?.overdue === false && dueIn >= 10 && dueIn <= 14,
+    JSON.stringify({ dueAt: next?.dueAt, days: dueIn }),
+  )
+  const alexView = w.view(U.alex)
+  t.check(
+    'L3: Alex sees neither payment nor the reminder; Maya and Elena see both addresses',
+    !alexView.payments.some(isOutsidePayment) &&
+      alexView.reminders.length === 0 &&
+      [U.maya, U.elena].every((viewer) => {
+        const view = w.view(viewer)
+        return (
+          view.reminders.some((r) => r.id === reminder.id) &&
+          outside.every((p) => view.payments.some((x) => x.id === p.id && same(x.recipient, p.recipient)))
+        )
+      }),
+  )
+
+  // L4. Capital returned to the Investor.
+  const returns = s.movements.filter((m) => m.kind === 'capital_return')
+  const back = must(returns[0], 'the capital return')
+  t.check(
+    'L4: Lumen Labs returned 5,000 to the Portfolio Vault a few days ago, under its agreement',
+    returns.length === 1 &&
+      back.amount === usd(5_000) &&
+      back.agencyId === LUMEN &&
+      same(back.from, { kind: 'account', accountId: ACC.lumenOperations }) &&
+      same(back.to, { kind: 'vault', vaultId: DEMO.vaults.portfolio }) &&
+      back.agreementId === governingAgreement(s, LUMEN)?.id &&
+      within(back.createdAt, 2, 4) &&
+      s.receipts.find((r) => r.id === back.receiptId)?.kind === 'capital_return',
+  )
+  t.check(
+    'L4: Returned is 5,000 for the portfolio, Lumen Labs and its agreement; 0 for Arc Studio',
+    portfolioCapital(s, DEMO.portfolio, now).returned === usd(5_000) &&
+      portfolioCapital(s, DEMO.portfolio, now).states.returned === usd(5_000) &&
+      agencyCapital(s, LUMEN, now).states.returned === usd(5_000) &&
+      agreementCapital(s, DEMO.agreements.lumen).returned === usd(5_000) &&
+      agencyCapital(s, ARC, now).states.returned === 0,
+  )
+  const arcMoves = s.movements.filter((m) => m.agencyId === ARC)
+  t.check(
+    'L4: Arc Studio’s Spent is its payments minus what people gave back',
+    agencyCapital(s, ARC, now).states.spent ===
+      sum(
+        arcMoves.filter((m) => m.kind === 'payment'),
+        (m) => m.amount,
+      ) -
+        sum(arcMoves.filter(isGiveBack), (m) => m.amount),
+  )
+
+  // L5. The notifications that tell it, with the engine's texts and links.
+  const balance = `/member/${ARC}/payments`
+  t.check(
+    "L5: Alex: 'Money for your purchase', 'Payment for your work', 'Reimbursement paid'",
+    notes(U.alex, 'Money for your purchase').some(
+      (n) => n.href === balance && n.body.includes(`within ${JUSTIFY_WITHIN_DAYS} days`),
+    ) &&
+      notes(U.alex, 'Payment for your work').some(
+        (n) => n.href === balance && n.body === `${usdText(workPayment.amount)} is in your Viatik balance.`,
+      ) &&
+      notes(U.alex, 'Reimbursement paid').some(
+        (n) =>
+          n.href === balance && n.body === `${usdText(reimbursed.amount)} is back in your Viatik balance.`,
+      ),
+  )
+  const alexReceipt = must(alex.expenses[0], "Alex's receipt")
+  t.check(
+    "L5: Maya and Jordan: 'Receipt uploaded' for Alex's receipt, pointing to his page",
+    ADMINS.every((admin) =>
+      notes(admin, 'Receipt uploaded').some(
+        (n) =>
+          n.href === `/agency/${ARC}/team/${U.alex}` &&
+          n.body ===
+            `${userName(s, U.alex)} added a ${usdText(alexReceipt.amount)} receipt from ${alexReceipt.merchant}.`,
+      ),
+    ),
+  )
+  t.check(
+    "L5: …and 'Request needs approval' for his waiting work",
+    ADMINS.every((admin) =>
+      notes(admin, 'Request needs approval').some(
+        (n) => n.href === `/agency/${ARC}/approvals` && n.body.includes(waitingWork.purpose),
+      ),
+    ),
+  )
+  t.check(
+    "L5: the Investors: 'Paid outside Viatik' twice (Figma's invoice pending), 'Invoice uploaded', 'Capital returned'",
+    INVESTORS.every(
+      (investor) =>
+        outside.every((p) =>
+          notes(investor, 'Paid outside Viatik').some((n) => n.href === `/receipts/${p.receiptId}`),
+        ) &&
+        notes(investor, 'Paid outside Viatik').some(
+          (n) => n.href === `/receipts/${figma.receiptId}` && n.body.endsWith(' Invoice pending.'),
+        ) &&
+        notes(investor, 'Invoice uploaded').some((n) => n.href === `/receipts/${claude.receiptId}`) &&
+        notes(investor, 'Capital returned').some(
+          (n) =>
+            n.href === `/investor/${DEMO.portfolio}/vaults` &&
+            n.body === `Lumen Labs returned ${usdText(usd(5_000))} to the Portfolio Vault.`,
+        ),
+    ),
+  )
+  const receiptsMissing = notes(U.alex, 'Receipts missing')
+  const toldAt = receiptsMissing[0]?.createdAt ?? now
+  // What Alex was missing when he was told: an expense made later is not in it.
+  const missing = missingReceipts(s, { agencyId: ARC, userId: U.alex }).filter(
+    (e) => Date.parse(e.createdAt) <= Date.parse(toldAt),
+  )
+  t.check(
+    "L5: 'Receipts missing' only counts vendor payments without a receipt, made by the time it was sent",
+    missing.length > 0 &&
+      missing.every((e) => s.payments.find((p) => p.id === e.paymentId)?.type !== 'advance') &&
+      receiptsMissing.length === 1 &&
+      (receiptsMissing[0]?.body.startsWith(`${missing.length} vendor payments`) ||
+        (missing.length === 1 && receiptsMissing[0]?.body.startsWith('A vendor payment'))) === true,
+    `${receiptsMissing[0]?.body} (${missing.length} by ${toldAt})`,
+  )
+
+  // L6. Every file backs one thing per Agency: no fingerprint is used twice.
+  const files = new Map<Id, { agencyId: Id; sha256: string }>()
+  const fileOf = (agencyId: Id, evidence: Evidence | undefined) => {
+    if (evidence?.kind === 'file') files.set(evidence.id, { agencyId, sha256: evidence.sha256 })
+  }
+  for (const e of s.expenses) fileOf(e.agencyId, e.receipt)
+  for (const r of s.requests) for (const a of r.attachments) fileOf(r.agencyId, a)
+  for (const p of s.payments) fileOf(p.agencyId, p.proof)
+  for (const b of s.bills) fileOf(b.agencyId, b.document)
+  const fingerprints = new Map<string, number>()
+  for (const { agencyId, sha256 } of files.values())
+    fingerprints.set(`${agencyId}|${sha256}`, (fingerprints.get(`${agencyId}|${sha256}`) ?? 0) + 1)
+  const reused = [...fingerprints].filter(([, count]) => count > 1).map(([key]) => key)
+  t.check(
+    'L6: no file fingerprint is used twice in an Agency (receipts, request files, invoices, bills)',
+    files.size > 0 && reused.length === 0,
+    reused.join(', '),
+  )
+
+  // L7. While the story happens (its last 60 days), no balance is ever negative.
+  const negative = negativeSince(s, plusHours(now, -24 * 60))
+  t.check(
+    'L7: replayed in time order, no account, budget, vault or Viatik balance goes negative in the last 60 days',
+    negative.length === 0,
+    negative.slice(0, 3).join(' | '),
+  )
+
+  // L8. The story goes on through real commands.
+  const l8 = await w.run(
+    U.maya,
+    'approveRequest',
+    { requestId: waitingWork.id },
+    "L8 Maya approves Alex's waiting payment for work",
+    { ops: ['pay'] },
+  )
+  t.check(
+    'L8: paid under its own id, from Team payments to Alex',
+    l8.result.payment.id === workPaymentId(waitingWork.id) && l8.plan?.ops[0]?.call === 'pay',
+  )
+  await w.run(
+    U.maya,
+    'addPaymentProof',
+    { paymentId: figma.id, proof: file('l8-figma-invoice.pdf') },
+    "L8 Maya adds Figma's invoice",
+    { ops: ['recordEvidence'] },
+  )
+  t.check('L8: no invoice is pending any more', outsidePaymentsWithoutProof(w.state, ARC, w.now).length === 0)
+  w.refuse(
+    U.maya,
+    'addPaymentProof',
+    { paymentId: claude.id, proof: file('l8-claude-again.pdf') },
+    'invalid_state',
+    'L8 a second invoice for Claude Teams',
+  )
+  await w.run(
+    U.alex,
+    'addExpense',
+    {
+      agencyId: ARC,
+      paymentId: alex.payment.id,
+      merchant: 'Field Supply Co',
+      amount: advanceStanding(w.state, alex.payment, w.now).pending,
+      category: 'equipment',
+      spentAt: dayBefore(w.now),
+      receipt: file('l8-field-supply.pdf'),
+    },
+    'L8 Alex adds a receipt for the rest of his money for purchases',
+    { ops: [] },
+  )
+  t.check('L8: Alex’s is settled', advanceStanding(w.state, alex.payment, w.now).settled)
+  const remindedAgain = await w.run(
+    U.maya,
+    'remindReceipts',
+    { agencyId: ARC },
+    'L8 Maya reminds everyone who still owes receipts',
+    { ops: [] },
+  )
+  checkSame(
+    t,
+    'L8: only Daniel is left (reminded two days ago, so again now)',
+    remindedAgain.result.notified,
+    [U.daniel],
+  )
+  await w.gather(U.maya, must(reminder.sourceAccountId, 'its account'), must(reminder.amount, 'its amount'))
+  await w.run(
+    U.maya,
+    'payOutside',
+    {
+      agencyId: ARC,
+      source: { kind: 'account', accountId: must(reminder.sourceAccountId, 'its account') },
+      to: must(claude.recipient.kind === 'address' ? claude.recipient.address : undefined, 'its address'),
+      payee: payee(claude),
+      amount: must(reminder.amount, 'its amount'),
+      category: reminder.category,
+      memo: 'Claude Teams, this month',
+      reminderId: reminder.id,
+    },
+    'L8 Maya pays this month’s Claude Teams from the reminder',
+    { ops: ['payOutside'] },
+  )
+  t.check(
+    'L8: the reminder is next due the month after',
+    remindersDue(w.state, ARC, w.now)[0]?.lastPayment?.completedAt === w.now,
+  )
+
+  // L9. What each Member sees: nobody else's pay, budgets that add up, their Admins' names.
+  memberViewChecks(t, 'L9 (the seed)', s, now)
+  memberViewChecks(t, 'L9 (after L8)', w.state, w.now)
+  const alexSees = scopeStateForUser(s, U.alex)
+  t.check(
+    "L9: Alex reads who approved his payment for work: 'Maya Chen', not 'Former teammate'",
+    userName(alexSees, must(paidWork.approvedBy, 'its approver')) === 'Maya Chen' &&
+      userName(alexSees, must(workPayment.approvedBy, 'its approver')) === 'Maya Chen',
+  )
+  const teamPaid = (state: ViatikState) =>
+    state.movements.filter(
+      (m) => m.kind === 'payment' && m.from.kind === 'budget' && m.from.budgetId === B.arcTeam,
+    )
+  const otherPay = teamPaid(alexSees).filter((m) => m.to.kind === 'external')
+  t.check(
+    "L9: Alex sees Team payments pay others as 'Team member', with no receipt, as often and as much as it did",
+    otherPay.length > 0 &&
+      otherPay.every((m) => same(m.to, { kind: 'external', label: 'Team member' }) && !m.receiptId) &&
+      teamPaid(alexSees).length === teamPaid(s).length &&
+      sum(teamPaid(alexSees), (m) => m.amount) === sum(teamPaid(s), (m) => m.amount),
+    `${otherPay.length} of ${teamPaid(s).length}`,
+  )
+}
+
+/** The Agencies a person sees only as a Member (not as their Admin or their Investor). */
+function memberOnlyAgencies(state: ViatikState, userId: Id): Set<Id> {
+  const mine = state.memberships.filter((m) => m.userId === userId && m.status === 'active')
+  const portfolios = new Set(mine.flatMap((m) => (m.scope.kind === 'portfolio' ? [m.scope.portfolioId] : [])))
+  const full = new Set([
+    ...state.agencies.filter((a) => portfolios.has(a.portfolioId)).map((a) => a.id),
+    ...mine.flatMap((m) =>
+      m.role === 'agency_admin' && m.scope.kind === 'agency' ? [m.scope.agencyId] : [],
+    ),
+  ])
+  return new Set(
+    mine.flatMap((m) =>
+      m.role === 'member' && m.scope.kind === 'agency' && !full.has(m.scope.agencyId)
+        ? [m.scope.agencyId]
+        : [],
+    ),
+  )
+}
+
+/**
+ * Every Member's view of `state` (scopeStateForUser), in the Agencies they see only as a Member:
+ * no movement or receipt names another person or another person's pay (what a budget they hold
+ * paid someone else reads "Team member", amount and budget kept); every budget they hold shows
+ * the usage it has on the full state; their own movements, payments, money for purchases,
+ * receipts and balance are exactly the full state's; and of the people around them they read
+ * their Agency Admins' names and titles only, never another Member.
+ */
+function memberViewChecks(t: Checker, label: string, state: ViatikState, now: ISODate) {
+  const active = state.memberships.filter((m) => m.status === 'active')
+  const viewers = [...new Set(active.filter((m) => m.role === 'member').map((m) => m.userId))].sort()
+  const problems = {
+    movements: [] as string[],
+    kept: [] as string[],
+    receipts: [] as string[],
+    named: [] as string[],
+    usage: [] as string[],
+    own: [] as string[],
+    admins: [] as string[],
+    people: [] as string[],
+  }
+  const anonymous = { kind: 'external', label: 'Team member' }
+  let looked = 0
+  for (const viewer of viewers) {
+    const agencies = memberOnlyAgencies(state, viewer)
+    if (agencies.size === 0) continue
+    looked += 1
+    const view = scopeStateForUser(state, viewer)
+    const inScope = (agencyId: Id | undefined) => agencyId !== undefined && agencies.has(agencyId)
+    const isPerson = (end: Location, which: (id: Id) => boolean) =>
+      end.kind === 'recipient' && end.recipient.kind === 'member' && which(end.recipient.userId)
+    const isMine = (end: Location) => isPerson(end, (id) => id === viewer)
+    const isOther = (end: Location) => isPerson(end, (id) => id !== viewer)
+    const ownMove = (m: Movement) => isMine(m.from) || isMine(m.to)
+    const admins = active
+      .filter((m) => m.role === 'agency_admin' && m.scope.kind === 'agency' && agencies.has(m.scope.agencyId))
+      .map((m) => m.userId)
+    const portfolios = new Set(state.agencies.filter((a) => agencies.has(a.id)).map((a) => a.portfolioId))
+    const investors = active
+      .filter(
+        (m) => m.role === 'investor' && m.scope.kind === 'portfolio' && portfolios.has(m.scope.portfolioId),
+      )
+      .map((m) => m.userId)
+    // Everyone the viewer must not read about: the other Members, and other Agencies' Admins.
+    const others = state.users.filter(
+      (u) => u.id !== viewer && !admins.includes(u.id) && !investors.includes(u.id),
+    )
+    const othersPay = new Set(
+      state.payments
+        .filter((p) => inScope(p.agencyId) && p.recipient.kind === 'member' && p.recipient.userId !== viewer)
+        .map((p) => p.id),
+    )
+    const othersReceipts = new Set(
+      [
+        ...state.payments.filter((p) => othersPay.has(p.id)).map((p) => p.receiptId),
+        ...state.movements
+          .filter((m) => inScope(m.agencyId) && !ownMove(m) && (isOther(m.from) || isOther(m.to)))
+          .map((m) => m.receiptId),
+      ].filter((id): id is Id => Boolean(id)),
+    )
+    const namesIn = (value: unknown) => {
+      const text = JSON.stringify(value)
+      return others.filter((u) => text.includes(`"${u.id}"`) || text.includes(u.name)).map((u) => u.name)
+    }
+
+    // Nobody else's pay, in movements and receipts.
+    for (const m of view.movements) {
+      if (!inScope(m.agencyId)) continue
+      if (
+        isOther(m.from) ||
+        isOther(m.to) ||
+        (m.refId !== undefined && othersPay.has(m.refId)) ||
+        (m.receiptId !== undefined && othersReceipts.has(m.receiptId)) ||
+        namesIn(m).length > 0
+      )
+        problems.movements.push(`${viewer} ${m.id}`)
+    }
+    for (const r of view.receipts) {
+      if (!inScope(r.agencyId)) continue
+      if (othersPay.has(r.operationId) || othersReceipts.has(r.id) || namesIn(r).length > 0)
+        problems.receipts.push(`${viewer} ${r.number}`)
+    }
+    const named = namesIn(view)
+    if (named.length > 0) problems.named.push(`${viewer}: ${[...new Set(named)].join(', ')}`)
+
+    // What a budget they hold paid (or got back from) someone else is still there, anonymous.
+    const held = new Set(view.budgets.filter((b) => inScope(b.agencyId)).map((b) => b.id))
+    const throughHeld = (m: Movement) =>
+      (m.from.kind === 'budget' && held.has(m.from.budgetId)) ||
+      (m.to.kind === 'budget' && held.has(m.to.budgetId))
+    for (const m of state.movements) {
+      if (!inScope(m.agencyId) || ownMove(m) || !throughHeld(m) || !(isOther(m.from) || isOther(m.to)))
+        continue
+      const shown = view.movements.find((x) => x.id === m.id)
+      const ok =
+        shown !== undefined &&
+        shown.kind === m.kind &&
+        shown.amount === m.amount &&
+        shown.createdAt === m.createdAt &&
+        same(shown.from, isOther(m.from) ? anonymous : m.from) &&
+        same(shown.to, isOther(m.to) ? anonymous : m.to) &&
+        shown.receiptId === undefined &&
+        shown.refId === undefined
+      if (!ok) problems.kept.push(`${viewer} ${m.id}`)
+    }
+
+    // The budgets they hold add up as they do for the Agency.
+    for (const budget of view.budgets) {
+      if (!inScope(budget.agencyId)) continue
+      const full = must(
+        state.budgets.find((b) => b.id === budget.id),
+        budget.id,
+      )
+      const mine = budgetUsage(view, budget, now)
+      const theirs = budgetUsage(state, full, now)
+      if (!same(mine, theirs)) problems.usage.push(`${viewer} ${budget.name}: ${differences(mine, theirs)}`)
+    }
+
+    // Their own money, untouched.
+    for (const agencyId of agencies) {
+      const ownOf = (from: ViatikState) => {
+        const movements = from.movements.filter((m) => m.agencyId === agencyId && ownMove(m))
+        return {
+          movements,
+          receipts: movements.map((m) => from.receipts.find((r) => r.id === m.receiptId) ?? null),
+          payments: from.payments.filter(
+            (p) => p.agencyId === agencyId && p.recipient.kind === 'member' && p.recipient.userId === viewer,
+          ),
+          advances: advancesOf(from, { agencyId, userId: viewer }, now),
+          held: memberHeld(from, agencyId, viewer),
+        }
+      }
+      const mine = ownOf(view)
+      const theirs = ownOf(state)
+      for (const key of Object.keys(theirs) as (keyof typeof theirs)[])
+        if (!same(mine[key], theirs[key])) problems.own.push(`${viewer} ${agencyId} ${key}`)
+    }
+
+    // Their Agency Admins' names and titles, nothing else; no other Member.
+    for (const adminId of admins) {
+      const full = state.users.find((u) => u.id === adminId)
+      const shown = view.users.find((u) => u.id === adminId)
+      const nameOnly =
+        investors.includes(adminId) ||
+        (shown?.email === '' && shown.timeZone === '' && shown.locale === '' && shown.createdAt === '')
+      if (
+        !full ||
+        !shown ||
+        shown.name !== full.name ||
+        shown.title !== full.title ||
+        userName(view, adminId) !== full.name ||
+        !nameOnly ||
+        Object.keys(shown).sort().join() !== Object.keys(full).sort().join()
+      )
+        problems.admins.push(`${viewer} ${adminId}`)
+    }
+    const allowed = new Set([viewer, ...admins, ...investors])
+    const extra = view.users.filter((u) => !allowed.has(u.id)).map((u) => u.name)
+    if (extra.length > 0) problems.people.push(`${viewer}: ${extra.join(', ')}`)
+  }
+
+  const report = (list: string[]) => `${list.length}: ${list.slice(0, 4).join(' | ')}`
+  t.check(`${label}: there are Members to look at`, looked >= 3, String(looked))
+  t.check(
+    `${label}: no movement a Member sees names another person or their pay, or carries its receipt`,
+    problems.movements.length === 0,
+    report(problems.movements),
+  )
+  t.check(
+    `${label}: …each one a budget they hold paid someone else is there, as 'Team member', amount kept`,
+    problems.kept.length === 0,
+    report(problems.kept),
+  )
+  t.check(
+    `${label}: no receipt a Member sees names another person or is another person's pay`,
+    problems.receipts.length === 0,
+    report(problems.receipts),
+  )
+  t.check(
+    `${label}: no other Member (or other Agency's Admin) is named or referenced anywhere in a Member's view`,
+    problems.named.length === 0,
+    report(problems.named),
+  )
+  t.check(
+    `${label}: every budget a Member holds shows the usage it has for the Agency`,
+    problems.usage.length === 0,
+    report(problems.usage),
+  )
+  t.check(
+    `${label}: a Member's own movements, payments, money for purchases, receipts and balance are unchanged`,
+    problems.own.length === 0,
+    report(problems.own),
+  )
+  t.check(
+    `${label}: a Member reads their Agency Admins' names and titles, and nothing else about them`,
+    problems.admins.length === 0,
+    report(problems.admins),
+  )
+  t.check(
+    `${label}: a Member's people are themselves, their Agency Admins and its Investors only`,
+    problems.people.length === 0,
+    report(problems.people),
+  )
+}
+
+/** The keys two records differ in (a failed check's detail). */
+function differences(a: object, b: object): string {
+  const left = a as Record<string, unknown>
+  const right = b as Record<string, unknown>
+  return [...new Set([...Object.keys(left), ...Object.keys(right)])]
+    .filter((key) => !same(left[key], right[key]))
+    .map((key) => `${key} ${JSON.stringify(left[key])} vs ${JSON.stringify(right[key])}`)
+    .join('; ')
+}
+
+/** Balances replayed in time order: where one goes below zero after `since`. */
+function negativeSince(state: ViatikState, since: ISODate): string[] {
+  const keyOf = (location: Location, agencyId?: Id): string | null => {
+    switch (location.kind) {
+      case 'vault':
+        return `vault:${location.vaultId}`
+      case 'account':
+        return `account:${location.accountId}`
+      case 'budget':
+        return `budget:${location.budgetId}`
+      case 'recipient':
+        return location.recipient.kind === 'member' ? `member:${agencyId}:${location.recipient.userId}` : null
+      default:
+        return null
+    }
+  }
+  const balances = new Map<string, number>()
+  const problems: string[] = []
+  const ordered = [...state.movements].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+  for (const m of ordered) {
+    const from = keyOf(m.from, m.agencyId)
+    const to = keyOf(m.to, m.agencyId)
+    if (from) {
+      const next = (balances.get(from) ?? 0) - m.amount
+      balances.set(from, next)
+      if (next < 0 && Date.parse(m.createdAt) >= Date.parse(since))
+        problems.push(`${m.createdAt} ${m.kind} leaves ${from} at ${next}`)
+    }
+    if (to) balances.set(to, (balances.get(to) ?? 0) + m.amount)
+  }
+  return problems
 }
 
 function isApiId(value: Id): boolean {
