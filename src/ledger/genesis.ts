@@ -35,7 +35,8 @@ import { centsToUnits } from './units'
  * payments made outside Viatik (their record and invoice; that money already
  * left) and requests still waiting for approval. The namespace is set last.
  * Payment for work waiting for an Admin is not imported: it only reaches the
- * ledger when it is paid.
+ * ledger when it is paid. Scheduled payments are not imported either (only an
+ * Agency Admin creates one): a seeded story has none, and a re-seed forgets them.
  *
  * People without an account get a placeholder address that nobody holds:
  * their roles, allowances, balances and open requests still exist onchain, so
@@ -403,6 +404,13 @@ export function buildGenesis(
   ).length
   if (waitingWork > 0)
     skipped.push(`${waitingWork} payments for work waiting for an Admin (they reach the ledger when paid)`)
+  // A schedule is created by an Agency Admin (`createSchedule`), never by the owner: the genesis
+  // cannot carry one, so after a seed the app forgets old schedules and nothing runs them.
+  const openSchedules = (state.schedules ?? []).filter(
+    (s) => s.status === 'active' || s.status === 'paused',
+  ).length
+  if (openSchedules > 0)
+    skipped.push(`${openSchedules} scheduled payments (only an Agency Admin can schedule one on the ledger)`)
 
   if (problems.length > 0) throw new GenesisError([...new Set(problems)])
 

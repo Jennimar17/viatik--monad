@@ -1,3 +1,4 @@
+import type { ScheduleState } from './schedules'
 import type {
   AgencyStatus,
   AgentStatus,
@@ -141,6 +142,17 @@ export const reminderStatus: Record<ReminderStatus, StatusDescriptor> = {
   active: { label: 'Active', tone: 'success' },
   paused: { label: 'Paused', tone: 'warning' },
   archived: { label: 'Archived', tone: 'neutral' },
+}
+
+/** A scheduled payment's badge, from `scheduleState` (src/domain/schedules.ts). */
+export const scheduleStatus: Record<ScheduleState, StatusDescriptor> = {
+  scheduled: { label: 'Scheduled', tone: 'info' },
+  due: { label: 'Due · paying soon', tone: 'accent' },
+  needs_attention: { label: 'Needs attention', tone: 'danger' },
+  stopped: { label: 'Stopped', tone: 'warning' },
+  paused: { label: 'Paused', tone: 'warning' },
+  cancelled: { label: 'Cancelled', tone: 'neutral' },
+  completed: { label: 'Completed', tone: 'success' },
 }
 
 // ─── Transition guards ───────────────────────────────────────────────────────

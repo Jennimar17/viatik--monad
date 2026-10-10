@@ -49,6 +49,11 @@ export type Capability =
   | 'return_capital'
   /** Monthly reminders for things paid outside Viatik. */
   | 'manage_reminders'
+  /**
+   * Pause, resume or cancel a scheduled payment. The Investor may too (the ledger lets the
+   * portfolio's Investor stop one); creating one is `send_payment` / `pay_member`.
+   */
+  | 'manage_schedules'
 
 export const PERMISSIONS: Record<Capability, Record<Role, Access>> = {
   view_portfolio: { investor: 'full', agency_admin: 'none', member: 'none' },
@@ -84,6 +89,7 @@ export const PERMISSIONS: Record<Capability, Record<Role, Access>> = {
   pay_outside: { investor: 'view', agency_admin: 'full', member: 'none' },
   return_capital: { investor: 'view', agency_admin: 'full', member: 'none' },
   manage_reminders: { investor: 'view', agency_admin: 'full', member: 'none' },
+  manage_schedules: { investor: 'full', agency_admin: 'full', member: 'none' },
 }
 
 /** Capabilities an AI Agent may exercise. Everything else is denied. */

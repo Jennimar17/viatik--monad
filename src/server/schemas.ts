@@ -351,6 +351,44 @@ export const commandSchemas = {
     status: z.enum(['active', 'paused', 'archived']),
   }),
 
+  // ─── Scheduled payments ───────────────────────────────────────────────────
+  // The engine checks the first run (a minute to a year ahead), the runs (1 to 12) and the interval
+  // (none for a single run, at least a minute otherwise): the schema only bounds the shape. A bill is
+  // linked by payBill only, never by a caller.
+  schedulePayment: z.object({
+    agencyId: id,
+    type: z.enum([
+      'team',
+      'contractor',
+      'reimbursement',
+      'vendor',
+      'tool',
+      'refund',
+      'capital_return',
+      'automation',
+    ]),
+    recipient,
+    accountId: id,
+    budgetId: id.optional(),
+    amount: cents,
+    category,
+    memo: text(500),
+    firstRunAt: isoDate,
+    intervalSeconds: z
+      .number()
+      .int()
+      .min(0)
+      .max(366 * 24 * 60 * 60)
+      .optional(),
+    runs: z.number().int().min(1).max(52).optional(),
+    // "Schedule again" on a payment saved as scheduled before schedules existed: dropped once this is created.
+    replacesPaymentId: id.optional(),
+  }),
+  pauseSchedule: z.object({ scheduleId: id }),
+  resumeSchedule: z.object({ scheduleId: id }),
+  cancelSchedule: z.object({ scheduleId: id }),
+  dismissUnscheduledPayment: z.object({ paymentId: id }),
+
   // ─── People and automations ───────────────────────────────────────────────
   invite: z.object({
     name: text(80),

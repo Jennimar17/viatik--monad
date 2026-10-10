@@ -60,6 +60,10 @@ function fromContractError(name: string, args: readonly unknown[]): LedgerError 
       return error('not_registered', 'Something this operation needs is not registered with the ledger yet.')
     case 'InvalidState':
       return error('invalid_state', 'The ledger is not in a state to do this right now.')
+    case 'NotDue':
+      return error('not_due', 'This scheduled payment is not due yet on the ledger.')
+    case 'SchedulePaused':
+      return error('schedule_paused', 'This scheduled payment is paused.')
     default:
       return null
   }

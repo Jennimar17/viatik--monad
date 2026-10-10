@@ -2,6 +2,7 @@ import { destinationKindLabel } from '@/components/app/money-setup'
 import { categoryLabel } from '@/domain/labels'
 import { sum } from '@/domain/money'
 import { billState } from '@/domain/queries'
+import { upcomingPayments } from '@/domain/schedules'
 import type { StatusDescriptor } from '@/domain/status'
 import type { Movement, Payment, PaymentDestination, SpendingCategory, ViatikState } from '@/domain/types'
 
@@ -53,7 +54,8 @@ export function providerSummary(state: ViatikState, provider: PaymentDestination
     (p) => p.agencyId === provider.agencyId && isPaymentTo(p, provider.id),
   )
   const completed = payments.filter((p) => p.status === 'completed')
-  const scheduled = payments.filter((p) => p.status === 'scheduled')
+  // Scheduled payments to it (their next run): not payments until Viatik pays them.
+  const scheduled = upcomingPayments(state, { agencyId: provider.agencyId, destinationId: provider.id })
   const month = now.slice(0, 7)
   const thisMonth = completed.filter((p) => (p.completedAt ?? '').startsWith(month))
   const lastPaidAt = completed.reduce<string | undefined>((latest, p) => {

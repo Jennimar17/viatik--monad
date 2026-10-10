@@ -59,6 +59,7 @@ export class SeedBuilder {
       notifications: [],
       payoutAddresses: [],
       reminders: [],
+      schedules: [],
     }
   }
 

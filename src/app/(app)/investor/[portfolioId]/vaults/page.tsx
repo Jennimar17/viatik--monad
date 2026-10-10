@@ -28,8 +28,10 @@ import { EmptyState } from '@/components/viatik/feedback'
 import { KpiTile } from '@/components/viatik/finance'
 import { HairlineGrid, KeyValueList, PageHeader, Panel } from '@/components/viatik/layout'
 import { CopyButton } from '@/components/viatik/operation'
-import { StatusBadge, Tag } from '@/components/viatik/status'
+import { StatusBadge, Tag, type StatusDescriptor } from '@/components/viatik/status'
+import type { NetworkYield } from '@/data/api-contract'
 import { useLedger, useViatik, useViatikState } from '@/data/react'
+import { useNetworkYield } from '@/data/use-network-yield'
 import { pseudoAddress } from '@/domain/ids'
 import { vaultKindLabel } from '@/domain/labels'
 import { percentOf, sum, ZERO } from '@/domain/money'
@@ -39,7 +41,7 @@ import type { Movement, Vault } from '@/domain/types'
 import { networkInfo } from '@/domain/verification'
 import { publicEnv } from '@/lib/env'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { formatDateTime, pluralize, shortHash } from '@/lib/format'
+import { formatDate, formatDateTime, formatMon, formatShortDate, pluralize, shortHash } from '@/lib/format'
 
 const VAULT_MOVEMENTS: ReadonlySet<Movement['kind']> = new Set([
   'deposit',
@@ -59,6 +61,9 @@ export default function VaultsPage() {
   const [assetVault, setAssetVault] = React.useState<Vault | null>(null)
   const [assetOpen, setAssetOpen] = React.useState(false)
   const [withdrawOpen, setWithdrawOpen] = React.useState(false)
+  const [yieldOpen, setYieldOpen] = React.useState(false)
+  // Viatik's own test stake: a preview, never capital (kept out of every total on this page).
+  const { data: networkYield } = useNetworkYield()
 
   const vaults = state.vaults.filter((v) => v.portfolioId === portfolioId)
   const portfolioVault = vaults.find((v) => v.kind === 'portfolio')
@@ -156,10 +161,11 @@ export default function VaultsPage() {
               : 'No reserves yet'
           }
         />
+        {/* A string, never a number: KpiTile shows numbers as USD. No network terms here. */}
         <KpiTile
           label="Yield"
-          value={<span className="text-sm text-muted-foreground">Not available in this version</span>}
-          hint="No returns are promised"
+          value={<span className="font-display text-2xl tracking-tight">Preview</span>}
+          hint="Test stake · not your capital"
         />
       </HairlineGrid>
 
@@ -291,13 +297,21 @@ export default function VaultsPage() {
         </Panel>
         <Panel
           title={yieldVault?.name ?? 'Yield Vault'}
-          action={<Lock className="size-4 text-subtle" aria-hidden="true" />}
+          description={vaultKindLabel.yield.description}
+          action={<Tag>Preview</Tag>}
         >
-          <StatusBadge status={{ label: 'Not available in this version', tone: 'neutral' }} />
+          <StatusBadge status={yieldStatus(networkYield)} />
           <p className="mt-3 flex gap-2 text-sm text-pretty text-muted-foreground">
             <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-            {vaultKindLabel.yield.description} Viatik does not promise returns.
+            Viatik runs a small test stake to show how rewards on idle assets would be reported. It uses
+            Viatik’s own test funds, not your capital, and is never counted in your portfolio. No returns are
+            promised.
           </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button variant="ghost" size="pill-sm" onClick={() => setYieldOpen(true)}>
+              Asset details <ArrowUpRight data-icon="inline-end" />
+            </Button>
+          </div>
         </Panel>
       </div>
 
@@ -349,6 +363,12 @@ export default function VaultsPage() {
 
       {receipts.drawer}
       <VaultAssetSheet vault={assetVault} open={assetOpen} onOpenChange={setAssetOpen} />
+      <YieldAssetSheet
+        name={yieldVault?.name ?? 'Yield Vault'}
+        data={networkYield}
+        open={yieldOpen}
+        onOpenChange={setYieldOpen}
+      />
       {portfolioVault && canWithdraw ? (
         <InvestorWithdrawSheet vault={portfolioVault} open={withdrawOpen} onOpenChange={setWithdrawOpen} />
       ) : null}
@@ -499,6 +519,139 @@ function VaultAssetSheet({
             {monad
               ? 'Amounts everywhere else in Viatik are shown in USD. On testnet, TestUSD stands in for USDC one to one.'
               : 'Amounts everywhere else in Viatik are shown in USD. USDC settles them one to one.'}
+          </p>
+        </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+/** A wei amount from the API is zero. */
+const noWei = (wei: string) => !/[1-9]/.test(wei)
+
+/** The Yield preview in product words: the network is named only in its asset details. */
+function yieldStatus(data: NetworkYield | undefined): StatusDescriptor {
+  if (!data) return { label: 'Checking the test stake…', tone: 'neutral' }
+  if (!data.available) return { label: 'Can’t be read right now', tone: 'neutral' }
+  if (noWei(data.stakeWei)) return { label: 'No test stake right now', tone: 'neutral' }
+  if (!data.validator.active) return { label: 'Not earning right now', tone: 'warning' }
+  return { label: `Earning since ${formatShortDate(data.activeFrom.at)}`, tone: 'success' }
+}
+
+/**
+ * Vault asset details of the Yield Vault, where network terms are allowed: Viatik's own test
+ * stake, read live from Monad Testnet (the same read in the demo). Never capital: no rate and no
+ * USD value.
+ */
+function YieldAssetSheet({
+  name,
+  data,
+  open,
+  onOpenChange,
+}: {
+  name: string
+  data: NetworkYield | undefined
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const mobile = useIsMobile()
+  const network = networkInfo('testnet')
+  const read = data?.available ? data : null
+  const link = (path: string, text: string) => (
+    <a
+      href={`${network.explorer}/${path}`}
+      target="_blank"
+      rel="noreferrer"
+      className="underline-offset-4 hover:underline"
+    >
+      {text}
+    </a>
+  )
+  const basics = [
+    { label: 'Asset', value: 'MON (testnet, no value)' },
+    { label: 'Network', value: `${network.name} · chain ${network.chainId}` },
+  ]
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side={mobile ? 'bottom' : 'right'}
+        className="max-h-[92svh] gap-0 overflow-y-auto p-0 data-[side=bottom]:rounded-t-2xl data-[side=right]:w-full data-[side=right]:sm:max-w-md"
+      >
+        <SheetHeader className="border-b border-border px-5 py-4">
+          <SheetTitle className="font-display text-xl font-medium">Vault asset details</SheetTitle>
+          <SheetDescription>{name} · test stake preview</SheetDescription>
+        </SheetHeader>
+        <div className="flex flex-col gap-5 p-5">
+          <p className="text-sm text-pretty text-muted-foreground">
+            Viatik staked a small amount of its own test MON with a validator on {network.name}. What it has
+            earned is read live from the network.
+          </p>
+          {read ? (
+            <KeyValueList
+              items={[
+                ...basics,
+                {
+                  label: 'Staked',
+                  value: noWei(read.stakeWei) ? 'No stake found' : formatMon(read.stakeWei),
+                  hint: !noWei(read.pendingStakeWei)
+                    ? `+ ${formatMon(read.pendingStakeWei)} from epoch ${read.pendingEpoch ?? '—'}`
+                    : noWei(read.stakeWei)
+                      ? 'The test network may have been reset'
+                      : undefined,
+                },
+                {
+                  label: 'Validator',
+                  value: `#${read.validatorId} · ${read.validator.active ? 'active' : 'inactive'} · ${read.validator.commissionPct}% commission`,
+                },
+                { label: 'Rewards so far', value: formatMon(read.rewardsWei), hint: 'Unclaimed' },
+                {
+                  label: 'Earning since',
+                  value: `Epoch ${read.activeFrom.epoch} · ${formatDate(read.activeFrom.at)}`,
+                },
+                { label: 'Current epoch', value: String(read.epoch) },
+                {
+                  label: 'Staked from',
+                  hint: 'Viatik’s operator account',
+                  value: (
+                    <span className="inline-flex items-center gap-1 font-mono text-xs">
+                      {link(`address/${read.delegator}`, shortHash(read.delegator, 6, 4))}
+                      <CopyButton value={read.delegator} label="Copy operator account address" />
+                    </span>
+                  ),
+                },
+                {
+                  label: 'Stake transaction',
+                  value: (
+                    <span className="font-mono text-xs">
+                      {link(`tx/${read.delegateTx}`, shortHash(read.delegateTx, 10, 6))}
+                    </span>
+                  ),
+                },
+                {
+                  label: 'Read at',
+                  hint: read.stale ? 'The last read: the network can’t be read right now' : undefined,
+                  value: (
+                    <span>
+                      {link(`block/${read.block}`, `Block ${read.block.toLocaleString('en-US')}`)} ·{' '}
+                      {formatDateTime(read.blockAt)}
+                    </span>
+                  ),
+                },
+              ]}
+            />
+          ) : (
+            <>
+              <KeyValueList items={basics} />
+              <p className="text-sm text-pretty text-muted-foreground">
+                {data
+                  ? 'The test stake can’t be read right now. Try again in a few minutes.'
+                  : 'Reading the test stake…'}
+              </p>
+            </>
+          )}
+          <p className="text-xs text-pretty text-subtle">
+            Testnet MON has no value. This stake belongs to Viatik, not your portfolio, and is never added to
+            your capital. Rewards depend on the network and can stop. No returns are promised.
           </p>
         </div>
       </SheetContent>

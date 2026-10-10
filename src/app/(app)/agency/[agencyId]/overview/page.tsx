@@ -47,6 +47,7 @@ import {
   destinationName,
   openBills,
 } from '@/domain/queries'
+import { schedulesNeedingAttention } from '@/domain/schedules'
 import { agencyCapital, budgetUsage, spendByMonth } from '@/domain/selectors'
 import { budgetStatus, trancheStatus } from '@/domain/status'
 import { seriesColor, seriesKey } from '@/lib/chart-colors'
@@ -119,7 +120,10 @@ export default function AgencyOverviewPage() {
   const canPayOutside =
     can('pay_outside') && state.accounts.some((a) => a.agencyId === agencyId && a.status === 'active')
   const canInvoice = can('pay_outside')
-  const followUps = accountability.peopleOverdue + accountability.proofOverdue + monthlyDue.length
+  // Scheduled payments that were due and could not be paid, or stopped (their Admin left).
+  const scheduleAttention = can('send_payment') ? schedulesNeedingAttention(state, agencyId, now) : []
+  const followUps =
+    accountability.peopleOverdue + accountability.proofOverdue + monthlyDue.length + scheduleAttention.length
   const addInvoice = (paymentId: string) => {
     setInvoiceFor(paymentId)
     setInvoiceOpen(true)
@@ -187,6 +191,23 @@ export default function AgencyOverviewPage() {
         >
           <p className="text-sm font-medium">Needs a follow-up</p>
           <ul className="flex flex-col gap-2">
+            {scheduleAttention.length > 0 ? (
+              <li className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                <span className="flex flex-col">
+                  <span className="font-medium">
+                    {scheduleAttention.length === 1
+                      ? '1 scheduled payment needs attention'
+                      : `${scheduleAttention.length} scheduled payments need attention`}
+                  </span>
+                  <span className="text-muted-foreground">
+                    Due and not paid, or stopped. Viatik keeps trying the ones that are due.
+                  </span>
+                </span>
+                <ButtonLink href={href('payments?tab=scheduled')} variant="outline" size="pill-sm">
+                  Open scheduled payments <ArrowRight data-icon="inline-end" />
+                </ButtonLink>
+              </li>
+            ) : null}
             {accountability.peopleOverdue > 0 ? (
               <li className="flex flex-wrap items-center justify-between gap-3 text-sm">
                 <span className="flex flex-col">

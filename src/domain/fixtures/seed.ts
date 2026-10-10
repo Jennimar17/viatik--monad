@@ -1401,7 +1401,6 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     category: SpendingCategory
     payAt?: ISODate
     reconcile?: boolean
-    scheduledFor?: ISODate
     accountId?: Id
     budgetId?: Id | null
   }) => {
@@ -1424,8 +1423,8 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
       category: input.category,
       accountId,
       budgetId,
-      status: input.scheduledFor ? 'scheduled' : 'to_pay',
-      scheduledFor: input.scheduledFor,
+      // Never seeded as scheduled: a schedule lives on the ledger, so scheduled bills are created live.
+      status: 'to_pay',
       document: doc,
       createdBy: U.maya,
       createdAt: input.issue,
@@ -1457,7 +1456,7 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
       billId,
     })
     const record = s.bills.find((x) => x.id === billId)!
-    Object.assign(record, { status: 'paid', paymentId, scheduledFor: undefined })
+    Object.assign(record, { status: 'paid', paymentId })
     if (input.reconcile) {
       const reconciledAt = new Date(new Date(input.payAt).getTime() + 26 * 60 * 60 * 1000).toISOString()
       s.reconciliations.push({
@@ -1605,7 +1604,6 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
         due: b.ahead(5, 12),
         amount: usd(96),
         category: 'software',
-        scheduledFor: b.ahead(2, 9),
       })
       bill({
         destinationId: DST.vertex,

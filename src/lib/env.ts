@@ -84,6 +84,21 @@ const serverEnvSchema = z.object({
     .regex(/^0x[0-9a-fA-F]{64}$/, 'Expected a 0x-prefixed private key.')
     .transform((value) => value as `0x${string}`)
     .optional(),
+  /**
+   * Signs the keeper's runs of due scheduled payments (`runSchedule`): it must be the ledger's
+   * `keeper()`. Optional: the registrar key is used when unset (on testnet both are the deployer's).
+   */
+  LEDGER_KEEPER_PRIVATE_KEY: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{64}$/, 'Expected a 0x-prefixed private key.')
+    .transform((value) => value as `0x${string}`)
+    .optional(),
+  /**
+   * Enables POST /api/v1/keeper/run, called by Supabase Cron every 10 minutes with this value in the
+   * `x-keeper-token` header (scripts/keeper-cron.sql). Without it the route does not exist; the
+   * "Run due payments" button (`/v1/keeper/run-now`) works either way.
+   */
+  KEEPER_TRIGGER_TOKEN: z.string().min(32).optional(),
   DATABASE_URL: z.string().min(1).optional(),
   SUPABASE_URL: z.url().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),

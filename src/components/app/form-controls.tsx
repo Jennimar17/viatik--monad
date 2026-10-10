@@ -138,7 +138,11 @@ export function FormField({
 export function PillInput({ className, ...props }: React.ComponentProps<typeof Input>) {
   return (
     <Input
-      className={cn('h-11 bg-input/30 px-5', props.type === 'date' && 'date-input', className)}
+      className={cn(
+        'h-11 bg-input/30 px-5',
+        (props.type === 'date' || props.type === 'time') && 'date-input',
+        className,
+      )}
       {...props}
     />
   )

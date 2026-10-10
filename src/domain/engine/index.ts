@@ -4,6 +4,7 @@ import * as funding from './funding'
 import * as operations from './operations'
 import * as outside from './outside'
 import * as people from './people'
+import * as schedules from './schedules'
 
 /**
  * Every state-changing operation in the product. The mock data source (client)
@@ -56,6 +57,11 @@ export const commands = {
   remindReceipts: outside.remindReceipts,
   createReminder: outside.createReminder,
   setReminderStatus: outside.setReminderStatus,
+  schedulePayment: schedules.schedulePayment,
+  pauseSchedule: schedules.pauseSchedule,
+  resumeSchedule: schedules.resumeSchedule,
+  cancelSchedule: schedules.cancelSchedule,
+  dismissUnscheduledPayment: schedules.dismissUnscheduledPayment,
   invite: people.invite,
   acceptInvitation: people.acceptInvitation,
   cancelInvitation: people.cancelInvitation,
@@ -107,3 +113,4 @@ export type {
   SetReminderStatusInput,
 } from './outside'
 export type { CreateAgentInput } from './people'
+export type { DismissUnscheduledPaymentInput, ScheduleRefInput, SchedulePaymentInput } from './schedules'

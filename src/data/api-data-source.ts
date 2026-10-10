@@ -15,6 +15,7 @@ import {
   type EvidenceUploadTicket,
   type LedgerAccount,
   type LedgerView,
+  type NetworkYield,
   type VerifiedUpload,
 } from './api-contract'
 import {
@@ -464,5 +465,33 @@ export class ApiDataSource implements DataSource {
       expectedUserId: userId,
       signal: AbortSignal.timeout(READ_DEADLINE_MS),
     })
+  }
+}
+
+/**
+ * `GET /v1/ledger/yield`: Viatik's own test stake (the Yield preview), the same for everyone and
+ * in both modes, so it is not a `DataSource` method: the demo reads the real testnet too. A plain
+ * fetch with no token, unlike `apiFetch`: a token keeps the CDN from sharing its copy, and
+ * `apiRequest`'s `cache: 'no-store'` makes the browser ask caches to revalidate.
+ */
+export async function fetchNetworkYield(signal?: AbortSignal): Promise<NetworkYield> {
+  let response: Response
+  try {
+    response = await fetch('/api/v1/ledger/yield', { headers: { accept: 'application/json' }, signal })
+  } catch {
+    throw new DataSourceError(
+      'We could not reach Viatik. Check your connection and try again.',
+      CONNECTION_FAILED,
+    )
+  }
+  if (!response.ok)
+    throw new DataSourceError('Something went wrong. Please try again.', String(response.status))
+  try {
+    return (await response.json()) as NetworkYield
+  } catch {
+    throw new DataSourceError(
+      'We could not reach Viatik. Check your connection and try again.',
+      CONNECTION_FAILED,
+    )
   }
 }

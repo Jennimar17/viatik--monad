@@ -25,8 +25,10 @@ import { budgetPeriodUnit, categoryLabel } from '@/domain/labels'
 import { formatUsd, min, sum } from '@/domain/money'
 import { describeBudgetPolicy } from '@/domain/policy'
 import { destinationName, memberBudgets } from '@/domain/queries'
+import { upcomingPayments } from '@/domain/schedules'
 import { requestStatusFor } from '@/domain/status'
 import { formatRelative, formatShortDate } from '@/lib/format'
+import { formatLocalDateTime } from '@/lib/local-time'
 
 export default function MemberOverviewPage() {
   const { state, now, user, userId } = useViatikState()
@@ -53,9 +55,8 @@ export default function MemberOverviewPage() {
   const paidToMe = state.payments.filter(
     (p) => p.agencyId === agencyId && p.recipient.kind === 'member' && p.recipient.userId === userId,
   )
-  const nextPayment = paidToMe
-    .filter((p) => p.status === 'scheduled')
-    .sort((a, b) => (a.scheduledFor < b.scheduledFor ? -1 : 1))[0]
+  // A scheduled payment to me, soonest first: Viatik pays it when it is due.
+  const nextPayment = upcomingPayments(state, { agencyId, recipientUserId: userId })[0]
   const lastReceived = paidToMe
     .filter((p) => p.status === 'completed' && p.completedAt)
     .sort((a, b) => ((a.completedAt ?? '') < (b.completedAt ?? '') ? 1 : -1))[0]
@@ -210,7 +211,7 @@ export default function MemberOverviewPage() {
                 {
                   label: 'Next payment',
                   value: nextPayment
-                    ? `${formatUsd(nextPayment.amount)} · ${formatShortDate(nextPayment.scheduledFor)}`
+                    ? `${formatUsd(nextPayment.amount)} · ${formatLocalDateTime(nextPayment.scheduledFor)}`
                     : 'Nothing scheduled',
                   hint: nextPayment?.memo,
                 },

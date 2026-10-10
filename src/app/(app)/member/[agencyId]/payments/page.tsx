@@ -26,11 +26,13 @@ import { KpiTile } from '@/components/viatik/finance'
 import { HairlineGrid, PageHeader, Panel } from '@/components/viatik/layout'
 import { useViatikState } from '@/data/react'
 import { sum } from '@/domain/money'
+import { upcomingPayments } from '@/domain/schedules'
 import { justificationState, justificationStatus } from '@/domain/status'
 import type { Id } from '@/domain/types'
 import { networkInfo } from '@/domain/verification'
 import { publicEnv } from '@/lib/env'
-import { formatDate, pluralize } from '@/lib/format'
+import { pluralize } from '@/lib/format'
+import { formatLocalDateTime } from '@/lib/local-time'
 
 export default function MemberPaymentsPage() {
   // The open tab follows `?tab=` (useSearchParams), which needs a boundary for the static prerender.
@@ -65,9 +67,9 @@ function MemberPayments() {
   const completed = received.filter((p) => p.status === 'completed')
   const year = now.slice(0, 4)
   const thisYear = completed.filter((p) => (p.completedAt ?? '').startsWith(year))
-  const next = received
-    .filter((p) => p.status === 'scheduled')
-    .sort((a, b) => (a.scheduledFor < b.scheduledFor ? -1 : 1))[0]
+  // Scheduled payments to me (their next run), soonest first: Viatik pays each when it is due.
+  const upcoming = upcomingPayments(state, { agencyId, recipientUserId: userId })
+  const next = upcoming[0]
   // Money for purchases gets its own tab (and KPI) once the person has received some.
   const hasAdvances = acc.all.length > 0
   // In Received, money for purchases shows how far it is justified instead of "Completed".
@@ -98,7 +100,7 @@ function MemberPayments() {
       count: received.length,
       content: (
         <PaymentsTable
-          payments={received}
+          payments={[...upcoming, ...received]}
           direction="in"
           showBudget={false}
           statusFor={receivedStatus}
@@ -196,7 +198,11 @@ function MemberPayments() {
             value={
               next ? next.amount : <span className="text-sm text-muted-foreground">Nothing scheduled</span>
             }
-            hint={next ? `${next.memo} · ${formatDate(next.scheduledFor)}` : 'Scheduled payouts show here'}
+            hint={
+              next
+                ? `${next.memo} · ${formatLocalDateTime(next.scheduledFor)}${upcoming.length > 1 ? ` · ${upcoming.length - 1} more scheduled` : ''}`
+                : 'Scheduled payouts show here'
+            }
           />
         </HairlineGrid>
         <SettlementNote account={account} agencyName={agencyName} />

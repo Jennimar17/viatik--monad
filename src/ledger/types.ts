@@ -49,6 +49,10 @@ export type LedgerErrorCode =
   | 'allowance_required'
   /** The person's account holds less TestUSD than the deposit needs. */
   | 'wallet_insufficient'
+  /** A scheduled payment is not due yet on the ledger (`NotDue`): the keeper tries again later. */
+  | 'not_due'
+  /** A scheduled payment is paused on the ledger (`SchedulePaused`). */
+  | 'schedule_paused'
   /** The transaction was sent and is not final yet: ask again before retrying. */
   | 'still_processing'
   /** The transaction did not go through (reverted, or its user operation failed): nothing moved. */
@@ -167,8 +171,41 @@ export type LedgerOp =
       amount: Cents
       evidenceHash: Hash | null
     }
+  /**
+   * An Agency Admin schedules a payment from an account or a budget to a vendor or a Member,
+   * once or every `intervalSeconds` (`createSchedule`). Records no receipt: `ScheduleCreated` proves it.
+   */
+  | {
+      call: 'createSchedule'
+      scheduleId: Id
+      /** An account or a budget. */
+      sourceId: Id
+      destinationId: Id | null
+      memberUserId: Id | null
+      amount: Cents
+      /** When the first run is due (whole seconds). */
+      firstRunAt: ISODate
+      /** Seconds between runs; 0 = a single run. */
+      intervalSeconds: number
+      runs: number
+    }
+  /**
+   * An Agency Admin or the portfolio's Investor pauses (`paused`), resumes (`active`) or cancels a
+   * schedule. Records no receipt: `ScheduleStatusChanged` with that status proves it.
+   */
+  | { call: 'setScheduleStatus'; scheduleId: Id; status: 'paused' | 'active' | 'cancelled' }
+  /** The keeper pays the due run of a schedule under `paymentId` (`runSchedule`); only the keeper signs it. */
+  | { call: 'runSchedule'; scheduleId: Id; paymentId: Id }
 
 export type LedgerCall = LedgerOp['call']
+
+/** Calls the ledger confirms with their own event and no receipt: their records never belong to a receipt. */
+export const RECEIPTLESS_CALLS: ReadonlySet<LedgerCall> = new Set<LedgerCall>([
+  'requestTranche',
+  'recordEvidence',
+  'createSchedule',
+  'setScheduleStatus',
+])
 
 /** `ReceiptKind` in the contract. */
 export type RecordKind =
@@ -214,6 +251,11 @@ export type SettlementPlan = {
   records: PlannedRecord[]
   /** Who signs the transaction; null for automations and the system, which have no account. */
   signerUserId: Id | null
+  /**
+   * Signed by Viatik's keeper instead of a person: a scheduled payment's due run
+   * (`runSchedule`), which only the ledger's `keeper()` may send. Absent otherwise.
+   */
+  signer?: 'keeper'
   /** Keep the engine's state even when the ledger refuses (a rejected request stays in history). */
   keepOnFailure: boolean
   /**
@@ -233,8 +275,9 @@ export type SettlementPlan = {
 /**
  * One operation the ledger confirmed: a money operation (`Recorded(opId, …)`
  * onchain), or one that records no money and proves itself with its own
- * event: a tranche request (`TrancheRequested`) or an invoice anchored for an
- * outside payment (`EvidenceRecorded`).
+ * event: a tranche request (`TrancheRequested`), an invoice anchored for an
+ * outside payment (`EvidenceRecorded`), or a schedule created or changed
+ * (`ScheduleCreated`, `ScheduleStatusChanged`; `opId` is the schedule id).
  */
 export type LedgerRecord = {
   opId: Id

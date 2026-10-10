@@ -414,6 +414,10 @@ export type Payment = {
   proofVerified?: VerifiedDetails
   /** The monthly reminder this payment answered. */
   reminderId?: Id
+  /** A run of a scheduled payment: the schedule the keeper paid it for. */
+  scheduleId?: Id
+  /** Which run of that schedule it was (1 = the first). */
+  scheduleRun?: number
 }
 
 export type BillStatus = 'to_pay' | 'scheduled' | 'paid' | 'reconciled'
@@ -433,7 +437,10 @@ export type Bill = {
   document: Evidence
   notes?: string
   paymentId?: Id
+  /** While scheduled: when its schedule is due (`Schedule.nextRunAt`). */
   scheduledFor?: ISODate
+  /** The schedule that pays it (status `scheduled`), kept once it paid it. */
+  scheduleId?: Id
   createdBy: Id
   createdAt: ISODate
 }
@@ -652,6 +659,12 @@ export type ActivityType =
   | 'receipts_reminded'
   | 'reminder_created'
   | 'reminder_updated'
+  /** A payment scheduled for later (its runs are `payment_completed`). */
+  | 'payment_scheduled'
+  /** A scheduled payment paused, resumed or cancelled. */
+  | 'schedule_updated'
+  /** A due run of a scheduled payment could not be paid (it stays due). */
+  | 'schedule_failed'
 
 export type Activity = {
   id: Id
@@ -735,6 +748,107 @@ export type Reminder = {
   updatedAt: ISODate
 }
 
+// ─── Scheduled payments ──────────────────────────────────────────────────────
+
+/**
+ * - active: the keeper pays each run once it is due (within minutes of its time).
+ * - paused: nothing is paid; on resume, dates that passed are skipped, not paid.
+ * - cancelled: stopped for good by an Agency Admin or the Investor.
+ * - completed: every run was paid.
+ */
+export type ScheduleStatus = 'active' | 'paused' | 'cancelled' | 'completed'
+
+/** Why the latest attempt at a due run could not pay. The run stays due and is tried again. */
+export type ScheduleFailure = {
+  /** The run it concerns (1 = the first). */
+  run: number
+  /** A domain or ledger error code (`insufficient_funds`, `budget_paused`…). */
+  code: string
+  /** Product language, safe to show to the Agency's Admins and Investors. */
+  message: string
+  /** When this run first failed for this reason. */
+  at: ISODate
+}
+
+/**
+ * A payment an Agency Admin authorized once, from an account or a budget to a
+ * vendor or a person's Viatik balance, for a later date (and possibly every
+ * `intervalSeconds` after it, `runs` times). It mirrors the ledger's schedule
+ * (`createSchedule`), whose id is this id; the keeper runs it when it is due,
+ * and each run is an ordinary completed Payment (`scheduleId`, `scheduleRun`).
+ */
+export type Schedule = {
+  id: Id
+  agencyId: Id
+  /** The account it pays from: a budget's source account when paying from a budget. */
+  sourceAccountId: Id
+  budgetId?: Id
+  recipient: ViatikRecipient
+  type: Exclude<PaymentType, 'advance'>
+  amount: Cents
+  category: SpendingCategory
+  memo: string
+  /** The bill it pays, when it was scheduled from one. */
+  billId?: Id
+  /** When the first run was due (whole seconds). */
+  firstRunAt: ISODate
+  /** When the next run is due; once completed, when the last one was due. */
+  nextRunAt: ISODate
+  /** Seconds between runs; 0 = a single run. */
+  intervalSeconds: number
+  runs: number
+  runsLeft: number
+  status: ScheduleStatus
+  /** Whether the Investor paused it: then only the Investor resumes it. */
+  pausedByInvestor?: boolean
+  pausedBy?: Id
+  pausedAt?: ISODate
+  cancelledBy?: Id
+  cancelledAt?: ISODate
+  completedAt?: ISODate
+  /** The Agency Admin who authorized it: if they lose the role, it stops. */
+  createdBy: Id
+  createdAt: ISODate
+  /** The payments its runs made, oldest first. */
+  paymentIds: Id[]
+  /** The latest due run that could not be paid, while it is still that run. */
+  failure?: ScheduleFailure
+  /**
+   * How many times it was resumed (absent: never). A resume clears the failure, so a run that
+   * fails again after it is noted and told again (the keeper seeds each failure with this).
+   */
+  resumes?: number
+  /** What the ledger recorded when it was created. */
+  ledger?: VerifiedDetails
+  /** What the ledger recorded for its last pause, resume or cancellation. */
+  changeLedger?: VerifiedDetails
+}
+
+/** One pass of the keeper over an Agency (src/server/keeper.ts), as screens show it. */
+export type KeeperRun = {
+  at: ISODate
+  /** `automatic`: the timer (Supabase Cron); `manual`: an Agency Admin pressed "Run due payments". */
+  trigger: 'automatic' | 'manual'
+  /** Manual runs: who pressed it. */
+  by?: Id
+  /** Runs paid in this pass. */
+  paid: number
+  /** Due runs that could not be paid (they stay due and are tried again). */
+  failed: number
+  /** Due runs left for the next pass (time ran out, or still confirming on Monad). */
+  waiting: number
+  /** Monthly payments whose due day was told to the Admins. */
+  reminders: number
+}
+
+/** What the keeper last did, kept with the state so screens can say "Last run 4 min ago". */
+export type KeeperStatus = {
+  /** When the timer last ran the keeper (for every Agency). */
+  lastAutomaticAt?: ISODate
+  /** Per Agency: the last pass that looked at it, automatic or manual. */
+  agencies: Record<Id, KeeperRun>
+}
+
 export type ViatikState = {
   version: number
   generatedAt: ISODate
@@ -764,4 +878,7 @@ export type ViatikState = {
   notifications: Notification[]
   payoutAddresses: PayoutAddress[]
   reminders: Reminder[]
+  schedules: Schedule[]
+  /** What the keeper last did (absent until it first runs). */
+  keeper?: KeeperStatus
 }

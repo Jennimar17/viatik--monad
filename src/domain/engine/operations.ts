@@ -45,6 +45,7 @@ import type {
   PolicyDecision,
   RequestDestination,
   RequestType,
+  Schedule,
   SpendingAllowance,
   SpendingCategory,
   ViatikRecipient,
@@ -58,6 +59,7 @@ import {
   type EvidenceDraft,
   type Tx,
 } from './core'
+import { schedulePayment, stopSchedule } from './schedules'
 
 // ─── Accounts ────────────────────────────────────────────────────────────────
 
@@ -1114,10 +1116,39 @@ export type SendPaymentInput = {
   batchId?: Id
 }
 
-export function sendPayment(tx: Tx, input: SendPaymentInput) {
-  tx.authorize(input.recipient.kind === 'member' ? 'pay_member' : 'send_payment', {
-    agencyId: input.agencyId,
-  })
+/**
+ * An Agency Admin pays a vendor or a person's Viatik balance. With a
+ * `scheduledFor` in the future it is scheduled instead (a schedule with one
+ * run, `schedulePayment`), and the keeper pays it on Monad when it is due: the
+ * result is then the Schedule, not a Payment.
+ */
+export function sendPayment(tx: Tx, input: SendPaymentInput): Payment | Schedule {
+  const { scheduledFor, batchId: _batchId, ...rest } = input
+  if (scheduledFor && Date.parse(scheduledFor) > Date.parse(tx.now))
+    return schedulePayment(tx, { ...rest, firstRunAt: scheduledFor })
+  return payNow(tx, input)
+}
+
+/** What `checkAgencyPayment` resolved for a payment that passes. */
+export type AgencyPaymentChecks = {
+  account: Account
+  budget?: Budget
+  portfolioId: Id
+  recipientName: string
+}
+
+/**
+ * What a payment an Agency Admin makes must satisfy, paid now, scheduled, or
+ * when the keeper runs it: a positive amount; the account (and budget) of this
+ * Agency; a payee who is a person in it or an approved vendor of it; then the
+ * ledger's own limits, in its order (a paused budget pays nothing, the
+ * budget's per-operation limit and approved vendors, then the Investor's
+ * exception threshold). The money available is checked by the caller.
+ */
+export function checkAgencyPayment(
+  tx: Tx,
+  input: { agencyId: Id; recipient: ViatikRecipient; accountId: Id; budgetId?: Id; amount: Cents },
+): AgencyPaymentChecks {
   requirePositive(input.amount)
   const account = tx.find('accounts', input.accountId, 'Account')
   if (account.agencyId !== input.agencyId)
@@ -1175,8 +1206,15 @@ export function sendPayment(tx: Tx, input: SendPaymentInput) {
       ? tx.nameOf(input.recipient.userId)
       : (tx.state.destinations.find((d) => d.id === (input.recipient as { destinationId: Id }).destinationId)
           ?.name ?? 'Payment destination')
+  return { account, budget, portfolioId, recipientName }
+}
 
-  const scheduled = input.scheduledFor && input.scheduledFor.slice(0, 10) > tx.now.slice(0, 10)
+/** Pays now: the money moves from the account or budget, with its receipt. */
+export function payNow(tx: Tx, input: SendPaymentInput): Payment {
+  tx.authorize(input.recipient.kind === 'member' ? 'pay_member' : 'send_payment', {
+    agencyId: input.agencyId,
+  })
+  const { account, budget, portfolioId, recipientName } = checkAgencyPayment(tx, input)
   const payment: Payment = {
     id: newId('pay'),
     agencyId: input.agencyId,
@@ -1187,60 +1225,56 @@ export function sendPayment(tx: Tx, input: SendPaymentInput) {
     amount: input.amount,
     category: input.category,
     memo: requireText(input.memo, 'Memo', 200),
-    status: scheduled ? 'scheduled' : 'completed',
+    status: 'completed',
     createdBy: tx.actor,
-    scheduledFor: input.scheduledFor ?? tx.now,
+    scheduledFor: tx.now,
     billId: input.billId,
     batchId: input.batchId,
   }
 
-  if (!scheduled) {
-    const from = budget
-      ? ({ kind: 'budget', budgetId: budget.id } as const)
-      : ({ kind: 'account', accountId: account.id } as const)
-    const available = budget
-      ? budgetUsage(tx.state, budget, tx.now).available
-      : accountBalance(tx.state, account.id)
-    if (available < input.amount) {
-      throw new DomainError(
-        'insufficient_funds',
-        `${budget ? budget.name : account.name} has ${usdText(available)} available.`,
-      )
-    }
-    const receipt = tx.receipt({
-      kind: 'payment',
-      amount: input.amount,
-      fromLabel: budget ? `${account.name} · ${budget.name}` : account.name,
-      toLabel: recipientName,
-      description: payment.memo,
-      policyLabel: budget
-        ? `${budget.name} · per-operation limit ${usdText(budget.perOperationLimit)}`
-        : 'Agency account payment · Agency Admin authorization',
-      operationId: payment.id,
+  const from = budget
+    ? ({ kind: 'budget', budgetId: budget.id } as const)
+    : ({ kind: 'account', accountId: account.id } as const)
+  const available = budget
+    ? budgetUsage(tx.state, budget, tx.now).available
+    : accountBalance(tx.state, account.id)
+  if (available < input.amount) {
+    throw new DomainError(
+      'insufficient_funds',
+      `${budget ? budget.name : account.name} has ${usdText(available)} available.`,
+    )
+  }
+  const receipt = tx.receipt({
+    kind: 'payment',
+    amount: input.amount,
+    fromLabel: budget ? `${account.name} · ${budget.name}` : account.name,
+    toLabel: recipientName,
+    description: payment.memo,
+    policyLabel: budget
+      ? `${budget.name} · per-operation limit ${usdText(budget.perOperationLimit)}`
+      : 'Agency account payment · Agency Admin authorization',
+    operationId: payment.id,
+    portfolioId,
+    agencyId: input.agencyId,
+  })
+  tx.move(
+    'payment',
+    input.amount,
+    from,
+    { kind: 'recipient', recipient: input.recipient },
+    {
       portfolioId,
       agencyId: input.agencyId,
-    })
-    tx.move(
-      'payment',
-      input.amount,
-      from,
-      { kind: 'recipient', recipient: input.recipient },
-      {
-        portfolioId,
-        agencyId: input.agencyId,
-        refId: payment.id,
-        receiptId: receipt.id,
-      },
-    )
-    payment.completedAt = tx.now
-    payment.receiptId = receipt.id
-  }
+      refId: payment.id,
+      receiptId: receipt.id,
+    },
+  )
+  payment.completedAt = tx.now
+  payment.receiptId = receipt.id
   tx.state.payments.push(payment)
   tx.activity(
     'payment_completed',
-    scheduled
-      ? `Scheduled ${usdText(input.amount)} to ${recipientName}`
-      : `Paid ${usdText(input.amount)} to ${recipientName}`,
+    `Paid ${usdText(input.amount)} to ${recipientName}`,
     { kind: 'payment', id: payment.id },
     {
       portfolioId,
@@ -1252,7 +1286,7 @@ export function sendPayment(tx: Tx, input: SendPaymentInput) {
   if (input.recipient.kind === 'member') {
     tx.notify(
       [input.recipient.userId],
-      scheduled ? 'Payment scheduled' : 'Payment received',
+      'Payment received',
       `${usdText(input.amount)} from ${tx.state.agencies.find((a) => a.id === input.agencyId)?.name}: ${payment.memo}.`,
       `/member/${input.agencyId}/payments`,
     )
@@ -1284,7 +1318,7 @@ export function sendTeamPayments(
     )
   const batchId = newId('batch')
   return input.items.map((item) =>
-    sendPayment(tx, {
+    payNow(tx, {
       agencyId: input.agencyId,
       type: 'team',
       recipient: { kind: 'member', userId: item.userId },
@@ -1361,38 +1395,54 @@ export function addBill(tx: Tx, input: AddBillInput): Bill {
   return bill
 }
 
+/**
+ * Pays a bill now, or schedules it for a later date (a schedule with one run
+ * that the keeper pays when it is due; a `scheduledFor` less than a minute
+ * ahead is refused, not paid now). A bill already scheduled is paid now
+ * or rescheduled by cancelling its schedule in the same transaction.
+ */
 export function payBill(
   tx: Tx,
   input: { billId: Id; accountId?: Id; budgetId?: Id | null; scheduledFor?: ISODate },
-) {
+): { bill: Bill; payment?: Payment; schedule?: Schedule } {
   const bill = tx.find('bills', input.billId, 'Bill')
   tx.authorize('send_payment', { agencyId: bill.agencyId })
   if (bill.status === 'paid' || bill.status === 'reconciled')
     throw new DomainError('invalid_state', 'This bill is already paid.')
   const destination = tx.find('destinations', bill.destinationId, 'Payment destination')
   requirePayable(destination)
-  // Paying or rescheduling a scheduled bill replaces its scheduled payment;
-  // no money had moved for it yet.
-  const previous = bill.paymentId ? tx.state.payments.find((p) => p.id === bill.paymentId) : undefined
-  if (previous?.status === 'scheduled') {
-    tx.state.payments = tx.state.payments.filter((p) => p.id !== previous.id)
+  // Paying or rescheduling a scheduled bill replaces its schedule: nothing was paid for it yet.
+  const previous = bill.scheduleId ? tx.state.schedules.find((s) => s.id === bill.scheduleId) : undefined
+  if (previous && (previous.status === 'active' || previous.status === 'paused')) {
+    tx.authorize('manage_schedules', { agencyId: bill.agencyId })
+    stopSchedule(tx, previous)
   }
-  const payment = sendPayment(tx, {
+  const payment = {
     agencyId: bill.agencyId,
     type: paymentTypeForCategory(bill.category),
-    recipient: { kind: 'destination', destinationId: destination.id },
+    recipient: { kind: 'destination', destinationId: destination.id } as const,
     accountId: input.accountId ?? bill.accountId,
     budgetId: input.budgetId === null ? undefined : (input.budgetId ?? bill.budgetId),
     amount: bill.amount,
     category: bill.category,
     memo: `${destination.name} bill ${bill.number}`,
-    scheduledFor: input.scheduledFor,
     billId: bill.id,
-  })
-  bill.paymentId = payment.id
-  bill.status = payment.status === 'scheduled' ? 'scheduled' : 'paid'
-  bill.scheduledFor = payment.status === 'scheduled' ? payment.scheduledFor : undefined
-  return { bill, payment }
+  }
+  // A date always means "schedule it": one too close or already past (a clock behind the
+  // server's) is refused by schedulePayment, never paid now behind a "Payment scheduled" screen.
+  if (input.scheduledFor) {
+    const schedule = schedulePayment(tx, { ...payment, firstRunAt: input.scheduledFor })
+    bill.status = 'scheduled'
+    bill.scheduleId = schedule.id
+    bill.scheduledFor = schedule.nextRunAt
+    delete bill.paymentId
+    return { bill, schedule }
+  }
+  const paid = payNow(tx, payment)
+  bill.paymentId = paid.id
+  bill.status = 'paid'
+  delete bill.scheduledFor
+  return { bill, payment: paid }
 }
 
 /** Links a bill (or expense) to one canonical payment and its evidence. */

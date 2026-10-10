@@ -21,15 +21,16 @@ import { buildGenesis, placeholderAddress, type Genesis } from '@/ledger/genesis
 import { witnessesOf } from '@/ledger/ids'
 import { MockLedgerAdapter, simulateLedger } from '@/ledger/mock'
 import { ledgerSnapshot, type LedgerSnapshot } from '@/ledger/snapshot'
-import type {
-  ChainContext,
-  LedgerCall,
-  LedgerErrorCode,
-  LedgerOp,
-  PlannedRecord,
-  RecordEnd,
-  SettlementPlan,
-  SettlementResult,
+import {
+  RECEIPTLESS_CALLS,
+  type ChainContext,
+  type LedgerCall,
+  type LedgerErrorCode,
+  type LedgerOp,
+  type PlannedRecord,
+  type RecordEnd,
+  type SettlementPlan,
+  type SettlementResult,
 } from '@/ledger/types'
 import { parseCommandInput } from '@/server/schemas'
 import { viatikLedgerAbi } from '@/web3/abi/viatik-ledger'
@@ -407,6 +408,22 @@ export function ledgerInvariants(
       }
       for (const key of run.outside.keys())
         if (!end.outside.has(key)) drift.push(`outside ${key} (ledger only)`)
+      // Scheduled payments: the ledger's schedule and the app's mirror move together.
+      for (const [id, mirror] of end.schedules) {
+        const known = run.schedules.get(id)
+        if (
+          !known ||
+          known.status !== mirror.status ||
+          known.runsLeft !== mirror.runsLeft ||
+          known.nextRunAt !== mirror.nextRunAt ||
+          known.pausedByInvestor !== mirror.pausedByInvestor
+        )
+          drift.push(
+            `schedule ${id} (ledger ${known ? `${known.status} ${known.runsLeft} left, next ${known.nextRunAt}` : 'none'}; app ${mirror.status} ${mirror.runsLeft} left, next ${mirror.nextRunAt})`,
+          )
+      }
+      for (const id of run.schedules.keys())
+        if (!end.schedules.has(id)) drift.push(`schedule ${id} (ledger only)`)
       if (drift.length > 0)
         problems.push(`the mock ledger's books differ from the app's: ${drift.join('; ')}`)
     }
@@ -437,7 +454,7 @@ export function ledgerInvariants(
   const fresh = added(before.receipts, after.receipts)
   for (const receipt of fresh) {
     const record = settled?.records.find(
-      (r) => r.opId === receipt.operationId && r.call !== 'requestTranche' && r.call !== 'recordEvidence',
+      (r) => r.opId === receipt.operationId && !RECEIPTLESS_CALLS.has(r.call),
     )
     if (!record) problems.push(`receipt ${receipt.number} (${receipt.kind}) has no ledger record`)
     else if (receipt.verified.status !== 'confirmed')
@@ -481,6 +498,10 @@ function replay(start: LedgerSnapshot, end: LedgerSnapshot, plan: SettlementPlan
     else if (op.call === 'returnToAgency' || op.call === 'withdrawMemberBalance')
       agencyOf.set(op.opId, op.agencyId)
   }
+  // Any other record that pays a Member (a scheduled run): the agency of the place it comes from.
+  for (const record of plan.records)
+    if (!agencyOf.has(record.opId) && record.from && 'id' in record.from)
+      agencyOf.set(record.opId, scopeOf(record.from.id))
   const keyOf = (recordEnd: RecordEnd, opId: Id): string | null => {
     if (recordEnd === null || 'address' in recordEnd) return null
     if ('member' in recordEnd) return `member:${agencyOf.get(opId)}|${recordEnd.member}`

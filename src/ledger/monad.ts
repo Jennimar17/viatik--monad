@@ -28,7 +28,15 @@ import { viatikLedgerAbi } from '@/web3/abi/viatik-ledger'
 import { ENTRY_POINT_V07 } from '@/web3/addresses'
 import { chains, GAS_LIMIT_MULTIPLIER, type MonadNetwork } from '@/web3/chains'
 
-import { encodePlan, LEDGER_ROLE, NotEncodable, receiptHashOf, scopeIdOf, type JoinPermit } from './encode'
+import {
+  encodePlan,
+  LEDGER_ROLE,
+  LEDGER_SCHEDULE_STATUS,
+  NotEncodable,
+  receiptHashOf,
+  scopeIdOf,
+  type JoinPermit,
+} from './encode'
 import type { Genesis, GenesisRun, GenesisTransaction } from './genesis'
 import { ledgerId, witnessesOf, type LedgerEvent, type Witness } from './ids'
 import { decodeLedgerError, isRevert, ledgerErrorOf } from './revert'
@@ -64,8 +72,13 @@ export type MonadLedgerConfig = {
   tokenAddress?: Address
   /** Server key that signs role permits (`join`) and runs the genesis. */
   registrar?: LocalAccount
-  /** Accounts the server may sign with (scripts, a relayer). People sign in their browser. */
+  /** Accounts the server may sign with (scripts, a relayer, the keeper). People sign in their browser. */
   signers?: LocalAccount[]
+  /**
+   * The ledger's `keeper()`: the only account that runs due schedules (`runSchedule`). Plans marked
+   * `signer: 'keeper'` are prepared and sent from it. On testnet it is the deployer's, like the registrar.
+   */
+  keeper?: LocalAccount
   /** Another chain with the same contract (a local rehearsal). */
   chain?: Chain
 }
@@ -134,6 +147,37 @@ const NOT_CONFIGURED = failed(
 )
 
 export type Prepared = { status: 'ready'; tx: PreparedTx } | { status: 'done'; result: SettlementResult }
+
+/** `ScheduleStatus` in the contract, by number. */
+const SCHEDULE_STATUS: Record<number, LedgerSchedule['status']> = {
+  0: 'none',
+  1: 'active',
+  2: 'paused',
+  3: 'cancelled',
+  4: 'completed',
+}
+
+/** A schedule as the ledger holds it (`getSchedule`): the truth the keeper runs by. */
+export type LedgerSchedule = {
+  /** `none`: the ledger has no schedule with this id (another namespace, or never created). */
+  status: 'none' | 'active' | 'paused' | 'cancelled' | 'completed'
+  /** When the next run is due on the ledger. */
+  nextRunAt: ISODate
+  runsLeft: number
+  intervalSeconds: number
+  amount: Cents
+  pausedByInvestor: boolean
+  /** The Admin who authorized it. */
+  creator: Address
+}
+
+/** How a send from an account the server holds went. */
+export type SendOutcome =
+  | { status: 'sent'; hash: Hex }
+  /** The gas estimate (a simulation) refused it, or the account is not held here: nothing was sent. */
+  | { status: 'refused'; error: LedgerError }
+  /** Sending failed in a way that does not say whether it went out: look for it before trying again. */
+  | { status: 'unclear'; error: LedgerError }
 
 /** What a search for a prepared transaction found. */
 export type ConfirmationSearch =
@@ -274,7 +318,18 @@ export class MonadLedgerAdapter implements LedgerAdapter {
         ),
       }
     const chain = withValidAddresses(context)
-    const from = plan.signerUserId ? (chain.signerOf ?? chain.addressOf)(plan.signerUserId) : undefined
+    // The keeper runs due schedules; everything else is signed by the person who acts.
+    if (plan.signer === 'keeper' && !this.config.keeper)
+      return {
+        status: 'done',
+        result: failed('not_configured', 'Scheduled payments are not set up to run yet. Nothing was moved.'),
+      }
+    const from =
+      plan.signer === 'keeper'
+        ? this.config.keeper?.address
+        : plan.signerUserId
+          ? (chain.signerOf ?? chain.addressOf)(plan.signerUserId)
+          : undefined
     if (!from)
       return {
         status: 'done',
@@ -428,6 +483,18 @@ export class MonadLedgerAdapter implements LedgerAdapter {
         if (anchored)
           records.push({ opId: op.paymentId, call: 'recordEvidence', verified: verified(op.paymentId) })
       }
+      // A schedule created, or paused, resumed or cancelled: its own event, no receipt.
+      if (op.call === 'createSchedule' || op.call === 'setScheduleStatus') {
+        const schedule = id(op.scheduleId)
+        const proven = events.some((event) =>
+          op.call === 'createSchedule'
+            ? event.eventName === 'ScheduleCreated' && event.args.schedule === schedule
+            : event.eventName === 'ScheduleStatusChanged' &&
+              event.args.schedule === schedule &&
+              Number(event.args.status) === LEDGER_SCHEDULE_STATUS[op.status],
+        )
+        if (proven) records.push({ opId: op.scheduleId, call: op.call, verified: verified(op.scheduleId) })
+      }
     }
 
     const witnesses = witnessesOf(tx.plan)
@@ -544,6 +611,105 @@ export class MonadLedgerAdapter implements LedgerAdapter {
     }
   }
 
+  /** The account the keeper signs with here (null when no keeper key is configured). */
+  get keeperAccount(): Address | null {
+    return this.config.keeper?.address ?? null
+  }
+
+  /** The ledger's `keeper()`: the only account it lets run due schedules. */
+  async readKeeper(): Promise<Address> {
+    return this.client.readContract({ address: this.ledger, abi: viatikLedgerAbi, functionName: 'keeper' })
+  }
+
+  /** The configured keeper key is the ledger's `keeper()`; without both, scheduled payments cannot run. */
+  async checkKeeper(): Promise<{ ok: true; keeper: Address } | { ok: false; problem: string }> {
+    if (!this.isConfigured) return { ok: false, problem: 'not_configured' }
+    const configured = this.config.keeper
+    if (!configured) return { ok: false, problem: 'no keeper key' }
+    try {
+      const onchain = await this.readKeeper()
+      if (!isAddressEqual(onchain, configured.address))
+        return { ok: false, problem: `keeper ${onchain}, configured ${configured.address}` }
+      return { ok: true, keeper: onchain }
+    } catch (error) {
+      return { ok: false, problem: decodeLedgerError(error).raw }
+    }
+  }
+
+  /** A schedule as the ledger holds it, by product id. */
+  async readSchedule(scheduleId: Id, namespace: string): Promise<LedgerSchedule> {
+    const raw = await this.client.readContract({
+      address: this.ledger,
+      abi: viatikLedgerAbi,
+      functionName: 'getSchedule',
+      args: [ledgerId(namespace, scheduleId)],
+    })
+    return {
+      status: SCHEDULE_STATUS[Number(raw.status)] ?? 'none',
+      nextRunAt: new Date(Number(raw.nextRunAt) * 1000).toISOString(),
+      runsLeft: Number(raw.runsLeft),
+      intervalSeconds: Number(raw.interval),
+      amount: unitsToCents(raw.amount).cents,
+      pausedByInvestor: raw.pausedByInvestor,
+      creator: raw.creator,
+    }
+  }
+
+  /** Whether `actor` already recorded the operation `opId` (`processed`): a run sent before was claimed. */
+  async isProcessed(actor: Address, opId: Id, namespace: string): Promise<boolean> {
+    return this.client.readContract({
+      address: this.ledger,
+      abi: viatikLedgerAbi,
+      functionName: 'processed',
+      args: [actor, ledgerId(namespace, opId)],
+    })
+  }
+
+  /** What an account holds in MON (wei): the keeper pays the gas of every run. */
+  async gasBalance(account: Address): Promise<bigint> {
+    return this.client.getBalance({ address: account })
+  }
+
+  /** The latest block's time: the ledger's `block.timestamp` for the next transaction, about. */
+  async chainTime(): Promise<ISODate> {
+    const block = await this.client.getBlock({ blockTag: 'latest' })
+    return new Date(Number(block.timestamp) * 1000).toISOString()
+  }
+
+  /**
+   * Signs and sends a prepared transaction from an account the server holds
+   * (the keeper), without waiting for it. The gas is estimated first, which
+   * simulates it once more: a revert sends nothing (Monad charges the gas limit
+   * even for a transaction that reverts). Confirm it with `confirm`.
+   */
+  async sendPrepared(tx: PreparedTx): Promise<SendOutcome> {
+    const signer =
+      (this.config.keeper && isAddressEqual(this.config.keeper.address, tx.from)
+        ? this.config.keeper
+        : null) ?? this.config.signers?.find((account) => isAddressEqual(account.address, tx.from))
+    if (!signer)
+      return {
+        status: 'refused',
+        error: { code: 'account_not_ready', message: 'This account signs in the browser.', retryable: false },
+      }
+    let gas: bigint
+    try {
+      const estimate = await this.client.estimateGas({ account: signer, to: tx.to, data: tx.data })
+      gas = (estimate * BigInt(Math.round(GAS_LIMIT_MULTIPLIER * 100))) / 100n
+    } catch (error) {
+      const { raw: _raw, ...decoded } = decodeLedgerError(error)
+      return { status: 'refused', error: decoded }
+    }
+    try {
+      const wallet = createWalletClient({ account: signer, chain: this.chain, transport: this.transport() })
+      const hash = await wallet.sendTransaction({ to: tx.to, data: tx.data, gas })
+      return { status: 'sent', hash }
+    } catch (error) {
+      const { raw: _raw, ...decoded } = decodeLedgerError(error)
+      return { status: 'unclear', error: decoded }
+    }
+  }
+
   /** Prepares, signs with an account the server holds, and confirms. People sign in their browser instead. */
   async settle(plan: SettlementPlan, { chain, onStatus }: SettleContext): Promise<SettlementResult> {
     const emit = onStatus ?? (() => {})
@@ -555,7 +721,10 @@ export class MonadLedgerAdapter implements LedgerAdapter {
       return prepared.result
     }
     const { tx } = prepared
-    const signer = this.config.signers?.find((account) => isAddressEqual(account.address, tx.from))
+    const signer =
+      (this.config.keeper && isAddressEqual(this.config.keeper.address, tx.from)
+        ? this.config.keeper
+        : null) ?? this.config.signers?.find((account) => isAddressEqual(account.address, tx.from))
     if (!signer) {
       emit('failed')
       return failed('account_not_ready', 'This account signs in the browser.')
@@ -1020,6 +1189,7 @@ function recordCalls(ops: readonly LedgerOp[]) {
       case 'approvePayment':
       case 'pay':
       case 'payOutside':
+      case 'runSchedule':
         calls.set(op.paymentId, op.call)
         break
     }
@@ -1078,6 +1248,8 @@ const ID_ARG: Record<LedgerEvent, string> = {
   PaymentRejected: 'requestId',
   RequestClosed: 'requestId',
   EvidenceRecorded: 'opId',
+  ScheduleCreated: 'schedule',
+  ScheduleStatusChanged: 'schedule',
 }
 const PERSON_ARG: Partial<Record<LedgerEvent, string>> = { RoleSet: 'account', AllowanceSet: 'holder' }
 
@@ -1103,6 +1275,10 @@ function matches(event: LedgerEventLog, witness: Witness, namespace: string, cha
       if (actual !== centsToUnits(expected as Cents)) return false
     } else if (key === 'evidenceHash') {
       if (actual !== ((expected as Hex | null) ?? zeroHash)) return false
+    } else if (key === 'status') {
+      // A schedule's new status (`ScheduleStatusChanged`), as the contract's enum.
+      if (Number(actual) !== LEDGER_SCHEDULE_STATUS[expected as keyof typeof LEDGER_SCHEDULE_STATUS])
+        return false
     } else if (actual !== expected) return false
   }
   return true

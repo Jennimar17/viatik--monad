@@ -10,19 +10,21 @@ import type {
   Movement,
   PaymentRequest,
   PolicyRuleId,
+  Schedule,
   SpendingAllowance,
   VerifiedDetails,
   ViatikState,
 } from '@/domain/types'
-import type {
-  LedgerError,
-  LedgerErrorCode,
-  LedgerOp,
-  LedgerRecord,
-  PlannedRecord,
-  RecordEnd,
-  SettlementPlan,
-  SettlementResult,
+import {
+  RECEIPTLESS_CALLS,
+  type LedgerError,
+  type LedgerErrorCode,
+  type LedgerOp,
+  type LedgerRecord,
+  type PlannedRecord,
+  type RecordEnd,
+  type SettlementPlan,
+  type SettlementResult,
 } from '@/ledger/types'
 
 /**
@@ -63,7 +65,9 @@ type PlanArgs = {
 export function planSettlement({ before, after, actor }: PlanArgs): SettlementPlan | null {
   const signerUserId = actor.kind === 'user' ? actor.userId : null
   const newMovements = added(before.movements, after.movements)
-  // Automations and the system have no account to sign with: their money stays offchain (demo).
+  // The system's money is a scheduled payment's due run, which the keeper signs.
+  if (actor.kind === 'system') return keeperPlan(before, after, newMovements)
+  // Automations have no account to sign with: their money stays offchain (demo).
   if (!signerUserId) {
     return newMovements.length > 0
       ? { ops: [], records: [], signerUserId, keepOnFailure: false, uncovered: newMovements.map((m) => m.id) }
@@ -351,8 +355,85 @@ export function planSettlement({ before, after, actor }: PlanArgs): SettlementPl
     })
   }
 
+  // 15. Scheduled payments: pauses, resumes and cancellations first (rescheduling a bill cancels its
+  // schedule and creates another in one transaction), then new schedules. No receipt: the ledger
+  // proves them with ScheduleStatusChanged and ScheduleCreated. A run is only ever the keeper's.
+  for (const [previous, next] of changed(before.schedules ?? [], after.schedules ?? [])) {
+    if (previous.status === next.status) continue
+    if (next.status === 'paused' || next.status === 'cancelled')
+      push({ call: 'setScheduleStatus', scheduleId: next.id, status: next.status })
+    else if (next.status === 'active' && previous.status === 'paused')
+      push({ call: 'setScheduleStatus', scheduleId: next.id, status: 'active' })
+    else uncovered.push(next.id)
+  }
+  for (const schedule of added(before.schedules ?? [], after.schedules ?? []))
+    push(createScheduleCall(schedule))
+
   if (ops.length === 0 && !refusal && uncovered.length === 0) return null
   return { ops, records, signerUserId, keepOnFailure, ...(refusal ? { refusal } : {}), uncovered }
+}
+
+/** `createSchedule` for a new schedule, from an account or its budget, to a vendor or a Member. */
+function createScheduleCall(schedule: Schedule): LedgerOp {
+  return {
+    call: 'createSchedule',
+    scheduleId: schedule.id,
+    sourceId: schedule.budgetId ?? schedule.sourceAccountId,
+    destinationId: schedule.recipient.kind === 'destination' ? schedule.recipient.destinationId : null,
+    memberUserId: schedule.recipient.kind === 'member' ? schedule.recipient.userId : null,
+    amount: schedule.amount,
+    firstRunAt: schedule.firstRunAt,
+    intervalSeconds: schedule.intervalSeconds,
+    runs: schedule.runs,
+  }
+}
+
+/**
+ * What the system's command needs from the ledger. Only a scheduled payment's
+ * due run moves money for it (`runScheduledPayment`): a payment made for a
+ * schedule run becomes `runSchedule`, signed by the keeper, recording a payment
+ * with no evidence from the schedule's source to its payee. Any other money is
+ * uncovered (the Monad ledger refuses the plan); a command that moves nothing
+ * (a notification) needs no plan.
+ */
+function keeperPlan(
+  before: ViatikState,
+  after: ViatikState,
+  newMovements: Movement[],
+): SettlementPlan | null {
+  if (newMovements.length === 0) return null
+  const ops: LedgerOp[] = []
+  const records: PlannedRecord[] = []
+  const uncovered: Id[] = []
+  const known = new Set((before.schedules ?? []).map((s) => s.id))
+  for (const movement of newMovements) {
+    const payment =
+      movement.kind === 'payment' && movement.refId
+        ? after.payments.find((p) => p.id === movement.refId)
+        : undefined
+    const schedule = payment?.scheduleId
+      ? after.schedules.find((s) => s.id === payment.scheduleId)
+      : undefined
+    if (!payment || !schedule || !known.has(schedule.id) || payment.recipient.kind === 'address') {
+      uncovered.push(movement.id)
+      continue
+    }
+    const sourceId = payment.budgetId ?? payment.sourceAccountId
+    const destinationId = payment.recipient.kind === 'destination' ? payment.recipient.destinationId : null
+    const memberUserId = payment.recipient.kind === 'member' ? payment.recipient.userId : null
+    ops.push({ call: 'runSchedule', scheduleId: schedule.id, paymentId: payment.id })
+    records.push(
+      record(payment.id, 'payment', movement.amount, { id: sourceId }, target(destinationId, memberUserId)),
+    )
+  }
+  return {
+    ops,
+    records,
+    signerUserId: null,
+    ...(ops.length > 0 ? { signer: 'keeper' as const } : {}),
+    keepOnFailure: false,
+    uncovered,
+  }
 }
 
 /**
@@ -380,9 +461,9 @@ export function applySettlement(
   const known = new Set(before.receipts.map((r) => r.id))
   for (const receipt of after.receipts) {
     if (known.has(receipt.id)) continue
-    // Records without money (a tranche request, an invoice anchored later) belong to no receipt.
+    // Records without money (a tranche request, an invoice anchored later, a schedule) belong to no receipt.
     const record = result.records.find(
-      (r) => r.opId === receipt.operationId && r.call !== 'requestTranche' && r.call !== 'recordEvidence',
+      (r) => r.opId === receipt.operationId && !RECEIPTLESS_CALLS.has(r.call),
     )
     if (!record) continue
     receipt.verified = {
@@ -441,7 +522,29 @@ export function applySettlement(
         evidenceHash: op.evidenceHash,
       }
     }
+    // A schedule created, or paused, resumed or cancelled: what the ledger recorded for it.
+    if (op.call === 'createSchedule' || op.call === 'setScheduleStatus') {
+      const record = recorded(op.scheduleId, op.call)
+      const schedule = (after.schedules ?? []).find((s) => s.id === op.scheduleId)
+      if (!record || !schedule) continue
+      if (op.call === 'createSchedule') {
+        schedule.ledger = {
+          ...record.verified,
+          contractPolicy:
+            'Scheduled payment · authorized once by an Agency Admin, paid automatically when due',
+        }
+      } else {
+        schedule.changeLedger = { ...record.verified, contractPolicy: SCHEDULE_CHANGE_POLICY[op.status] }
+      }
+    }
   }
+}
+
+/** What the ledger's record of a schedule change says, by the status it moved to. */
+const SCHEDULE_CHANGE_POLICY: Record<'paused' | 'active' | 'cancelled', string> = {
+  paused: 'Scheduled payment paused · nothing is paid until it resumes',
+  active: 'Scheduled payment resumed · dates that passed are skipped',
+  cancelled: 'Scheduled payment cancelled',
 }
 
 /** The fingerprint a record carries: a payment's documents, or the decision behind a release. */

@@ -1,4 +1,5 @@
 import { governingAgreement } from './queries'
+import { isCreatorActive, isOpenSchedule } from './schedules'
 import type { Agency, Id, Location, Movement, Receipt, User, ViatikState } from './types'
 
 /**
@@ -66,8 +67,11 @@ export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
   const budgetIds = new Set(budgets.map((b) => b.id))
 
   // Payments made outside Viatik are the Agency's, never personal: Members see none of them.
+  // A payment saved as scheduled before schedules existed was never paid (`isUnscheduledPayment`):
+  // its Admins see it, to schedule it again; the person it was meant for is not shown a to-do.
   const isPersonalPayment = (p: ViatikState['payments'][number]) =>
     p.recipient.kind !== 'address' &&
+    !(p.status === 'action_required' && !p.completedAt) &&
     ((p.recipient.kind === 'member' && p.recipient.userId === userId) ||
       (p.createdBy.kind === 'user' && p.createdBy.userId === userId))
 
@@ -283,6 +287,28 @@ export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
     ),
     // Monthly reminders are the Agency's own to-dos: its Admins and Investors see them.
     reminders: state.reminders.filter((r) => fullAgencyIds.has(r.agencyId)),
+    // Scheduled payments: the Agency's Admins and Investors see them all; a Member sees those that
+    // pay them, without why a run could not be paid (it quotes the Agency's balances). A Member cannot
+    // tell whether the Admin who authorized one still holds the role (they see no one else's
+    // memberships), so one that stopped for that reason (`scheduleState` 'stopped': it will never be
+    // paid) is left out for them rather than shown as their next payment.
+    schedules: (state.schedules ?? []).flatMap((s) => {
+      if (fullAgencyIds.has(s.agencyId)) return [s]
+      if (memberOnly(s.agencyId) && s.recipient.kind === 'member' && s.recipient.userId === userId) {
+        if (isOpenSchedule(s) && isCreatorActive(state, s) !== true) return []
+        const mine = { ...s }
+        delete mine.failure
+        return [mine]
+      }
+      return []
+    }),
+    // When the keeper last ran, and what it did in the agencies the viewer runs or funds.
+    keeper: state.keeper && {
+      ...(state.keeper.lastAutomaticAt ? { lastAutomaticAt: state.keeper.lastAutomaticAt } : {}),
+      agencies: Object.fromEntries(
+        Object.entries(state.keeper.agencies ?? {}).filter(([agencyId]) => fullAgencyIds.has(agencyId)),
+      ),
+    },
   }
 }
 

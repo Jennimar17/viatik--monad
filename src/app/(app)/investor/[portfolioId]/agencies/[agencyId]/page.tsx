@@ -21,6 +21,7 @@ import { InvitationLink } from '@/components/app/invitation-link'
 import { PageTabs, type PageTab } from '@/components/app/page-tabs'
 import { PaymentsTable } from '@/components/app/payments-table'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
+import { ScheduledPayments, UNSCHEDULED_STATUS } from '@/components/app/schedules'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
 import { useTabParam } from '@/components/app/use-tab-param'
 import { Button } from '@/components/ui/button'
@@ -47,6 +48,7 @@ import {
 import { agencyTypeLabel, categoryLabel } from '@/domain/labels'
 import { roleLabel } from '@/domain/permissions'
 import { agreementsOf, userName } from '@/domain/queries'
+import { isUnscheduledPayment } from '@/domain/schedules'
 import { agencyCapital, budgetUsage, spendByMonth } from '@/domain/selectors'
 import { agencyStatus, agreementStatus, budgetStatus } from '@/domain/status'
 import type { SpendingCategory } from '@/domain/types'
@@ -399,11 +401,18 @@ function InvestorAgencyDetail() {
                     </ul>
                   )}
                 </Panel>
+                <Panel
+                  title="Scheduled payments"
+                  description="Payments the Agency Admin authorized for later. You can pause, resume or cancel them; one you pause only you can resume."
+                >
+                  <ScheduledPayments agencyId={agency.id} viewer="investor" />
+                </Panel>
                 <section className="flex flex-col gap-4">
                   <h2 className="font-display text-xl font-medium">Recent payments</h2>
                   <PaymentsTable
                     payments={payments}
                     pageSize={8}
+                    statusFor={(p) => (isUnscheduledPayment(p) ? UNSCHEDULED_STATUS : undefined)}
                     empty={
                       <EmptyState
                         compact

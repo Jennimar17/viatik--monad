@@ -43,7 +43,8 @@ export const SCREENS = {
     {
       path: 'agencies/[agencyId]',
       title: 'Agency detail',
-      summary: 'Overview · Spending · Accountability · Team · Activity; freeze agreement.',
+      summary:
+        'Overview · Spending (scheduled payments: pause, resume, cancel) · Accountability · Team · Activity; freeze agreement.',
       status: 'ready',
       open: `agencies/${DEMO.agencies.arc}`,
     },
@@ -189,27 +190,30 @@ export const SCREENS = {
     {
       path: 'payments',
       title: 'Payments',
-      summary: 'All · Team · Vendors · Reimbursements · Outside Viatik · Automation.',
+      summary:
+        'All · Scheduled (pause, resume, cancel, run due payments) · Team · Vendors · Reimbursements · Outside Viatik · Automation.',
       status: 'ready',
     },
     {
       path: 'payments/new',
       title: 'New payment',
-      summary: 'Type, recipient, policy preview, operation.',
+      summary:
+        'Type, recipient, policy preview, pay now or schedule (date and time, or in 5 minutes), operation.',
       status: 'ready',
     },
     { path: 'payments/team', title: 'Pay team', summary: 'Batch payouts.', status: 'ready' },
     {
       path: 'bills',
       title: 'Bills',
-      summary: 'To pay · Scheduled · Paid · Reconciled · Invoices pending · Monthly; new monthly payment.',
+      summary:
+        'To pay · Scheduled (when each pays) · Paid · Reconciled · Invoices pending · Monthly; new monthly payment.',
       status: 'ready',
     },
     { path: 'bills/new', title: 'Add bill', summary: 'Upload and fields.', status: 'ready' },
     {
       path: 'bills/[billId]',
       title: 'Bill detail',
-      summary: 'Document, pay or schedule, reconcile.',
+      summary: 'Document, pay now or schedule (date and time), pause or cancel its schedule, reconcile.',
       status: 'ready',
       open: 'bills/bill_0024',
     },
@@ -322,7 +326,7 @@ export const SCREENS = {
       path: 'payments',
       title: 'Payments',
       summary:
-        'Viatik balance: money to justify, send to my account, return unused funds, payments received, movements, your Viatik account (address and QR), saved addresses.',
+        'Viatik balance: money to justify, send to my account, return unused funds, payments received and scheduled, movements, your Viatik account (address and QR), saved addresses.',
       status: 'ready',
     },
     { path: 'activity', title: 'Activity', summary: 'Personal activity.', status: 'ready' },

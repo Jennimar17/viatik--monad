@@ -219,3 +219,43 @@ export type LedgerView =
       /** People in the caller's workspaces who signed in with another account since the last reset. */
       needsReseed: string[]
     }
+
+// ─── Network yield preview ───────────────────────────────────────────────────
+
+/**
+ * `GET /v1/ledger/yield` (public, no sign-in): Viatik's own test stake on Monad Testnet, a
+ * read-only preview of how rewards on idle assets would be reported. It is Viatik's, never
+ * anyone's capital: keep it out of balances, checks, charts and `Amount` (MON is not USD).
+ * Wei amounts are decimal strings (MON has 18 decimals; `formatMon` shows them).
+ * `available: false` when the network cannot be read and no recent read is left, or on mainnet.
+ */
+export type NetworkYield =
+  | { available: false }
+  | {
+      available: true
+      chainId: number
+      validatorId: number
+      /** Viatik's operator account, which staked its own test funds. */
+      delegator: Hex
+      /** Active stake: the part that earns rewards ("0" when the stake is gone, e.g. a testnet reset). */
+      stakeWei: string
+      /** Stake added that is not active yet, and the epoch it becomes active in. */
+      pendingStakeWei: string
+      pendingEpoch: number | null
+      /** Rewards earned since the stake became active (never claimed). */
+      rewardsWei: string
+      epoch: number
+      inEpochDelayPeriod: boolean
+      validator: { active: boolean; commissionPct: number; stakeWei: string }
+      /** When the stake started earning. */
+      activeFrom: { epoch: number; at: string }
+      /** The transaction that staked it. */
+      delegateTx: Hex
+      /** The block every value was read at, and that block's time. */
+      block: number
+      blockAt: string
+      /** When Viatik read it. */
+      readAt: string
+      /** The network could not be read just now: this is the last read, up to 15 minutes old. */
+      stale?: true
+    }

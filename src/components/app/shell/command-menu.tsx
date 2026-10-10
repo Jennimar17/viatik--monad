@@ -64,7 +64,12 @@ export function CommandMenu({
   }
   if (role === 'agency_admin') {
     if (can('create_budget')) actions.push({ label: 'Create budget', path: 'budgets/new', icon: Plus })
-    if (can('send_payment')) actions.push({ label: 'Send payment', path: 'payments/new', icon: Send })
+    if (can('send_payment')) {
+      actions.push({ label: 'Send payment', path: 'payments/new', icon: Send })
+      // Send payment with "Schedule" chosen; the list (and Run due payments) is Payments ▸ Scheduled.
+      actions.push({ label: 'Schedule a payment', path: 'payments/new?when=schedule', icon: CalendarClock })
+      actions.push({ label: 'Scheduled payments', path: 'payments?tab=scheduled', icon: CalendarClock })
+    }
     if (can('manage_bills')) actions.push({ label: 'Add bill', path: 'bills/new', icon: Plus })
     const payable = state.accounts.some((a) => a.agencyId === agencyId && a.status === 'active')
     if (can('pay_outside') && payable)

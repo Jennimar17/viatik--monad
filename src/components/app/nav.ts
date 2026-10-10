@@ -36,10 +36,10 @@ export type NavItem<R extends Role = Role> = {
   capability?: Capability
   /**
    * A count on the item (see `useBadgeCounts`): approvals waiting, Bills' to-dos (open bills,
-   * invoices pending, monthly payments overdue), my requests waiting, agreements to accept,
-   * and a Member's money for purchases overdue (`receipts`).
+   * invoices pending, monthly payments overdue), scheduled payments needing attention, my requests
+   * waiting, agreements to accept, and a Member's money for purchases overdue (`receipts`).
    */
-  badge?: 'approvals' | 'bills' | 'requests' | 'agreements' | 'receipts'
+  badge?: 'approvals' | 'bills' | 'schedules' | 'requests' | 'agreements' | 'receipts'
 }
 
 export type RoleNavigation<R extends Role = Role> = {
@@ -71,7 +71,14 @@ export const NAVIGATION: { [R in Role]: RoleNavigation<R> } = {
       { key: 'funding', label: 'Funding', path: 'funding', icon: HandCoins, badge: 'agreements' },
       { key: 'accounts', label: 'Accounts', path: 'accounts', icon: Landmark, capability: 'view_treasury' },
       { key: 'budgets', label: 'Budgets', path: 'budgets', icon: PieChart },
-      { key: 'payments', label: 'Payments', path: 'payments', icon: Send, capability: 'send_payment' },
+      {
+        key: 'payments',
+        label: 'Payments',
+        path: 'payments',
+        icon: Send,
+        capability: 'send_payment',
+        badge: 'schedules',
+      },
       {
         key: 'bills',
         label: 'Bills',

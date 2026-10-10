@@ -38,6 +38,8 @@ export type LedgerEvent =
   | 'PaymentRejected'
   | 'RequestClosed'
   | 'EvidenceRecorded'
+  | 'ScheduleCreated'
+  | 'ScheduleStatusChanged'
 
 /**
  * What proves one operation ran: one of `events`, carrying the indexed `id`
@@ -111,6 +113,11 @@ function witnessOf(op: LedgerOp): Witness {
     case 'recordEvidence':
       // The invoice anchored for an outside payment: no money, so no `Recorded`.
       return one('EvidenceRecorded', op.paymentId, { args: { evidenceHash: op.evidenceHash } })
+    case 'createSchedule':
+      return one('ScheduleCreated', op.scheduleId)
+    case 'setScheduleStatus':
+      // Pausing, resuming and cancelling the same schedule are told apart by the status the event carries.
+      return one('ScheduleStatusChanged', op.scheduleId, { args: { status: op.status } })
     case 'requestPayment':
       // Whatever the ledger decided, the request is named in one of these (the
       // second indexed topic of PaymentExecuted). The outcome is read from which
@@ -121,6 +128,7 @@ function witnessOf(op: LedgerOp): Witness {
     case 'approvePayment':
     case 'pay':
     case 'payOutside':
+    case 'runSchedule':
       return one('Recorded', op.paymentId)
     case 'deposit':
     case 'fundAgreement':

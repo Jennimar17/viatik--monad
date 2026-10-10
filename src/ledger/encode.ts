@@ -198,8 +198,35 @@ export function encodeOp(op: LedgerOp, chain: ChainContext, permit?: JoinPermit)
         units(op.amount),
         hash(op.evidenceHash),
       ])
+    case 'createSchedule':
+      return call('createSchedule', [
+        {
+          id: id(op.scheduleId),
+          source: id(op.sourceId),
+          destination: optionalId(op.destinationId),
+          member: member(op.memberUserId),
+          amount: units(op.amount),
+          firstRunAt: BigInt(Math.floor(Date.parse(op.firstRunAt) / 1000)),
+          interval: op.intervalSeconds,
+          runs: op.runs,
+        },
+      ])
+    case 'setScheduleStatus':
+      return call(SCHEDULE_STATUS_CALL[op.status], [id(op.scheduleId)])
+    case 'runSchedule':
+      return call('runSchedule', [id(op.scheduleId), id(op.paymentId)])
   }
 }
+
+/** The contract function behind each schedule status change. */
+const SCHEDULE_STATUS_CALL = {
+  paused: 'pauseSchedule',
+  active: 'resumeSchedule',
+  cancelled: 'cancelSchedule',
+} as const
+
+/** `ScheduleStatus` in the contract. */
+export const LEDGER_SCHEDULE_STATUS = { none: 0, active: 1, paused: 2, cancelled: 3, completed: 4 } as const
 
 /** The whole plan as one transaction: `multicall(bytes[])` on the ledger. */
 export function encodePlan(

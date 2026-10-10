@@ -14,6 +14,7 @@ import { budgetName, isOutsidePayment, receiptFor, recipientName } from '@/domai
 import { operationStatus, type StatusDescriptor } from '@/domain/status'
 import type { Payment } from '@/domain/types'
 import { formatDate } from '@/lib/format'
+import { formatLocalDateTime } from '@/lib/local-time'
 
 import { useReceiptDrawer } from './receipt-details'
 
@@ -51,6 +52,11 @@ export function PaymentsTable({
       : recipientName(state, p.recipient)
   // Paid by an Agency Admin outside Viatik: the payee, tagged (the address stays in the receipt).
   const outside = (p: Payment) => !incoming && isOutsidePayment(p)
+  // A scheduled payment's next run is at a time of day, shown on the viewer's clock; the rest by date.
+  const when = (p: Payment) =>
+    p.status === 'scheduled'
+      ? formatLocalDateTime(p.scheduledFor)
+      : formatDate(p.completedAt ?? p.scheduledFor)
   const amount = (p: Payment) => (
     <Amount value={p.amount} size="sm" signed={incoming} tone={incoming ? 'positive' : 'default'} />
   )
@@ -60,9 +66,7 @@ export function PaymentsTable({
       accessorKey: 'scheduledFor',
       header: 'Date',
       cell: ({ row }) => (
-        <span className="text-sm whitespace-nowrap text-muted-foreground">
-          {formatDate(row.original.completedAt ?? row.original.scheduledFor)}
-        </span>
+        <span className="text-sm whitespace-nowrap text-muted-foreground">{when(row.original)}</span>
       ),
     },
     {
@@ -163,8 +167,7 @@ export function PaymentsTable({
             <span className="flex min-w-0 flex-col gap-0.5">
               <span className="truncate text-sm font-medium">{incoming ? p.memo : counterparty(p)}</span>
               <span className="truncate text-xs text-subtle">
-                {formatDate(p.completedAt ?? p.scheduledFor)} ·{' '}
-                {(statusFor?.(p) ?? operationStatus[p.status]).label}
+                {when(p)} · {(statusFor?.(p) ?? operationStatus[p.status]).label}
                 {outside(p) ? ' · Outside Viatik' : ''}
               </span>
             </span>

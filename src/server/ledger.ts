@@ -26,6 +26,9 @@ let adapter: MonadLedgerAdapter | null | undefined
 export function getMonadLedger(): MonadLedgerAdapter | null {
   if (adapter !== undefined) return adapter
   const env = readServerEnv()
+  // The keeper signs due scheduled payments; on testnet it is the deployer, like the registrar.
+  const keeperKey = env.LEDGER_KEEPER_PRIVATE_KEY ?? env.LEDGER_REGISTRAR_PRIVATE_KEY
+  const keeper = keeperKey ? privateKeyToAccount(keeperKey) : undefined
   adapter =
     env.VIATIK_LEDGER_ADDRESS && env.MONAD_RPC_URL
       ? new MonadLedgerAdapter({
@@ -37,6 +40,8 @@ export function getMonadLedger(): MonadLedgerAdapter | null {
           registrar: env.LEDGER_REGISTRAR_PRIVATE_KEY
             ? privateKeyToAccount(env.LEDGER_REGISTRAR_PRIVATE_KEY)
             : undefined,
+          keeper,
+          signers: keeper ? [keeper] : undefined,
         })
       : null
   return adapter

@@ -67,6 +67,9 @@ const GROUP_OF: Record<ActivityType, Group> = {
   receipts_reminded: 'bills',
   reminder_created: 'bills',
   reminder_updated: 'bills',
+  payment_scheduled: 'payments',
+  schedule_updated: 'payments',
+  schedule_failed: 'payments',
 }
 
 const GROUP_OPTIONS = [

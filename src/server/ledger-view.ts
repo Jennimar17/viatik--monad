@@ -2,16 +2,25 @@ import { and, count, desc, eq, inArray, isNotNull } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { getAddress, isAddress, type Address } from 'viem'
 
-import type { LedgerAccount, LedgerLocationKind, LedgerView } from '@/data/api-contract'
+import type { LedgerAccount, LedgerLocationKind, LedgerView, NetworkYield } from '@/data/api-contract'
 import type { Id, ViatikState } from '@/domain/types'
 import { scopeStateForUser } from '@/domain/visibility'
 import { needsReseed } from '@/ledger/genesis'
 import { ledgerId } from '@/ledger/ids'
 import { decodeLedgerError } from '@/ledger/revert'
 import { ledgerSnapshot } from '@/ledger/snapshot'
+import {
+  commissionPercent,
+  createStakingClient,
+  readTestStake,
+  type StakingClient,
+  type TestStakeRead,
+} from '@/ledger/staking'
 import type { Balances, PreparedTx } from '@/ledger/types'
 import { unitsToCents } from '@/ledger/units'
+import { publicEnv, readServerEnv } from '@/lib/env'
 import { withTimeout } from '@/lib/timeout'
+import { TEST_STAKE } from '@/web3/addresses'
 
 import { requireAccount } from './auth'
 import type { AppEnv } from './context'
@@ -200,6 +209,91 @@ async function ledgerViewFor(world: World, user: UserRow): Promise<LedgerView> {
   }
 }
 
+// ─── Network yield preview ───────────────────────────────────────────────────
+
+/** A read of the test stake is fresh for a minute: rewards move slowly and the route is public. */
+const YIELD_FRESH_MS = 60_000
+/** While the network cannot be read, the last read is still served (marked stale) for this long. */
+const YIELD_STALE_MS = 15 * 60_000
+/** After a failed read, the next one waits this long, so an outage is not hammered. */
+const YIELD_RETRY_MS = 15_000
+/** One read in all; the client already gives each RPC call 5 s and one retry. */
+const YIELD_READ_MS = 8_000
+/** How long the CDN keeps an answer once its own copy is old, while it asks again. */
+const YIELD_CDN_SWR_S = 240
+
+type YieldRead = Extract<NetworkYield, { available: true }>
+const YIELD_UNAVAILABLE: NetworkYield = { available: false }
+
+let stakingClient: StakingClient | null = null
+let yieldLast: { at: number; value: YieldRead } | null = null
+let yieldFailedAt = 0
+let yieldReading: Promise<void> | null = null
+
+function toNetworkYield(read: TestStakeRead, readAt: number): YieldRead {
+  return {
+    available: true,
+    chainId: read.chainId,
+    validatorId: Number(read.validatorId),
+    delegator: read.delegator,
+    stakeWei: read.stake.toString(),
+    pendingStakeWei: read.pendingStake.toString(),
+    pendingEpoch: read.pendingEpoch === null ? null : Number(read.pendingEpoch),
+    rewardsWei: read.rewards.toString(),
+    epoch: Number(read.epoch),
+    inEpochDelayPeriod: read.inEpochDelayPeriod,
+    validator: {
+      active: read.validator.active,
+      commissionPct: commissionPercent(read.validator.commission),
+      stakeWei: read.validator.stake.toString(),
+    },
+    activeFrom: { epoch: read.activeFromEpoch, at: new Date(read.activeFrom).toISOString() },
+    delegateTx: read.delegateTx,
+    block: Number(read.block),
+    blockAt: new Date(Number(read.blockTime) * 1000).toISOString(),
+    readAt: new Date(readAt).toISOString(),
+  }
+}
+
+/**
+ * Reads the test stake again, on `MONAD_RPC_URL` (the public RPC when unset). A read already
+ * running is shared, and after a failure the next one waits a little. Never throws.
+ */
+function readYieldOnce(requestId: string): Promise<void> {
+  if (yieldReading) return yieldReading
+  if (Date.now() - yieldFailedAt < YIELD_RETRY_MS) return Promise.resolve()
+  yieldReading = (async () => {
+    try {
+      stakingClient ??= createStakingClient(readServerEnv().MONAD_RPC_URL)
+      const read = await withTimeout(readTestStake(stakingClient), YIELD_READ_MS)
+      yieldLast = { at: Date.now(), value: toNetworkYield(read, Date.now()) }
+      yieldFailedAt = 0
+    } catch (error) {
+      yieldFailedAt = Date.now()
+      // The short message only: viem's full error repeats the RPC URL, which may carry a provider key.
+      console.error(`[api] ${requestId} yield read: ${decodeLedgerError(error).raw}`)
+    } finally {
+      yieldReading = null
+    }
+  })()
+  return yieldReading
+}
+
+/** The test stake to answer with, and how long a shared cache may keep that answer (seconds). */
+async function networkYield(requestId: string): Promise<{ body: NetworkYield; maxAge: number }> {
+  // Testnet only: on mainnet there is no test stake, and nothing is read.
+  if (publicEnv.NEXT_PUBLIC_MONAD_NETWORK !== TEST_STAKE.network)
+    return { body: YIELD_UNAVAILABLE, maxAge: 300 }
+  if (!yieldLast || Date.now() - yieldLast.at >= YIELD_FRESH_MS) await readYieldOnce(requestId)
+  if (!yieldLast) return { body: YIELD_UNAVAILABLE, maxAge: YIELD_RETRY_MS / 1000 }
+  const age = Date.now() - yieldLast.at
+  if (age < YIELD_FRESH_MS)
+    return { body: yieldLast.value, maxAge: Math.max(1, Math.ceil((YIELD_FRESH_MS - age) / 1000)) }
+  if (age < YIELD_STALE_MS)
+    return { body: { ...yieldLast.value, stale: true }, maxAge: YIELD_RETRY_MS / 1000 }
+  return { body: YIELD_UNAVAILABLE, maxAge: YIELD_RETRY_MS / 1000 }
+}
+
 /**
  * `GET /v1/ledger`: where the caller's workspaces settle, and Monad's balances
  * at the last read for what the caller may see. When that read is for an
@@ -250,6 +344,14 @@ export const ledgerView = new Hono<AppEnv>()
         'Monad could not be read right now. Try again in a moment.',
       )
     }
+  })
+  // Viatik's own test stake on Monad Testnet: public chain data about nobody's account, so no
+  // sign-in, and the CDN may keep it for everyone (requests without Authorization). Never an error:
+  // `available: false` when it cannot be read and no recent read is left.
+  .get('/yield', async (c) => {
+    const { body, maxAge } = await networkYield(c.get('requestId'))
+    const swr = body.available && !body.stale ? `, stale-while-revalidate=${YIELD_CDN_SWR_S}` : ''
+    return c.json(body, 200, { 'cache-control': `public, s-maxage=${maxAge}${swr}` })
   })
   .post('/refresh', requireAccount, requireUser, async (c) => {
     const world = await readWorld()

@@ -165,6 +165,39 @@ function holding(row: Prepared, now: number): 'yes' | 'unless_missing' | 'no' {
   return overdue(row, now) ? 'unless_missing' : 'yes'
 }
 
+/**
+ * `holding` for anyone else who must not act under a person's open operation
+ * (the keeper, before it sends a scheduled payment's run): `no` for a row with
+ * no prepared transaction.
+ */
+export function operationHolding(row: OperationRow, now = Date.now()): 'yes' | 'unless_missing' | 'no' {
+  return isPrepared(row) ? holding(row, now) : 'no'
+}
+
+/**
+ * Looks on Monad for overdue operations with no hash (`operationHolding`
+ * `unless_missing`), as a command does when they are in its way
+ * (`releaseOverdue`), outside the state lock. True when every one of them was
+ * let go (a complete search found nothing: marked expired, it holds nothing any
+ * more); false when one was found and settled (what it held changed), or still
+ * holds.
+ */
+export async function releasedOverdue(
+  rows: OperationRow[],
+  ledger: WorldLedger,
+  requestId: string,
+): Promise<boolean> {
+  const overdueRows = rows.filter(isPrepared)
+  if (overdueRows.length === 0) return true
+  try {
+    await releaseOverdue(new OverdueInTheWay(overdueRows, ledger), requestId)
+    return true
+  } catch (error) {
+    if (error instanceof ApiError) return false
+    throw error
+  }
+}
+
 const waitingInTheWay = () =>
   new ApiError(
     409,

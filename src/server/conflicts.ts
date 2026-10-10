@@ -43,6 +43,13 @@ import type { SettlementPlan } from '@/ledger/types'
  *   holds the balance.
  * - `op:<id>`: a money operation's id on the ledger.
  * - `bill:<id>`: a bill being paid or reconciled.
+ * - `payment:<id>` also holds a payment saved as scheduled before schedules
+ *   existed while it is scheduled again (`replacesPaymentId`) or dismissed.
+ * - `schedule:<id>`: a scheduled payment, by the ledger calls that name it
+ *   (created, paused, resumed, cancelled, or a due run the keeper is sending)
+ *   and the commands that change it. While the keeper's run of a schedule is
+ *   on its way, nobody pauses or cancels it (and the other way round): the run
+ *   would land on a schedule its confirmation no longer fits.
  */
 export type HeldKeys = Set<string>
 
@@ -52,6 +59,7 @@ function addPlanKeys(keys: HeldKeys, plan: SettlementPlan | null | undefined) {
     if ('requestId' in op) keys.add(`request:${op.requestId}`)
     if ('paymentId' in op) keys.add(`payment:${op.paymentId}`)
     if ('opId' in op) keys.add(`op:${op.opId}`)
+    if ('scheduleId' in op) keys.add(`schedule:${op.scheduleId}`)
   }
 }
 
@@ -124,6 +132,19 @@ function addInputKeys(
     case 'payBill':
     case 'reconcile':
       add('bill', field('billId'))
+      break
+    case 'pauseSchedule':
+    case 'resumeSchedule':
+    case 'cancelSchedule':
+      add('schedule', field('scheduleId'))
+      break
+    // A payment saved as scheduled before schedules existed, scheduled again (dropped once the new
+    // schedule lands) or dismissed: never both, and never twice.
+    case 'schedulePayment':
+      add('payment', field('replacesPaymentId'))
+      break
+    case 'dismissUnscheduledPayment':
+      add('payment', field('paymentId'))
       break
   }
 }

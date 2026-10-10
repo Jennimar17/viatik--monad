@@ -24,6 +24,7 @@ import { useViatikState } from '@/data/react'
 import { advancesOf, outsidePaymentsWithoutProof, remindersDue } from '@/domain/accountability'
 import { roleDescription, roleLabel } from '@/domain/permissions'
 import { adminApprovals, investorApprovals, openBills, unreadCount } from '@/domain/queries'
+import { isUnscheduledPayment, schedulesNeedingAttention } from '@/domain/schedules'
 import { daysUntil } from '@/lib/format'
 
 import { NAVIGATION, type NavItem } from '../nav'
@@ -121,8 +122,9 @@ function RoleNote() {
 
 /**
  * Counters on the navigation: pending approvals; the Admin's Bills to-dos (open bills, outside
- * payments still waiting for their invoice, monthly payments overdue); agreements to accept; my
- * pending requests; and a Member's money for purchases with receipts overdue.
+ * payments still waiting for their invoice, monthly payments overdue); the Admin's scheduled
+ * payments needing attention; agreements to accept; my pending requests; and a Member's money for
+ * purchases with receipts overdue.
  */
 export function useBadgeCounts() {
   const { state, userId, now } = useViatikState()
@@ -140,6 +142,11 @@ export function useBadgeCounts() {
         outsidePaymentsWithoutProof(state, admin, now).length +
         // Overdue once the due day has passed, not on the day itself (as `isMonthlyOverdue`).
         remindersDue(state, admin, now).filter((r) => daysUntil(r.dueAt, now) < 0).length
+      : 0,
+    // Scheduled payments due and not paid, or stopped, plus old ones saved as scheduled that never ran.
+    schedules: admin
+      ? schedulesNeedingAttention(state, admin, now).length +
+        state.payments.filter((p) => p.agencyId === admin && isUnscheduledPayment(p)).length
       : 0,
     // Funding agreements the Agency has not accepted yet.
     agreements:

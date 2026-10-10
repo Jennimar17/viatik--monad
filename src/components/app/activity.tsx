@@ -7,6 +7,7 @@ import {
   Briefcase,
   Building2,
   CalendarClock,
+  CalendarX2,
   CircleCheck,
   ExternalLink,
   FileCheck,
@@ -74,9 +75,17 @@ const icons: Record<ActivityType, LucideIcon> = {
   receipts_reminded: BellRing,
   reminder_created: CalendarClock,
   reminder_updated: CalendarClock,
+  payment_scheduled: CalendarClock,
+  schedule_updated: CalendarClock,
+  schedule_failed: CalendarX2,
 }
 
-const DANGER: ReadonlySet<ActivityType> = new Set(['policy_rejected', 'payment_declined', 'agreement_frozen'])
+const DANGER: ReadonlySet<ActivityType> = new Set([
+  'policy_rejected',
+  'payment_declined',
+  'agreement_frozen',
+  'schedule_failed',
+])
 const SUCCESS: ReadonlySet<ActivityType> = new Set([
   'tranche_released',
   'payment_completed',

@@ -11,17 +11,20 @@ import { KimiReader } from '@/components/app/kimi-reader'
 import { PageTabs } from '@/components/app/page-tabs'
 import { isDueNow, MonthlyPayments, NewReminderSheet } from '@/components/app/reminders'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
+import { billSchedule, useClock, usePayTiming } from '@/components/app/schedules'
 import { useOpenParam, useTabParam } from '@/components/app/use-tab-param'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/viatik/feedback'
 import { KpiTile } from '@/components/viatik/finance'
 import { EvidenceUploader, type DraftFile } from '@/components/viatik/forms'
 import { HairlineGrid, PageHeader, Panel } from '@/components/viatik/layout'
+import Link from '@/components/viatik/link'
 import { useEvidenceFiles, useViatikState } from '@/data/react'
 import { useEvidenceReader } from '@/data/use-evidence-reader'
 import { outsidePaymentsWithoutProof, PROOF_WITHIN_DAYS, remindersDue } from '@/domain/accountability'
 import { sum } from '@/domain/money'
 import { billState } from '@/domain/queries'
+import { scheduleState } from '@/domain/schedules'
 import { daysUntil, pluralize } from '@/lib/format'
 
 export default function BillsPage() {
@@ -45,6 +48,9 @@ function Bills() {
   const { scopeId: agencyId } = useRole()
   const href = useHref()
   const { can } = usePermissions()
+  const clock = useClock()
+  // Whether due payments run on a timer here: the copy promises only what happens.
+  const timing = usePayTiming(clock)
   const tabs = useTabParam(TABS, 'to_pay')
   const [creating, setCreating] = useOpenParam('new', 'monthly')
   // Kept while the invoice sheet closes, so it does not go blank.
@@ -59,6 +65,12 @@ function Bills() {
   const all = state.bills.filter((b) => b.agencyId === agencyId)
   const toPay = all.filter((b) => b.status === 'to_pay')
   const scheduled = all.filter((b) => b.status === 'scheduled')
+  // Scheduled bills whose payment could not be paid when due, or stopped.
+  const scheduledAttention = scheduled.filter((b) => {
+    const schedule = billSchedule(state, b)
+    const shown = schedule ? scheduleState(state, schedule, clock) : undefined
+    return shown === 'needs_attention' || shown === 'stopped'
+  }).length
   const paid = all.filter((b) => b.status === 'paid')
   const reconciled = all.filter((b) => b.status === 'reconciled')
   const overdue = all.filter((b) => billState(b, now) === 'overdue')
@@ -113,7 +125,16 @@ function Bills() {
         <KpiTile
           label="Scheduled"
           value={sum(scheduled, (b) => b.amount)}
-          hint={`${scheduled.length} scheduled`}
+          hint={
+            scheduledAttention > 0 ? (
+              <span className="text-danger">
+                {scheduled.length} scheduled · {scheduledAttention}{' '}
+                {scheduledAttention === 1 ? 'needs' : 'need'} attention
+              </span>
+            ) : (
+              `${scheduled.length} scheduled`
+            )
+          }
         />
         <KpiTile
           label="Waiting to reconcile"
@@ -134,7 +155,24 @@ function Bills() {
             value: 'scheduled',
             label: 'Scheduled',
             count: scheduled.length,
-            content: <BillsTable bills={scheduled} emptyTitle="No scheduled bills" />,
+            content: (
+              <div className="flex flex-col gap-3">
+                <p className="text-sm text-pretty text-muted-foreground">
+                  {timing === 'automatic'
+                    ? 'Viatik pays each one within about 10 minutes of its time and marks it paid.'
+                    : 'Once each one is due, it is paid when an Agency Admin presses Run due payments, and marked paid.'}{' '}
+                  Pause, resume or cancel them on the bill or in{' '}
+                  <Link
+                    href={href('payments?tab=scheduled')}
+                    className="text-foreground underline-offset-4 hover:underline"
+                  >
+                    Payments ▸ Scheduled
+                  </Link>
+                  .
+                </p>
+                <BillsTable bills={scheduled} emptyTitle="No scheduled bills" scheduled now={clock} />
+              </div>
+            ),
           },
           {
             value: 'paid',
@@ -208,7 +246,11 @@ function Bills() {
             content: (
               <Panel
                 title="Monthly payments"
-                description="Tools and subscriptions paid outside Viatik every month. Nothing is paid automatically: use Pay now when one is due."
+                description={`Tools and subscriptions paid outside Viatik every month. Nothing is paid automatically: ${
+                  timing === 'automatic'
+                    ? 'Agency Admins are notified on the due day'
+                    : 'each one shows here as due on its day'
+                }, then use Pay now.`}
               >
                 <MonthlyPayments
                   agencyId={agencyId}
