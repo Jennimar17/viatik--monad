@@ -9,6 +9,8 @@ import {
   EVIDENCE_MAX_BYTES,
   EVIDENCE_MIME_TYPES,
   type EvidenceLink,
+  type EvidenceReadAnswer,
+  type EvidenceReaderStatus,
   type EvidenceUploadTicket,
   type VerifiedUpload,
 } from '@/data/api-contract'
@@ -21,6 +23,14 @@ import type { AppEnv } from './context'
 import { getDb } from './db/client'
 import { uploads, users } from './db/schema'
 import { ApiError } from './errors'
+import {
+  buildProposal,
+  kimiConfig,
+  READ_DEADLINE_MS,
+  readerCandidates,
+  readWithKimi,
+  startRead,
+} from './receipt-reader'
 import { readWorld } from './repository'
 import { deleteObject, readObject, signedReadUrl, signedUploadUrl } from './storage'
 import { requireUser } from './user'
@@ -43,6 +53,13 @@ const uploadRequest = z.object({
   mimeType: z.enum(EVIDENCE_MIME_TYPES),
   sizeBytes: z.number().int().min(1).max(EVIDENCE_MAX_BYTES),
   sha256: z.string().regex(/^[0-9a-f]{64}$/),
+})
+
+/** `POST /v1/evidence/read`: a file the caller uploaded, and what it is read for. */
+const readRequest = z.object({
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  agencyId: z.string().min(1).max(100),
+  purpose: z.enum(['receipt', 'invoice']),
 })
 
 type UploadRow = typeof uploads.$inferSelect
@@ -94,6 +111,10 @@ async function discard(row: Pick<UploadRow, 'id' | 'path'>) {
  *    it only if its type, SHA-256 and size match what was announced.
  * Commands then reference the file by that SHA-256 (see verifiedFiles), and
  * `GET /v1/evidence/:evidenceId/link` opens it for people who can see it.
+ * `POST /v1/evidence/read` has Kimi read one of the caller's verified files
+ * and answers a proposal to check, without saving anything (receipt-reader.ts);
+ * it runs under its own route file for a longer maxDuration
+ * (src/app/api/v1/evidence/read/route.ts).
  */
 export const evidence = new Hono<AppEnv>()
   .post(
@@ -230,6 +251,93 @@ export const evidence = new Hono<AppEnv>()
     }
     return c.json<EvidenceLink>({ url: await signedReadUrl(stored.path) }, 200, noStore)
   })
+  // Whether this deployment reads files with Kimi: the screens show "Read with Kimi" only then.
+  .get('/read/status', requireAccount, requireUser, (c) =>
+    c.json<EvidenceReaderStatus>({ enabled: kimiConfig() !== null }, 200, noStore),
+  )
+  .post(
+    '/read',
+    requireAccount,
+    requireUser,
+    bodyLimit({
+      maxSize: 2 * 1024,
+      onError: () => {
+        throw new ApiError(413, 'too_large', 'This request is too large.')
+      },
+    }),
+    async (c) => {
+      const deadline = Date.now() + READ_DEADLINE_MS
+      const config = kimiConfig()
+      if (!config) throw new ApiError(404, 'feature_disabled', 'Reading files with Kimi is not available.')
+      const user = c.get('user')
+      const body: unknown = await c.req.json().catch(() => {
+        throw new ApiError(400, 'invalid_json', 'The request body must be JSON.')
+      })
+      const parsed = readRequest.safeParse(body)
+      if (!parsed.success) throw new ApiError(422, 'invalid_request', 'Choose a file to read.')
+      const { sha256, agencyId, purpose } = parsed.data
+
+      // What the file may pay comes from what the caller can see, and only they may use the proposal.
+      const now = new Date().toISOString()
+      const sent = readerCandidates(scopeStateForUser((await readWorld()).state, user.id), {
+        userId: user.id,
+        agencyId,
+        purpose,
+        now,
+      })
+
+      // Only the caller's own file, as the server verified it.
+      const [row] = await getDb()
+        .select({ path: uploads.path, mimeType: uploads.mimeType, sha256: uploads.sha256 })
+        .from(uploads)
+        .where(and(eq(uploads.userId, user.id), eq(uploads.sha256, sha256), eq(uploads.status, 'verified')))
+        .orderBy(desc(uploads.verifiedAt))
+        .limit(1)
+      if (!row) throw new ApiError(404, 'not_found', 'Upload the file first, then read it.')
+
+      const end = startRead(user.id)
+      try {
+        const stored = await readObject(row.path)
+        if (!stored) throw new ApiError(404, 'not_stored', 'This file is no longer stored. Add it again.')
+        if (createHash('sha256').update(new Uint8Array(stored.bytes)).digest('hex') !== row.sha256) {
+          throw new ApiError(422, 'upload_mismatch', 'This file could not be verified. Add it again.')
+        }
+        const { answer, model } = await readWithKimi({
+          config,
+          bytes: stored.bytes,
+          mimeType: row.mimeType,
+          purpose,
+          candidates: sent,
+          now,
+          deadline,
+        })
+
+        // Kimi takes a while: a match must still be open now (someone may have acted meanwhile).
+        const later = new Date().toISOString()
+        const state = scopeStateForUser((await readWorld()).state, user.id)
+        let current: typeof sent = []
+        try {
+          current = readerCandidates(state, { userId: user.id, agencyId, purpose, now: later })
+        } catch {
+          // The caller lost access meanwhile: nothing can be matched.
+        }
+        const proposal = buildProposal(answer, {
+          purpose,
+          sent,
+          current,
+          // Paused ones too: the person is told to resume it rather than create a second one.
+          reminders:
+            purpose === 'invoice'
+              ? state.reminders.filter((r) => r.agencyId === agencyId && r.status !== 'archived')
+              : [],
+          now: later,
+        })
+        return c.json<EvidenceReadAnswer>({ proposal, model }, 200, noStore)
+      } finally {
+        end()
+      }
+    },
+  )
 
 /**
  * Every file a command attaches must be one the caller uploaded and the

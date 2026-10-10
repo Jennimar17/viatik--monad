@@ -9,6 +9,9 @@ import {
   type CommandAnswer,
   type ConfirmAnswer,
   type EvidenceLink,
+  type EvidenceReadAnswer,
+  type EvidenceReaderStatus,
+  type EvidenceReadRequest,
   type EvidenceUploadTicket,
   type LedgerAccount,
   type LedgerView,
@@ -78,6 +81,9 @@ const PARALLEL_UPLOADS = 3
 /** A stalled upload fails after this, scaled to the file so slow connections still finish. */
 const uploadDeadline = (bytes: number) => 30_000 + Math.ceil(bytes / 50)
 
+/** Kimi may take up to two minutes to read a file (the route's maxDuration); a little more before giving up. */
+const READ_DEADLINE_MS = 125_000
+
 function requireCredentials(credentials: CredentialsProvider | undefined): CredentialsProvider {
   if (!credentials) throw new DataSourceError('Sign in to continue.', 'unauthenticated')
   return credentials
@@ -124,7 +130,11 @@ export class ApiDataSource implements DataSource {
 
   async ledgerAccount(userId: string, options: LedgerOptions = {}): Promise<LedgerAccount> {
     const credentials = await requireCredentials(options.credentials)()
-    return apiFetch<LedgerAccount>('/v1/ledger/account', { method: 'GET', credentials, expectedUserId: userId })
+    return apiFetch<LedgerAccount>('/v1/ledger/account', {
+      method: 'GET',
+      credentials,
+      expectedUserId: userId,
+    })
   }
 
   async lookupInvitation(code: string): Promise<InvitationPreview | null> {
@@ -428,5 +438,31 @@ export class ApiDataSource implements DataSource {
       expectedUserId: userId,
     })
     return url
+  }
+
+  /**
+   * Whether this deployment reads files with Kimi. Only real accounts have it:
+   * the demo data source has no reader, so the screens never show it there.
+   */
+  async evidenceReaderStatus(userId: string, options: EvidenceOptions = {}): Promise<EvidenceReaderStatus> {
+    return apiFetch<EvidenceReaderStatus>('/v1/evidence/read/status', {
+      credentials: await requireCredentials(options.credentials)(),
+      expectedUserId: userId,
+    })
+  }
+
+  /** Has Kimi read a file the person already uploaded: a proposal to check, nothing is saved. */
+  async readEvidence(
+    userId: string,
+    request: EvidenceReadRequest,
+    options: EvidenceOptions = {},
+  ): Promise<EvidenceReadAnswer> {
+    return apiFetch<EvidenceReadAnswer>('/v1/evidence/read', {
+      method: 'POST',
+      body: request,
+      credentials: await requireCredentials(options.credentials)(),
+      expectedUserId: userId,
+      signal: AbortSignal.timeout(READ_DEADLINE_MS),
+    })
   }
 }

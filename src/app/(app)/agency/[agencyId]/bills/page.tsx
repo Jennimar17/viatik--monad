@@ -1,12 +1,13 @@
 'use client'
 
-import { CalendarClock, CalendarPlus, FilePlus2, Link2, Plus } from 'lucide-react'
+import { CalendarClock, CalendarPlus, FilePlus2, Link2, Plus, ScanText, X } from 'lucide-react'
 import * as React from 'react'
 
 import { InvoicesPendingList } from '@/components/app/accountability-parts'
 import { AddInvoiceSheet } from '@/components/app/add-invoice-sheet'
 import { BillsTable } from '@/components/app/bills-table'
 import { ButtonLink } from '@/components/app/button-link'
+import { KimiReader } from '@/components/app/kimi-reader'
 import { PageTabs } from '@/components/app/page-tabs'
 import { isDueNow, MonthlyPayments, NewReminderSheet } from '@/components/app/reminders'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
@@ -14,8 +15,10 @@ import { useOpenParam, useTabParam } from '@/components/app/use-tab-param'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/viatik/feedback'
 import { KpiTile } from '@/components/viatik/finance'
+import { EvidenceUploader, type DraftFile } from '@/components/viatik/forms'
 import { HairlineGrid, PageHeader, Panel } from '@/components/viatik/layout'
-import { useViatikState } from '@/data/react'
+import { useEvidenceFiles, useViatikState } from '@/data/react'
+import { useEvidenceReader } from '@/data/use-evidence-reader'
 import { outsidePaymentsWithoutProof, PROOF_WITHIN_DAYS, remindersDue } from '@/domain/accountability'
 import { sum } from '@/domain/money'
 import { billState } from '@/domain/queries'
@@ -47,6 +50,11 @@ function Bills() {
   // Kept while the invoice sheet closes, so it does not go blank.
   const [invoiceFor, setInvoiceFor] = React.useState<string | null>(null)
   const [invoiceOpen, setInvoiceOpen] = React.useState(false)
+  // "Read an invoice": Kimi proposes which payment an uploaded invoice belongs to, and Add invoice
+  // opens for it with the file already attached (`invoiceFiles`). The person attaches it themselves.
+  const reader = useEvidenceReader()
+  const [readingInvoice, setReadingInvoice] = React.useState(false)
+  const [invoiceFiles, setInvoiceFiles] = React.useState<DraftFile[] | undefined>(undefined)
 
   const all = state.bills.filter((b) => b.agencyId === agencyId)
   const toPay = all.filter((b) => b.status === 'to_pay')
@@ -64,6 +72,7 @@ function Bills() {
   const monthlyDue = remindersDue(state, agencyId, now).filter((r) => isDueNow(r, now)).length
   const canInvoice = can('pay_outside', { agencyId })
   const canRemind = can('manage_reminders', { agencyId })
+  const canRead = reader.enabled && canInvoice && withoutInvoice.length > 0
 
   return (
     <div className="flex flex-col gap-8">
@@ -150,7 +159,25 @@ function Bills() {
                     ? `Add each invoice within ${PROOF_WITHIN_DAYS} days of paying.`
                     : `${pluralize(withoutInvoice.length, 'invoice')} to add${invoicesOverdue > 0 ? `, ${invoicesOverdue} overdue` : ''}. Add each within ${PROOF_WITHIN_DAYS} days of paying.`
                 }
+                action={
+                  canRead && !readingInvoice ? (
+                    <Button variant="outline" size="pill-sm" onClick={() => setReadingInvoice(true)}>
+                      <ScanText data-icon="inline-start" /> Read an invoice
+                    </Button>
+                  ) : undefined
+                }
               >
+                {canRead && readingInvoice ? (
+                  <ReadInvoice
+                    agencyId={agencyId}
+                    onClose={() => setReadingInvoice(false)}
+                    onFound={(paymentId, file) => {
+                      setInvoiceFor(paymentId)
+                      setInvoiceFiles([file])
+                      setInvoiceOpen(true)
+                    }}
+                  />
+                ) : null}
                 <InvoicesPendingList
                   items={withoutInvoice}
                   now={now}
@@ -211,7 +238,18 @@ function Bills() {
         paymentId={invoiceFor}
         open={invoiceOpen}
         onOpenChange={setInvoiceOpen}
-        onClosed={() => setInvoiceFor(null)}
+        initialFiles={invoiceFiles}
+        notice={
+          invoiceFiles
+            ? 'Kimi matched the invoice you read to this payment. Check the payee and amount before you attach it.'
+            : undefined
+        }
+        onClosed={() => {
+          // Attached: the invoice that was read found its payment, so its reader closes too.
+          if (invoiceFiles && state.payments.find((p) => p.id === invoiceFor)?.proof) setReadingInvoice(false)
+          setInvoiceFor(null)
+          setInvoiceFiles(undefined)
+        }}
       />
       {canRemind ? (
         <NewReminderSheet
@@ -221,6 +259,77 @@ function Bills() {
           onCreated={() => tabs.onValueChange('monthly')}
         />
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * Upload an invoice and let Kimi propose which payment outside Viatik it
+ * belongs to; "Add it to this payment" opens Add invoice for that payment
+ * with the file already attached, and "Open Add invoice again" reopens it if
+ * it was closed without attaching. Nothing is attached without the Admin.
+ */
+function ReadInvoice({
+  agencyId,
+  onFound,
+  onClose,
+}: {
+  agencyId: string
+  onFound: (paymentId: string, file: DraftFile) => void
+  onClose: () => void
+}) {
+  const evidenceFiles = useEvidenceFiles()
+  const [files, setFiles] = React.useState<DraftFile[]>([])
+  const file = files[0]
+
+  return (
+    <div className="mb-4 flex flex-col gap-3 rounded-xl border border-border p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <p className="text-sm font-medium text-foreground">Read an invoice</p>
+          <p className="text-sm text-pretty text-muted-foreground">
+            Add an invoice and Kimi proposes which payment below it belongs to. You check it and attach it.
+          </p>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-9 shrink-0 rounded-full"
+          aria-label="Close Read an invoice"
+          onClick={onClose}
+        >
+          <X />
+        </Button>
+      </div>
+      <EvidenceUploader
+        files={files}
+        onChange={setFiles}
+        onUpload={evidenceFiles.upload}
+        maxFiles={1}
+        allowLinks={false}
+        label="Drop the invoice here or browse"
+        hint="One file: PDF, PNG, JPG, WEBP or HEIC, up to 10 MB."
+      />
+      <KimiReader
+        file={file}
+        agencyId={agencyId}
+        purpose="invoice"
+        useLabel="Add it to this payment"
+        canUse={(proposal) => Boolean(proposal.match)}
+        usedText="Add invoice opened for the payment Kimi proposed. Check it there before you attach the file."
+        // Closed without attaching: the same reading opens Add invoice again, without a new read.
+        againLabel="Open Add invoice again"
+        onUse={(proposal) => {
+          if (proposal.match && file) onFound(proposal.match.id, file)
+        }}
+        extra={(proposal) =>
+          proposal.readable && !proposal.match ? (
+            <p className="text-sm text-pretty text-muted-foreground">
+              Kimi did not find which payment this invoice is for. Use Add invoice on the right payment below.
+            </p>
+          ) : null
+        }
+      />
     </div>
   )
 }

@@ -12,10 +12,12 @@ import {
 } from '@/components/app/address-field'
 import { ButtonLink } from '@/components/app/button-link'
 import { FormField, PillInput, SimpleSelect, useChoice, type Option } from '@/components/app/form-controls'
+import { KimiReader, proposalAmount, type EvidenceReadProposal } from '@/components/app/kimi-reader'
 import { sameAddress, useOwnAccount } from '@/components/app/member-own-account'
 import { CreateOperationsAccount, EmptySourceHint } from '@/components/app/money-setup'
 import { receiptHref } from '@/components/app/nav'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
+import { NewReminderSheet, type ReminderDraft } from '@/components/app/reminders'
 import { useHref, usePermissions, useRole, type ScreenTarget } from '@/components/app/role-context'
 import { useBottomBar } from '@/components/app/shell/app-shell'
 import { useSigningSteps } from '@/components/app/signing-steps'
@@ -37,10 +39,10 @@ import { useCommand, useEvidenceFiles, useLedger, useViatikState } from '@/data/
 import { paidAt, PROOF_WITHIN_DAYS, remindersDue } from '@/domain/accountability'
 import { shortAddress } from '@/domain/address'
 import { categoryLabel } from '@/domain/labels'
-import { formatUsd, ZERO, type Cents } from '@/domain/money'
+import { cents, formatUsd, ZERO, type Cents } from '@/domain/money'
 import { accountName, exceptionThresholdOf, receiptFor, userName } from '@/domain/queries'
 import { accountBalance, budgetUsage } from '@/domain/selectors'
-import type { Budget, SpendingCategory } from '@/domain/types'
+import type { Budget, Reminder, SpendingCategory } from '@/domain/types'
 import { networkInfo } from '@/domain/verification'
 import { publicEnv } from '@/lib/env'
 import { formatDate } from '@/lib/format'
@@ -176,6 +178,11 @@ function PayOutside() {
   const [touched, setTouched] = React.useState(false)
   const [open, setOpen] = React.useState(false)
   const [sent, setSent] = React.useState<{ paymentId: string; withInvoice: boolean } | null>(null)
+  // "Create a monthly payment" from an invoice Kimi read: the usual sheet, filled in (a new draft per click).
+  const [reminderDraft, setReminderDraft] = React.useState<ReminderDraft | undefined>(undefined)
+  const [reminderOpen, setReminderOpen] = React.useState(false)
+  // The monthly payment created that way: this payment is made for it (the first of its payments).
+  const [createdReminder, setCreatedReminder] = React.useState<Reminder | null>(null)
 
   const budget = budgets.find((b) => b.id === budgetId)
   const blockedBudget = budget ? budgetBlock(budget) : undefined
@@ -259,6 +266,38 @@ function PayOutside() {
       : fromParam
         ? `accounts/${fromParam.id}`
         : null
+  const canRemind = can('manage_reminders', { agencyId })
+  // The one created from Kimi's reading, as it is now, while it can still be paid for (active).
+  const newReminder = createdReminder
+    ? (state.reminders.find((r) => r.id === createdReminder.id) ?? createdReminder)
+    : undefined
+  const madeFor = reminder ?? (newReminder?.status === 'active' ? newReminder : undefined)
+
+  // Kimi's reading of the invoice, once the person chose to use it: payee, amount and what it pays.
+  // The address is never taken from a document: the person enters and confirms it.
+  const applyReading = (proposal: EvidenceReadProposal) => {
+    if (proposal.merchant) setPayee(proposal.merchant)
+    const read = proposalAmount(proposal)
+    if (read !== null) setAmount(read)
+    if (!memo.trim() && (proposal.merchant || proposal.date)) {
+      const what = proposal.merchant ?? 'Invoice'
+      setMemo(`${what}${proposal.date ? `, invoice of ${formatDate(proposal.date)}` : ''}`.slice(0, 500))
+    }
+  }
+  const createReminderFrom = (proposal: EvidenceReadProposal) => {
+    const suggested = proposal.reminder
+    if (!suggested) return
+    setReminderDraft({
+      title: suggested.title,
+      payee: payee.trim() || suggested.payee,
+      amount: amount ?? (suggested.amount !== null ? cents(suggested.amount) : null),
+      category: category ?? 'software',
+      dayOfMonth: suggested.dayOfMonth,
+      sourceAccountId: sourceAccountId ?? undefined,
+    })
+    setReminderOpen(true)
+  }
+
   const paid = state.payments.find((p) => p.id === sent?.paymentId)
   const receipt = receiptFor(state, paid?.receiptId)
   const paidTo = paid?.recipient.kind === 'address' ? paid.recipient : undefined
@@ -505,6 +544,73 @@ function PayOutside() {
               {waiting}
             </p>
           ) : null}
+          <KimiReader
+            className="mt-2"
+            file={file}
+            agencyId={agencyId}
+            purpose="invoice"
+            onUse={applyReading}
+            extra={(proposal) => (
+              <>
+                {proposal.match ? (
+                  <p className="flex gap-2 rounded-xl border border-warning/30 bg-warning-soft p-4 text-sm text-pretty">
+                    <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+                    <span>
+                      This looks like the invoice of a payment already made: “{proposal.match.label}”. Check{' '}
+                      <Link
+                        href={href('bills?tab=invoices')}
+                        className="font-medium underline underline-offset-4"
+                      >
+                        Bills ▸ Invoices pending
+                      </Link>{' '}
+                      before you pay it again.
+                    </span>
+                  </p>
+                ) : null}
+                {/* Opened for one, or one was created already (shown below the reader): no second. */}
+                {reminder || newReminder ? null : proposal.reminder && canRemind ? (
+                  <div className="flex flex-col gap-3 rounded-xl border border-border p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="flex gap-2 text-sm text-pretty text-muted-foreground">
+                      <CalendarClock className="mt-0.5 size-4 shrink-0 text-subtle" aria-hidden="true" />
+                      Kimi sees a monthly charge. A monthly payment shows it as due in Bills every month.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="pill-sm"
+                      className="shrink-0"
+                      onClick={() => createReminderFrom(proposal)}
+                    >
+                      Create a monthly payment
+                    </Button>
+                  </div>
+                ) : null}
+              </>
+            )}
+          />
+          {/* Outside the reader so it stays when the file changes: the payment is still made for it. */}
+          {!reminder && newReminder ? (
+            <p className="mt-1 flex gap-2 rounded-xl border border-border p-4 text-sm text-pretty text-muted-foreground">
+              {madeFor ? (
+                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" />
+              ) : (
+                <Info className="mt-0.5 size-4 shrink-0 text-subtle" aria-hidden="true" />
+              )}
+              {madeFor ? (
+                <span>
+                  <span className="font-medium text-foreground">
+                    Linked to monthly payment “{madeFor.title}”
+                  </span>
+                  . This payment counts for it.
+                </span>
+              ) : (
+                <span>
+                  “{newReminder.title}” is {newReminder.status === 'paused' ? 'paused' : 'archived'}, so this
+                  payment will not count for it.
+                  {newReminder.status === 'paused' ? ' Resume it in Bills ▸ Monthly first if it should.' : ''}
+                </span>
+              )}
+            </p>
+          ) : null}
         </div>
       </Panel>
 
@@ -589,7 +695,8 @@ function PayOutside() {
             category,
             memo: memo.trim(),
             proof: file ? toEvidence(file) : undefined,
-            reminderId: reminder?.id,
+            // The monthly payment it was opened for, or the one just created from Kimi's reading.
+            reminderId: madeFor?.id,
           })
           if (payment) setSent({ paymentId: payment.id, withInvoice: Boolean(file) })
         }}
@@ -636,7 +743,7 @@ function PayOutside() {
               label: 'Invoice',
               value: file ? file.name : `Not yet: add it within ${PROOF_WITHIN_DAYS} days`,
             },
-            ...(reminder ? [{ label: 'Monthly payment', value: reminder.title }] : []),
+            ...(madeFor ? [{ label: 'Monthly payment', value: madeFor.title }] : []),
           ]}
         />
         {demo ? (
@@ -658,6 +765,15 @@ function PayOutside() {
           </p>
         ) : null}
       </ApprovalSheet>
+      {canRemind ? (
+        <NewReminderSheet
+          open={reminderOpen}
+          onOpenChange={setReminderOpen}
+          agencyId={agencyId}
+          initial={reminderDraft}
+          onCreated={(created) => setCreatedReminder(created)}
+        />
+      ) : null}
     </div>
   )
 }

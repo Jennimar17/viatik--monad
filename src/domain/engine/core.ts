@@ -12,6 +12,7 @@ import type {
   Location,
   Movement,
   MovementKind,
+  NotificationKind,
   Receipt,
   ReceiptKind,
   ViatikState,
@@ -192,10 +193,18 @@ export class Tx {
     return record
   }
 
-  notify(userIds: Id[], title: string, body: string, href: string) {
+  notify(userIds: Id[], title: string, body: string, href: string, kind?: NotificationKind) {
     for (const userId of new Set(userIds)) {
       if (this.ctx.actor.kind === 'user' && this.ctx.actor.userId === userId) continue
-      this.state.notifications.unshift({ id: newId('ntf'), userId, title, body, href, createdAt: this.now })
+      this.state.notifications.unshift({
+        id: newId('ntf'),
+        userId,
+        title,
+        body,
+        href,
+        createdAt: this.now,
+        ...(kind ? { kind } : {}),
+      })
     }
   }
 

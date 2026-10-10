@@ -7,6 +7,7 @@ import * as React from 'react'
 
 import { ButtonLink } from '@/components/app/button-link'
 import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
+import { KimiReader, proposalAmount, type EvidenceReadProposal } from '@/components/app/kimi-reader'
 import { advanceDueText, advanceTitle } from '@/components/app/request-parts'
 import { useHref, useRole } from '@/components/app/role-context'
 import { useBottomBar } from '@/components/app/shell/app-shell'
@@ -127,6 +128,16 @@ function NewExpense() {
   const busy = add.phase !== 'idle' && add.phase !== 'failed' && add.phase !== 'completed'
   const shown = (key: keyof typeof errors) => (touched ? errors[key] : undefined)
 
+  // Kimi's reading, once the person chose to use it: it fills in the fields, never submits.
+  const applyReading = (proposal: EvidenceReadProposal) => {
+    const match = proposal.match
+    if (match?.kind === 'advance' && open.some((s) => s.payment.id === match.id)) setAdvanceChoice(match.id)
+    if (proposal.merchant) setMerchant(proposal.merchant)
+    const read = proposalAmount(proposal)
+    if (read !== null) setAmount(read)
+    if (proposal.date) setDate(proposal.date)
+  }
+
   const submit = async () => {
     setTouched(true)
     const receipt = files.find((f) => f.kind === 'file')
@@ -221,6 +232,13 @@ function NewExpense() {
             {shown('receipt')}
           </p>
         ) : null}
+        <KimiReader
+          className="mt-4"
+          file={files[0]}
+          agencyId={agencyId}
+          purpose="receipt"
+          onUse={applyReading}
+        />
       </Panel>
 
       <Panel title="What you paid for">

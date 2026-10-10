@@ -229,6 +229,17 @@ function ArchiveReminderSheet({
   )
 }
 
+/** What a new monthly payment starts with, e.g. from an invoice Kimi read. The person can change all of it. */
+export type ReminderDraft = {
+  title?: string
+  payee?: string
+  amount?: Cents | null
+  category?: SpendingCategory
+  /** 1–28; anything else is kept within that range. */
+  dayOfMonth?: number
+  sourceAccountId?: Id
+}
+
 /**
  * Create a monthly payment: what it is, who gets paid, its usual amount and
  * category, the day of the month it is due and, optionally, the Agency account
@@ -239,12 +250,18 @@ export function NewReminderSheet({
   onOpenChange,
   agencyId,
   onCreated,
+  initial,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   agencyId: Id
   /** Runs once it is created, e.g. to show the Monthly tab. */
   onCreated?: (reminder: Reminder) => void
+  /**
+   * Fills in the form when the sheet opens with it; the person still checks and confirms everything.
+   * Keep the same object while the sheet is open (a new one fills the form again).
+   */
+  initial?: ReminderDraft
 }) {
   const { state, now } = useViatikState()
   const create = useCommand('createReminder')
@@ -257,6 +274,24 @@ export function NewReminderSheet({
   const [day, setDay] = React.useState(String(Math.min(today, 28)))
   const [accountId, setAccountId] = React.useState(NO_ACCOUNT)
   const [createdId, setCreatedId] = React.useState<Id | null>(null)
+
+  // Filled in once per opening; what the person types afterwards is kept. Closing clears it.
+  const [filledFrom, setFilledFrom] = React.useState<ReminderDraft | null>(null)
+  if (open && initial && filledFrom !== initial) {
+    setFilledFrom(initial)
+    if (initial.title !== undefined) setTitle(initial.title.slice(0, 120))
+    if (initial.payee !== undefined) setPayee(initial.payee.slice(0, 120))
+    if (initial.amount !== undefined) setAmount(initial.amount && initial.amount > 0 ? initial.amount : null)
+    if (initial.category && initial.category in categoryLabel) setCategory(initial.category)
+    if (initial.dayOfMonth !== undefined && Number.isInteger(initial.dayOfMonth)) {
+      setDay(String(Math.min(28, Math.max(1, initial.dayOfMonth))))
+    }
+    if (initial.sourceAccountId !== undefined) {
+      setAccountId(
+        accounts.some((a) => a.id === initial.sourceAccountId) ? initial.sourceAccountId : NO_ACCOUNT,
+      )
+    }
+  }
 
   const busy = create.isPending
   const dayOfMonth = Number(day)
@@ -280,6 +315,7 @@ export function NewReminderSheet({
         setDay(String(Math.min(today, 28)))
         setAccountId(NO_ACCOUNT)
         setCreatedId(null)
+        setFilledFrom(null)
       }}
       title="New monthly payment"
       description="Something the Agency pays outside Viatik every month, such as a tool or a subscription."

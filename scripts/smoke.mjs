@@ -2,9 +2,12 @@
 // settlement planner, the mock ledger and the genesis, and the ledger's books are checked after
 // every step (see scripts/smoke/harness.ts). It only reads the repo.
 //
-//   node scripts/smoke.mjs [engine] [settlement] [genesis] [--failures]
+//   node scripts/smoke.mjs [engine] [settlement] [genesis] [alchemy] [kimi] [--failures]
 //
-// With no suite named, all three run. --failures prints only the failed checks.
+// With no suite named, all of them run. alchemy checks the webhook's pure pieces (signature,
+// filtering, the "Funds arrived" notification) and kimi the receipt reader's (config, limits,
+// answer parsing, matching), both with no keys and no network.
+// --failures prints only the failed checks.
 // Exit code: 0 everything passed, 1 a check failed, 2 the smoke itself broke (a suite did not
 // load, or a scenario threw something other than a failed step).
 import { createRequire } from 'node:module'
@@ -12,7 +15,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const SUITES = ['engine', 'settlement', 'genesis']
+const SUITES = ['engine', 'settlement', 'genesis', 'alchemy', 'kimi']
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)

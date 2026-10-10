@@ -95,6 +95,55 @@ export type VerifiedUpload = {
 /** `GET /v1/evidence/:evidenceId/link`: a short-lived link to open a file the caller may see. */
 export type EvidenceLink = { url: string }
 
+// ─── Reading a receipt or invoice with Kimi ──────────────────────────────────
+
+/**
+ * What the file is read for: a Member's receipt for money for purchases, or an
+ * Agency Admin's invoice of a payment outside Viatik.
+ */
+export type EvidenceReadPurpose = 'receipt' | 'invoice'
+
+/** `POST /v1/evidence/read`: one file the caller already uploaded and the server verified. */
+export type EvidenceReadRequest = { sha256: string; agencyId: string; purpose: EvidenceReadPurpose }
+
+/**
+ * What Kimi read in the file, after the server's checks. Only a proposal:
+ * nothing is saved, and the person confirms it through the usual forms.
+ * Amounts are in cents.
+ */
+export type EvidenceReadProposal = {
+  /** False when the file is not a receipt or invoice Kimi could read; the other fields are then empty. */
+  readable: boolean
+  /** Who was paid, cut to what the form accepts. */
+  merchant: string | null
+  /** The total, only when the document is in USD or shows no currency (`currencyUnknown`). */
+  amount: number | null
+  /** The total as printed when it is not in USD: shown, never used. */
+  foreignAmount: { amount: string; currency: string } | null
+  /** The document shows no currency: the person checks the amount is in USD. */
+  currencyUnknown: boolean
+  /** Purchase or issue date (YYYY-MM-DD); left out when in the future or more than two years old. */
+  date: string | null
+  /** The open item this document pays, once the server checked it fits and is still open. */
+  match: { kind: 'advance' | 'outside_payment'; id: string; label: string } | null
+  /** The document shows a monthly charge (a subscription, a monthly period, a next charge date). */
+  recurringMonthly: boolean
+  /** Why it looks monthly, in Kimi's words. */
+  recurringHint: string | null
+  /** Invoices of a monthly charge with no similar active monthly payment: what to fill in, if the person creates one. */
+  reminder: { title: string; payee: string; amount: number | null; dayOfMonth: number } | null
+  /** 0 to 1 for the whole reading; capped when the server had to leave something out. */
+  confidence: number
+  /** Short notes in product language, e.g. why a match was left out. */
+  notes: string[]
+}
+
+/** The answer of `POST /v1/evidence/read`: the proposal and the Kimi model that read it. */
+export type EvidenceReadAnswer = { proposal: EvidenceReadProposal; model: string }
+
+/** `GET /v1/evidence/read/status`: whether this deployment reads files with Kimi (the screens hide it otherwise). */
+export type EvidenceReaderStatus = { enabled: boolean }
+
 // ─── The ledger panel ────────────────────────────────────────────────────────
 
 /** Where a balance lives on the ledger. */

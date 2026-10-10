@@ -12,6 +12,7 @@ import type { AppEnv } from './context'
 import { getDb } from './db/client'
 import { users, type UserRow } from './db/schema'
 import { getPrivy } from './privy'
+import { watchAddressOnAlchemy } from './webhooks'
 
 type Profile = { email: string | null; name: string | null; address: `0x${string}` | null }
 
@@ -95,9 +96,13 @@ async function ensureWallet(privyId: string): Promise<`0x${string}` | null> {
 /**
  * Finds or creates the product user for a Privy account. Emails listed in
  * `DEMO_ACCOUNTS` take over a seeded demo person (Elena, Maya, Alex), even
- * from a new Privy account; anyone else gets a fresh id.
+ * from a new Privy account; anyone else gets a fresh id. `previousAddress` is
+ * the account the row had before (null for a new row).
  */
-async function upsertUser(privyId: string, profile: Profile): Promise<{ row: UserRow; isNew: boolean }> {
+async function upsertUser(
+  privyId: string,
+  profile: Profile,
+): Promise<{ row: UserRow; isNew: boolean; previousAddress: string | null }> {
   const db = getDb()
   const now = new Date()
   const [existing] = await db.select().from(users).where(eq(users.privyId, privyId)).limit(1)
@@ -115,7 +120,7 @@ async function upsertUser(privyId: string, profile: Profile): Promise<{ row: Use
       })
       .where(eq(users.id, existing.id))
       .returning()
-    return { row: row ?? existing, isNew: false }
+    return { row: row ?? existing, isNew: false, previousAddress: existing.walletAddress }
   }
 
   const values = {
@@ -160,7 +165,7 @@ async function upsertUser(privyId: string, profile: Profile): Promise<{ row: Use
         .returning()
 
   if (!row) throw new Error('The user row was not written.')
-  return { row, isNew: true }
+  return { row, isNew: true, previousAddress: null }
 }
 
 /** `POST /v1/session`: who the signed-in person is, as a product user. */
@@ -168,7 +173,7 @@ export const session = new Hono<AppEnv>().post('/', requireAccount, async (c) =>
   const privyUserId = c.get('privyUserId')
   const identity = await readIdentity(privyUserId, c.req.header(ID_TOKEN_HEADER))
   const profile = profileOf(identity)
-  const { row, isNew } = await upsertUser(privyUserId, profile)
+  const { row, isNew, previousAddress } = await upsertUser(privyUserId, profile)
 
   let address =
     profile.address ??
@@ -181,6 +186,10 @@ export const session = new Hono<AppEnv>().post('/', requireAccount, async (c) =>
       console.error(`[api] ${c.get('requestId')} embedded account could not be created`, error)
     }
   }
+  // A Viatik account Viatik had not recorded for this person yet (just created, or first seen):
+  // Alchemy starts watching it, so money sent to it is noticed. Best effort, never blocks sign-in.
+  if (address && address.toLowerCase() !== previousAddress?.toLowerCase())
+    await watchAddressOnAlchemy(address, c.get('requestId'))
 
   return c.json<SessionResponse>(
     {

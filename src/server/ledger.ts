@@ -21,6 +21,7 @@ let adapter: MonadLedgerAdapter | null | undefined
 /**
  * The Monad ledger, when the deployment is configured (`VIATIK_LEDGER_ADDRESS`
  * and `MONAD_RPC_URL`); null otherwise, and operations settle on the mock.
+ * `MONAD_LOGS_RPC_URL`, when set, serves the log scan alone (see env.ts).
  */
 export function getMonadLedger(): MonadLedgerAdapter | null {
   if (adapter !== undefined) return adapter
@@ -30,6 +31,7 @@ export function getMonadLedger(): MonadLedgerAdapter | null {
       ? new MonadLedgerAdapter({
           network: publicEnv.NEXT_PUBLIC_MONAD_NETWORK,
           rpcUrl: env.MONAD_RPC_URL,
+          logsRpcUrl: env.MONAD_LOGS_RPC_URL,
           ledgerAddress: env.VIATIK_LEDGER_ADDRESS,
           tokenAddress: env.TEST_USD_ADDRESS,
           registrar: env.LEDGER_REGISTRAR_PRIVATE_KEY

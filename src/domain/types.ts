@@ -667,6 +667,9 @@ export type Activity = {
   createdAt: ISODate
 }
 
+/** A notification screens react to, besides showing it (absent on ordinary ones). */
+export type NotificationKind = 'funds_arrived'
+
 export type Notification = {
   id: Id
   userId: Id
@@ -675,6 +678,8 @@ export type Notification = {
   href: string
   createdAt: ISODate
   readAt?: ISODate
+  /** `funds_arrived`: money reached the person's Viatik account (from Alchemy), so its balance is read again. */
+  kind?: NotificationKind
 }
 
 export type Invitation = {

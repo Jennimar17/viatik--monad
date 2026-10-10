@@ -40,6 +40,8 @@ export function AddInvoiceSheet({
   open,
   onOpenChange,
   onClosed,
+  initialFiles,
+  notice,
 }: {
   /** The outside payment to document. */
   paymentId: string | null
@@ -47,6 +49,13 @@ export function AddInvoiceSheet({
   onOpenChange: (open: boolean) => void
   /** Runs once the sheet has closed, after its own reset. */
   onClosed?: () => void
+  /**
+   * A file already uploaded and verified (e.g. the invoice Kimi just read), attached when the sheet
+   * opens so it is not uploaded again; the person can still remove it. Keep the same array while open.
+   */
+  initialFiles?: DraftFile[]
+  /** A line above the file, e.g. why this payment was chosen. */
+  notice?: React.ReactNode
 }) {
   const { state } = useViatikState()
   const { can } = usePermissions()
@@ -54,6 +63,12 @@ export function AddInvoiceSheet({
   const attach = useCommand('addPaymentProof')
   const evidenceFiles = useEvidenceFiles()
   const [files, setFiles] = React.useState<DraftFile[]>([])
+  // Taken once per opening; closing clears the form (and this) for the next one.
+  const [filledFrom, setFilledFrom] = React.useState<DraftFile[] | null>(null)
+  if (open && initialFiles && filledFrom !== initialFiles) {
+    setFilledFrom(initialFiles)
+    setFiles(initialFiles.filter((f) => f.kind === 'file' && f.sha256 && !f.upload).slice(0, 1))
+  }
   const steps = useSigningSteps(attach.phase, {
     prepared: "Viatik checks the invoice against the ledger's rules.",
     done: { label: 'Recorded', detail: "The invoice's fingerprint is recorded on Monad, once." },
@@ -86,6 +101,7 @@ export function AddInvoiceSheet({
       onClosed={() => {
         attach.reset()
         setFiles([])
+        setFilledFrom(null)
         onClosed?.()
       }}
       title="Add invoice"
@@ -123,6 +139,12 @@ export function AddInvoiceSheet({
       }}
       steps={steps}
     >
+      {notice && !alreadyAttached ? (
+        <p className="flex gap-2 rounded-xl border border-info/30 bg-info-soft p-4 text-sm text-pretty">
+          <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden="true" />
+          <span>{notice}</span>
+        </p>
+      ) : null}
       {alreadyAttached && payment.proof ? (
         <p className="flex gap-2 rounded-xl border border-info/30 bg-info-soft p-4 text-sm text-pretty">
           <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden="true" />

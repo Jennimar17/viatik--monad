@@ -53,6 +53,11 @@ import { centsToUnits, unitsToCents } from './units'
 export type MonadLedgerConfig = {
   network: MonadNetwork
   rpcUrl?: string
+  /**
+   * Another RPC for the log scan alone (`findConfirmation`), when `rpcUrl` allows fewer than
+   * `LOG_WINDOW` blocks per `eth_getLogs` (Alchemy Free: 10 on Monad Testnet). Defaults to `rpcUrl`.
+   */
+  logsRpcUrl?: string
   /** Deployed ViatikLedger contract. */
   ledgerAddress?: Address
   /** The settlement token the ledger was deployed with (TestUSD on testnet). */
@@ -73,7 +78,10 @@ const RPC_TIMEOUT_MS = 8_000
 /** How often a receipt is read again while waiting for it. */
 const RECEIPT_POLL_MS = 500
 
-/** The block range the public RPC accepts in one `eth_getLogs`. */
+/**
+ * The block range the public RPC accepts in one `eth_getLogs`. Alchemy accepts 10 on the Free
+ * plan and 1,000 on Pay As You Go: with Alchemy Free as the main RPC, the scan uses `logsRpcUrl`.
+ */
 const LOG_WINDOW = 100n
 
 /** How long a role permit stays valid after it is prepared. */
@@ -155,10 +163,16 @@ export class MonadLedgerAdapter implements LedgerAdapter {
   readonly simulated = false
   readonly network: MonadNetwork
   private readonly client
+  /** Scans the ledger's logs (`findConfirmation`); the main client unless `logsRpcUrl` names another RPC. */
+  private readonly logsClient
 
   constructor(private readonly config: MonadLedgerConfig) {
     this.network = config.network
     this.client = createPublicClient({ chain: this.chain, transport: this.transport() })
+    this.logsClient =
+      config.logsRpcUrl && config.logsRpcUrl !== config.rpcUrl
+        ? createPublicClient({ chain: this.chain, transport: this.transport(config.logsRpcUrl) })
+        : this.client
   }
 
   get chain(): Chain {
@@ -166,8 +180,8 @@ export class MonadLedgerAdapter implements LedgerAdapter {
   }
 
   /** One retry and a short timeout: a stuck node fails fast instead of holding a request for ~40 s. */
-  private transport() {
-    return http(this.config.rpcUrl, { timeout: RPC_TIMEOUT_MS, retryCount: 1 })
+  private transport(url = this.config.rpcUrl) {
+    return http(url, { timeout: RPC_TIMEOUT_MS, retryCount: 1 })
   }
 
   get isConfigured() {
@@ -475,10 +489,11 @@ export class MonadLedgerAdapter implements LedgerAdapter {
     const started = Date.now()
     let scannedTo = Math.max(tx.preparedBlock, (from ?? 0) - 1)
     try {
-      const latest = Number(await this.client.getBlockNumber({ cacheTime: 0 }))
+      // The log scan may run on another RPC (`logsRpcUrl`); the receipt is still read from the main one.
+      const latest = Number(await this.logsClient.getBlockNumber({ cacheTime: 0 }))
       while (scannedTo < latest && Date.now() - started < budgetMs) {
         const to = Math.min(scannedTo + Number(LOG_WINDOW), latest)
-        const logs = await this.client.getLogs({
+        const logs = await this.logsClient.getLogs({
           address: this.ledger,
           fromBlock: BigInt(scannedTo + 1),
           toBlock: BigInt(to),
