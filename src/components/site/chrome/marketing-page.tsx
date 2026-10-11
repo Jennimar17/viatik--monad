@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, ArrowRightIcon } from 'lucide-react'
+import { ArrowLeftIcon, ArrowRightIcon, MailIcon } from 'lucide-react'
 import Link from 'next/link'
 
 import { cn } from '@/lib/utils'
@@ -21,10 +21,20 @@ export type PageBlock = {
   cards?: { title: string; body: string; tag?: string }[]
 }
 
+/** The closing card: a line and one button. */
+export type PageClosing = { text: string; label: string; href: string }
+
+const demoClosing: PageClosing = {
+  text: 'Follow one tranche from commitment to completed payment.',
+  label: 'Open the demo',
+  href: siteConfig.routes.demo,
+}
+
 /**
  * Simple informational page in the landing's visual language: the legal
  * page's bar and footer, a larger intro, content blocks, and a closing call
- * to open the demo. Content lives in `content/pages.ts`.
+ * to action (opening the demo unless the page sets another). Content lives in
+ * `content/pages.ts`.
  */
 export function MarketingPage({
   eyebrow,
@@ -32,13 +42,16 @@ export function MarketingPage({
   intro,
   blocks,
   toc = false,
+  closing = demoClosing,
 }: {
   eyebrow: string
   title: string
   intro: string
   blocks: PageBlock[]
   toc?: boolean
+  closing?: PageClosing
 }) {
+  const ClosingIcon = closing.href.startsWith('mailto:') ? MailIcon : ArrowRightIcon
   return (
     <>
       <header className="border-b border-border">
@@ -119,15 +132,15 @@ export function MarketingPage({
 
         <Container className="py-16 md:py-24">
           <aside
-            aria-label="Open the demo"
+            aria-label={closing.label}
             className="grain relative flex flex-col gap-5 overflow-hidden rounded-3xl border border-border bg-card/60 p-7 sm:flex-row sm:items-center sm:justify-between sm:p-10"
           >
             <p className="max-w-md font-display text-2xl leading-tight font-medium tracking-[-0.03em] text-balance md:text-3xl">
-              Follow one tranche from commitment to completed payment.
+              {closing.text}
             </p>
-            <a href={siteConfig.routes.demo} className={buttonVariants({ size: 'pill' })}>
-              Open the demo
-              <ArrowRightIcon data-icon="inline-end" aria-hidden="true" />
+            <a href={closing.href} className={buttonVariants({ size: 'pill' })}>
+              {closing.label}
+              <ClosingIcon data-icon="inline-end" aria-hidden="true" />
             </a>
           </aside>
         </Container>

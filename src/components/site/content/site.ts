@@ -13,6 +13,10 @@ export const siteConfig = {
   ogDescription:
     'Viatik connects funding agreements, capital releases, budgets, payments, and evidence in one verifiable flow.',
   statement: 'Programmable funding infrastructure for modern teams.',
+  contact: {
+    email: 'contact@viatik.xyz',
+    x: 'https://x.com/viatikapp',
+  },
   routes: {
     demo: '/sign-in/demo',
     signIn: '/sign-in',
@@ -77,12 +81,14 @@ export const footerNav: { heading: string; items: FooterItem[] }[] = [
   },
 ]
 
-export type SocialNetwork = 'x' | 'discord' | 'github' | 'telegram'
+export type SocialNetwork = 'x' | 'email'
 
-/** Social profiles, not live yet: shown in the footer without links. */
-export const socials: { network: SocialNetwork; label: string }[] = [
-  { network: 'x', label: 'X' },
-  { network: 'discord', label: 'Discord' },
-  { network: 'github', label: 'GitHub' },
-  { network: 'telegram', label: 'Telegram' },
+/** Where to find and reach Viatik, linked from the footer. */
+export const socials: { network: SocialNetwork; label: string; href: string }[] = [
+  { network: 'x', label: 'Viatik on X', href: siteConfig.contact.x },
+  {
+    network: 'email',
+    label: `Email ${siteConfig.contact.email}`,
+    href: `mailto:${siteConfig.contact.email}`,
+  },
 ]

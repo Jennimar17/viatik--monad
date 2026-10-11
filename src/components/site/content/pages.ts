@@ -1,4 +1,5 @@
-import type { PageBlock } from '@/components/site/chrome/marketing-page'
+import type { PageBlock, PageClosing } from '@/components/site/chrome/marketing-page'
+import { siteConfig } from '@/components/site/content/site'
 
 /*
  * Copy for the informational pages linked from the footer. Draft: only says
@@ -55,6 +56,12 @@ export const about = {
       body: 'Viatik is an early product built for the Monad Metropolis hackathon and runs on Monad Testnet. The demo uses fictional people, organizations and amounts.',
     },
   ] satisfies PageBlock[],
+  // About is where people look for a way to reach the team.
+  closing: {
+    text: 'Questions, feedback or a pilot in mind? Write to the Viatik team.',
+    label: siteConfig.contact.email,
+    href: `mailto:${siteConfig.contact.email}`,
+  } satisfies PageClosing,
 }
 
 export const roadmap = {

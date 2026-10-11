@@ -75,23 +75,23 @@ export function SiteFooter() {
             <ul aria-label="Social profiles" className="flex gap-2">
               {socials.map((social) => (
                 <li key={social.network}>
-                  <span
-                    role="img"
+                  <a
+                    href={social.href}
                     aria-label={social.label}
                     title={social.label}
-                    className="flex size-9 items-center justify-center rounded-full border border-border text-muted-foreground"
+                    {...(social.href.startsWith('http')
+                      ? { target: '_blank', rel: 'noopener noreferrer' }
+                      : {})}
+                    className="flex size-9 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
                   >
                     <SocialIcon network={social.network} className="size-4" />
-                  </span>
+                  </a>
                 </li>
               ))}
             </ul>
           </div>
 
-          <nav
-            aria-label="Footer"
-            className="grid grid-cols-2 gap-x-6 gap-y-8 sm:grid-cols-4 lg:col-span-8"
-          >
+          <nav aria-label="Footer" className="grid grid-cols-2 gap-x-6 gap-y-8 sm:grid-cols-4 lg:col-span-8">
             {footerNav.map((group) => (
               <div key={group.heading} className="flex flex-col gap-2">
                 <h3 className="text-xs font-medium tracking-[0.08em] text-subtle uppercase">
