@@ -16,8 +16,9 @@ const nextConfig: NextConfig = {
     // The repo lives on a slow external drive: persisting the dev cache costs
     // more (60–100 MB writes per compile, minute-long compactions) than it saves.
     turbopackFileSystemCacheForDev: false,
-    // Only Vercel keeps .next/cache between builds; elsewhere (Hostinger) the build cache
-    // would be written (about 1 GB) and never read again.
+    // `pnpm build` runs webpack (package.json): Hostinger's build sandbox blocks the
+    // 127.0.0.1 connection Turbopack's PostCSS workers need. This flag only affects
+    // `next build --turbopack`, where only Vercel keeps .next/cache between builds.
     turbopackFileSystemCacheForBuild: process.env.VERCEL === '1',
   },
   async headers() {
