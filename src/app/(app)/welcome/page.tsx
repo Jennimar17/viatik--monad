@@ -271,7 +271,7 @@ function Welcome() {
           <div className="flex flex-col gap-2">
             <h1 className="font-display text-3xl font-medium tracking-tight">{inviteCopy[picked].title}</h1>
             <p className="text-base text-pretty text-muted-foreground">
-              {inviteCopy[picked].body} It was sent to {email ?? 'your email'}.
+              {inviteCopy[picked].body} It only works when you sign in with the email it was created for.
             </p>
           </div>
           <form className="flex flex-col gap-4" onSubmit={join} noValidate>
