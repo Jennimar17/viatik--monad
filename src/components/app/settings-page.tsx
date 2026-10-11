@@ -438,6 +438,9 @@ export function SettingsPage() {
           title="Notifications"
           description="What Viatik tells you about. In-app notifications are always on."
         >
+          <p className="text-xs text-pretty text-subtle">
+            Email notifications are not available yet. When they are, you can choose them here.
+          </p>
           <ul className="flex flex-col">
             {notificationRows.map(({ key, label }) => (
               <li
@@ -447,14 +450,8 @@ export function SettingsPage() {
                 <label htmlFor={`notify-${key}`} className="text-sm">
                   {label}
                 </label>
-                <Switch
-                  id={`notify-${key}`}
-                  checked={preferences[key]}
-                  onCheckedChange={(checked) => {
-                    updatePreferences({ [key]: Boolean(checked) })
-                    toast.success('Preference saved.')
-                  }}
-                />
+                {/* Nothing sends email yet, so these stay off rather than pretend to save a choice. */}
+                <Switch id={`notify-${key}`} checked={false} disabled />
               </li>
             ))}
           </ul>
