@@ -25,6 +25,7 @@ import { useCommand, useViatikState } from '@/data/react'
 import { remindersDue } from '@/domain/accountability'
 import { categoryLabel } from '@/domain/labels'
 import { formatUsd, type Cents } from '@/domain/money'
+import { dayIn } from '@/domain/schedules'
 import { accountBalance } from '@/domain/selectors'
 import type { Id, Reminder, SpendingCategory } from '@/domain/types'
 import { daysUntil, formatDate } from '@/lib/format'
@@ -266,7 +267,10 @@ export function NewReminderSheet({
   const { state, now } = useViatikState()
   const create = useCommand('createReminder')
   const accounts = state.accounts.filter((a) => a.agencyId === agencyId && a.status === 'active')
-  const today = new Date(now).getUTCDate()
+  // The Agency's calendar day (YYYY-MM-DD), as the keeper decides a monthly payment is due today or
+  // overdue (`remindersToNotify`): the hint, the default day and the success message follow it.
+  const todayDate = dayIn(now, state.agencies.find((a) => a.id === agencyId)?.timeZone)
+  const today = Number(todayDate.slice(8, 10))
   const [title, setTitle] = React.useState('')
   const [payee, setPayee] = React.useState('')
   const [amount, setAmount] = React.useState<Cents | null>(null)
@@ -295,6 +299,8 @@ export function NewReminderSheet({
 
   const busy = create.isPending
   const dayOfMonth = Number(day)
+  // The day it is first due: day N of the creation month in UTC, as `remindersDue` counts it.
+  const firstDueDay = `${dayIn(now, 'UTC').slice(0, 8)}${String(dayOfMonth).padStart(2, '0')}`
   const account = accounts.find((a) => a.id === accountId)
   const created = remindersDue(state, agencyId, now).find((r) => r.reminder.id === createdId)
   const nothingAmount = amount !== null && amount <= 0
@@ -347,9 +353,9 @@ export function NewReminderSheet({
         title: 'Monthly payment created',
         body: !created
           ? `It shows in Bills ▸ Monthly. Use Pay now when it is time to pay ${who}.`
-          : daysUntil(created.dueAt, now) < 0
+          : created.dueAt.slice(0, 10) < todayDate
             ? `“${created.reminder.title}” shows as overdue: day ${created.reminder.dayOfMonth} has passed this month. Use Pay now in Bills ▸ Monthly to pay ${created.reminder.payee}; after that it is due on day ${created.reminder.dayOfMonth} of each month.`
-            : `“${created.reminder.title}” is due ${daysUntil(created.dueAt, now) === 0 ? 'today' : formatDate(created.dueAt)}, then on day ${created.reminder.dayOfMonth} of each month. Use Pay now in Bills ▸ Monthly when it is time to pay ${created.reminder.payee}.`,
+            : `“${created.reminder.title}” is due ${created.dueAt.slice(0, 10) === todayDate ? 'today' : formatDate(created.dueAt)}, then on day ${created.reminder.dayOfMonth} of each month. Use Pay now in Bills ▸ Monthly when it is time to pay ${created.reminder.payee}.`,
       }}
     >
       <div className="flex flex-col gap-5">
@@ -402,9 +408,9 @@ export function NewReminderSheet({
             label="Due on day"
             htmlFor="reminder-day"
             hint={
-              dayOfMonth === today
+              firstDueDay === todayDate
                 ? `Day ${dayOfMonth} is today, so it is due right away.`
-                : dayOfMonth < today
+                : firstDueDay < todayDate
                   ? `Day ${dayOfMonth} has passed this month, so it shows as overdue right away.`
                   : 'From 1 to 28, so it falls in every month.'
             }
