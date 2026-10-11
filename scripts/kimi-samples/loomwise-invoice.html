@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Loomwise invoice (sample)</title>
+    <!-- Sample invoice for the Viatik demo from a fictional company. Rendered once to public/demo/kimi/loomwise-invoice.pdf and read by Kimi. -->
+    <style>
+      @page {
+        size: A4;
+        margin: 22mm 18mm;
+      }
+      body {
+        margin: 0;
+        color: #1c1a24;
+        font:
+          11pt/1.5 Arial,
+          Helvetica,
+          sans-serif;
+      }
+      h1 {
+        font-size: 20pt;
+        margin: 0 0 4pt;
+        color: #3a2a6b;
+      }
+      .muted {
+        color: #5d5a66;
+      }
+      .sample {
+        margin: 6pt 0 18pt;
+        padding: 6pt 9pt;
+        border: 1px solid #cfcbd9;
+        font-size: 9.5pt;
+        color: #5d5a66;
+      }
+      .grid {
+        display: flex;
+        justify-content: space-between;
+        gap: 24pt;
+        margin-bottom: 18pt;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 6pt;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 6pt 4pt;
+        border-bottom: 1px solid #e0dde8;
+        vertical-align: top;
+      }
+      th:last-child,
+      td:last-child {
+        text-align: right;
+      }
+      .totals {
+        width: 46%;
+        margin-left: auto;
+        margin-top: 10pt;
+      }
+      .totals div {
+        display: flex;
+        justify-content: space-between;
+        padding: 3pt 0;
+      }
+      .grand {
+        font-weight: bold;
+        font-size: 12.5pt;
+        border-top: 1px solid #1c1a24;
+        margin-top: 4pt;
+      }
+      .mono {
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 10pt;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Loomwise, Inc.</h1>
+    <div class="muted">Team plan · loomwise.example · billing@loomwise.example</div>
+    <div class="sample">Sample document for the Viatik demo. Loomwise is a fictional company.</div>
+
+    <div class="grid">
+      <div>
+        <strong>Invoice</strong><br />
+        Invoice number: LW-2026-10-0412<br />
+        Invoice date: Oct 10, 2026<br />
+        Terms: Due on receipt
+      </div>
+      <div>
+        <strong>Bill to</strong><br />
+        Arc Studio
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th>Period</th>
+          <th>Qty</th>
+          <th>Unit price</th>
+          <th>Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Loomwise Team — monthly subscription</td>
+          <td>Oct 10 – Nov 9, 2026</td>
+          <td>4 seats</td>
+          <td>9.00 USD</td>
+          <td>36.00 USD</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="totals">
+      <div><span>Subtotal</span><span>36.00 USD</span></div>
+      <div><span>Tax</span><span>0.00 USD</span></div>
+      <div class="grand"><span>Total due</span><span>36.00 USD</span></div>
+    </div>
+
+    <p>Billed monthly. Next charge: Nov 10, 2026</p>
+    <p>
+      Pay to (USD stablecoin, Monad Testnet):<br /><span class="mono"
+        >0x7A3b9C41d5E26f08B4a1C9e3D7f2A6b05E8c4D19</span
+      >
+    </p>
+  </body>
+</html>
