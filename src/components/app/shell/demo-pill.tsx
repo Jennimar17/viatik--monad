@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, FlaskConical, LayoutList, Palette, RotateCcw } from 'lucide-react'
+import { Check, FlaskConical, RotateCcw } from 'lucide-react'
 import type { Route } from 'next'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -103,12 +103,6 @@ export function DemoPill() {
             })}
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
-          <DropdownMenuItem className="gap-2 rounded-lg" onClick={() => router.push('/design')}>
-            <Palette className="size-4" /> Design system
-          </DropdownMenuItem>
-          <DropdownMenuItem className="gap-2 rounded-lg" onClick={() => router.push('/design/screens')}>
-            <LayoutList className="size-4" /> All screens
-          </DropdownMenuItem>
           <DropdownMenuItem
             className="gap-2 rounded-lg"
             onClick={async () => {
