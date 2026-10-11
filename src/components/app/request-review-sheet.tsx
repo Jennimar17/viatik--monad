@@ -9,6 +9,7 @@ import { AttachmentNames } from '@/components/app/open-file'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
 import { requestRecipientLabel, requestTypeCopy } from '@/components/app/request-parts'
 import { usePermissions } from '@/components/app/role-context'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
@@ -73,6 +74,10 @@ export function RequestReviewSheet({
   const decline = useCommand('declineRequest')
   const [mode, setMode] = React.useState<'review' | 'decline'>('review')
   const [reason, setReason] = React.useState('')
+  const steps = useSigningSteps(approve.phase, {
+    prepared: "Viatik checks the request again against its budget's limits and the ledger's rules.",
+    done: { label: 'Paid', detail: 'Recorded on Monad, with its receipt.' },
+  })
 
   const request = state.requests.find((r) => r.id === requestId)
   if (!request) return null
@@ -150,6 +155,8 @@ export function RequestReviewSheet({
       disabled={!allowed || (declining ? reason.trim().length < 3 : workAboveThreshold)}
       phase={active.phase}
       error={active.error}
+      // Previewed only for someone who can approve; once approving, they stay in place.
+      steps={!declining && (allowed || approve.phase !== 'idle') ? steps : undefined}
       onConfirm={() =>
         declining
           ? decline.run({ requestId: request.id, reason: reason.trim() })
