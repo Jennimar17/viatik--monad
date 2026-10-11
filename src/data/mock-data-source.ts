@@ -51,6 +51,33 @@ export class MockDataSource implements DataSource {
   private state: ViatikState | null = null
   /** Files added in this tab, by fingerprint. The demo stores nothing elsewhere. */
   private files = new Map<string, string>()
+  /** Told when another tab changes this device's demo data. */
+  private listeners = new Set<() => void>()
+
+  constructor() {
+    // Another tab ran an operation or reset the demo: take its copy, so this tab shows the same data.
+    if (typeof window !== 'undefined') window.addEventListener('storage', (event) => this.adopt(event))
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
+  }
+
+  /** Another tab saved the demo data. Anything unreadable is ignored and this tab keeps its copy. */
+  private adopt(event: StorageEvent) {
+    if (event.key !== STORAGE_KEY || !event.newValue) return
+    try {
+      const parsed = JSON.parse(event.newValue) as ViatikState | null
+      if (!parsed || parsed.version !== STATE_VERSION) return
+      this.state = upgradeState(parsed)
+    } catch {
+      return
+    }
+    for (const listener of this.listeners) listener()
+  }
 
   private read(): ViatikState {
     if (this.state) return this.state

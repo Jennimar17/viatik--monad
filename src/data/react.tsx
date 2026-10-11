@@ -156,6 +156,13 @@ export function ViatikProvider({
     void queryClient.invalidateQueries({ queryKey: LEDGER_KEY })
   }, [state, queryClient])
 
+  // Another tab on this device changed the demo data (an operation, or a reset): show it here too.
+  React.useEffect(() => {
+    if (!mode) return
+    const refresh = () => void queryClient.invalidateQueries({ queryKey: STATE_KEY })
+    return getDataSource(mode).subscribe?.(refresh)
+  }, [mode, queryClient])
+
   // Money sent to the person's Viatik account from outside Viatik (Alchemy tells the server, which
   // leaves a "Funds arrived" notification): read the account again and say so. Arrivals already
   // there on the first load are in the notifications and not announced again.
