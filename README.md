@@ -31,7 +31,7 @@ _Coming before 13 Oct._ The video (3 minutes or less) uses a real signed-in acco
 | On-chain proof                       | [Deployed contracts and transactions](#deployed-contracts-monad-testnet-chain-10143)                                                                                                                                    |
 | How a money action reaches Monad     | [`src/server/commands.ts`](src/server/commands.ts), [`src/data/settlement.ts`](src/data/settlement.ts), [`src/ledger/monad.ts`](src/ledger/monad.ts), [`src/lib/session.tsx`](src/lib/session.tsx)                      |
 | Sponsor integrations                 | [Privy, Alchemy, Kimi](#sponsor-integrations)                                                                                                                                                                           |
-| Tests                                | 266 Foundry tests (253 unit and fuzz tests, 6 of them fuzz, plus 13 stateful invariants) and 1,541 smoke checks across 6 suites, all passing on `a284d89`: [Testing](#testing)                                          |
+| Tests                                | 266 Foundry tests (253 unit and fuzz tests, 6 of them fuzz, plus 13 stateful invariants) and 1,572 smoke checks across 6 suites, all passing on `78eb601`: [Testing](#testing)                                          |
 | Hackathon disclosures                | [Pre-existing work](#pre-existing-work), [AI tools](#ai-tools-disclosure), [Build log](#build-log)                                                                                                                      |
 
 ### Try it on Monad (real account)
@@ -40,7 +40,7 @@ _Coming before 13 Oct._ The video (3 minutes or less) uses a real signed-in acco
 2. On the welcome page, choose **Investor**, name the portfolio, tick the confirmation and press **Create portfolio**.
 3. Go to **Vaults ▸ Add funds**. Press **Get test funds** (TestUSD minted to your Viatik account, gas sponsored), then **Transfer to Portfolio**. The transfer is a `deposit` on ViatikLedger, signed by your embedded wallet.
 4. When the sheet says **Funds credited**, press **View verified details**, then **View in explorer**. MonadVision shows the transaction, and the verified details list its block and receipt hash.
-5. To see budgets, payment requests, approvals and Kimi, invite an Agency Admin from your portfolio, and have the Admin invite a Member. The Kimi reader appears for real accounts in **Member ▸ Expenses ▸ Add receipt** and **Agency Admin ▸ Accounts ▸ Pay outside Viatik**.
+5. To see budgets, payment requests, approvals and Kimi, invite an Agency Admin from your portfolio, and have the Admin invite a Member. With a real account, the Kimi reader reads your own files live in **Member ▸ Expenses ▸ Add receipt** and **Agency Admin ▸ Accounts ▸ Pay outside Viatik**. The no-account demo shows Kimi's recorded readings of sample documents there instead, labelled as recorded.
 
 ## The problem
 
@@ -200,11 +200,11 @@ The Investor's Vaults page shows a read-only preview of how rewards on idle asse
 
 - **What it does.** A person adds a receipt or an invoice (PDF, PNG, JPG, WEBP or HEIC, up to 10 MB) and presses **Read with Kimi**. Kimi (`kimi-k3`, low reasoning effort; `kimi-k2.6` supported as a fallback) returns structured fields under a strict JSON schema: merchant, total, currency, date, whether it is a monthly charge, and which open item it matches. The server then checks every field before proposing anything. An amount in another currency is shown but never used. Future, invalid and over-two-years-old dates are dropped. A match must be an item Viatik offered, and it is re-checked against current state after Kimi answers (amount, date, still open). A monthly invoice can propose a monthly payment, unless one already exists for the same payee.
 - **Human in the loop.** A read saves nothing and runs no command. "Use these details" only fills in the form. The person checks it and submits through the normal flow, which settles on Monad as usual. **Kimi never moves money, never submits, and never proposes a payee's address: the person types and confirms it.** Kimi has no tools. Text inside a document is treated as data, and Kimi sees short keys (`c1…c25`) instead of real IDs.
-- **Privacy.** The server only sends the caller's own verified upload to Kimi, and re-hashes it first. Images go inline as data URLs. PDFs go through Kimi's file-extract API and are deleted at Kimi right after their text is read (best effort; a failed delete is logged). Scanned PDFs with almost no text are refused. Every reader card says "The file is sent to Kimi (Moonshot AI) to be read."
+- **Privacy.** The server only sends the caller's own verified upload to Kimi, and re-hashes it first. Images go inline as data URLs. PDFs go through Kimi's file-extract API and are deleted at Kimi right after their text is read (best effort; a failed delete is logged). Scanned PDFs with almost no text are refused. For real accounts, every reader card says "The file is sent to Kimi (Moonshot AI) to be read." In the demo, it says the demo sends nothing to Kimi.
 - **Limits.** 20 reads per person per day (per server instance) and one read at a time. A read has a 100-second deadline, and a single chat call has 55 seconds.
 - **Where it appears.** Member ▸ Expenses ▸ Add receipt. Agency Admin ▸ Accounts ▸ Pay outside Viatik, where a monthly invoice can become a monthly payment and the screen warns when the invoice looks like one already paid. Agency Admin ▸ Bills ▸ Invoices pending ▸ Read an invoice, where Kimi proposes which payment the invoice belongs to.
-- **Where in the code.** [`src/server/receipt-reader.ts`](src/server/receipt-reader.ts), the routes in [`src/server/evidence.ts`](src/server/evidence.ts) (`GET /api/v1/evidence/read/status`, `POST /api/v1/evidence/read`), [`src/components/app/kimi-reader.tsx`](src/components/app/kimi-reader.tsx), [`src/data/use-evidence-reader.ts`](src/data/use-evidence-reader.ts) and the smoke suite [`scripts/smoke/kimi.ts`](scripts/smoke/kimi.ts) (79 checks, no network).
-- **Important for testing.** The reader is available **only to real signed-in accounts** on a deployment with `KIMI_API_KEY` set. The demo personas at `/sign-in/demo` run in the browser and never show it.
+- **Where in the code.** [`src/server/receipt-reader.ts`](src/server/receipt-reader.ts), the routes in [`src/server/evidence.ts`](src/server/evidence.ts) (`GET /api/v1/evidence/read/status`, `POST /api/v1/evidence/read`), [`src/components/app/kimi-reader.tsx`](src/components/app/kimi-reader.tsx), [`src/data/use-evidence-reader.ts`](src/data/use-evidence-reader.ts) and the smoke suite [`scripts/smoke/kimi.ts`](scripts/smoke/kimi.ts) (110 checks, no network).
+- **Important for testing.** Live reads are available **to real signed-in accounts** on a deployment with `KIMI_API_KEY` set, and the demo video shows one. The demo personas at `/sign-in/demo` run in the browser and send nothing to Kimi. Instead, they show Kimi's recorded readings of sample documents (a receipt and two invoices that `kimi-k3` read once), labelled as recorded and checked against the visitor's demo data like a live read. Press **Use the sample receipt** or **Use the sample invoice** on the screens above.
 - **Article:** _coming before 13 Oct_
 
 **Not included: Envio.** It is not integrated. Viatik confirms its transactions by reading receipts and ViatikLedger logs over RPC.
@@ -555,21 +555,21 @@ Run them with `cd contracts && forge test`, and with `FOUNDRY_PROFILE=monad forg
 
 <!-- TODO(author): if a contract or test changes before submitting, re-run both commands and update the commit above. -->
 
-### App: smoke suites (1,541 checks)
+### App: smoke suites (1,572 checks)
 
 `node scripts/smoke.mjs [engine] [settlement] [genesis] [alchemy] [kimi] [schedules]` runs every suite, or only the ones named. Each step goes schema → engine → settlement plan → mock ledger → apply, then compares the ledger's books. The suites need no keys and no network.
 
-| Suite      | Checks                                                                                  |
-| ---------- | --------------------------------------------------------------------------------------- |
-| engine     | 881                                                                                     |
-| settlement | 98                                                                                      |
-| genesis    | 67                                                                                      |
-| alchemy    | 49                                                                                      |
-| kimi       | 79                                                                                      |
-| schedules  | 367                                                                                     |
-| **Total**  | **1,541 passed, 0 failed** (last run on 11 Oct 2026, commit `a284d89`, about 2 minutes) |
+| Suite      | Checks                                                                                 |
+| ---------- | -------------------------------------------------------------------------------------- |
+| engine     | 881                                                                                    |
+| settlement | 98                                                                                     |
+| genesis    | 67                                                                                     |
+| alchemy    | 49                                                                                     |
+| kimi       | 110                                                                                    |
+| schedules  | 367                                                                                    |
+| **Total**  | **1,572 passed, 0 failed** (last run on 11 Oct 2026, commit `78eb601`, under a minute) |
 
-<!-- TODO(author): re-run `node scripts/smoke.mjs` on the final commit and update the counts, the commit hash and the time above (and the 1,541 in "For judges"). -->
+<!-- TODO(author): re-run `node scripts/smoke.mjs` on the final commit and update the counts, the commit hash and the time above (and the 1,572 in "For judges"). -->
 
 Exit codes: `0` all passed, `1` a check failed, `2` the smoke itself broke.
 
@@ -596,7 +596,7 @@ The production build uses webpack because the Hostinger build sandbox blocks the
 - **Vendor payouts.** Vendor payments inside Viatik are delivered as real TestUSD to the single payout sink, which is the operator address `0x19F79Be75A05360af0BED0D99d9317eE3Df6D6c9`. So vendor payouts in Viatik land in the operator's wallet. `payOutside` is the path that sends TestUSD to an arbitrary address.
 - **Rules split between chain and server.** The contract enforces roles, the agreement and tranche state machine, budget status, allowed destinations, per-operation limits, available funds, approval thresholds and exception routing. Period limits, categories and expiry are enforced by the server's domain engine.
 - **Single state document.** All product state is one versioned JSON row written under a row lock. This keeps it consistent, but it is not built for high write concurrency.
-- **Demo mode is simulated.** `/sign-in/demo` runs the engine and a mock ledger in the browser. It sends no Monad transactions and does not show the Kimi reader.
+- **Demo mode is simulated.** `/sign-in/demo` runs the engine and a mock ledger in the browser. It sends no Monad transactions and sends nothing to Kimi: its Kimi reader shows recorded readings of sample documents, labelled as recorded. Live reads need a real account, and the demo video shows one.
 - **Scheduling granularity.** The keeper runs every 10 minutes, so a scheduled payment can settle up to about 10 minutes after it is due. Monthly payments fall due on their day of the month in the Agency's time zone (UTC when it has none).
 - **Kimi limits.** The 20-reads-per-day limit is kept in memory per server instance. It is a brake on one person, and the spending cap is the budget set in the Kimi console. Kimi reads totals only (no line items), and scanned PDFs are refused. Deleting a PDF at Kimi after reading it is best effort.
 - **Other limits.** There is no external wallet connection (Privy embedded wallets only). There is no Envio indexer. Database migrations are not in the repo (see the SQL above).
