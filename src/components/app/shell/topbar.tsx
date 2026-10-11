@@ -1,6 +1,6 @@
 'use client'
 
-import { Bell, LogOut, Search, Settings, UserRound } from 'lucide-react'
+import { Bell, LogOut, Search, Settings } from 'lucide-react'
 import Link from '@/components/viatik/link'
 import { usePathname, useRouter } from 'next/navigation'
 
@@ -53,21 +53,14 @@ export function Topbar() {
   return (
     <header className="glass-chrome sticky top-0 z-30 flex h-16 items-center gap-2 border-b px-3 sm:px-5">
       <SidebarTrigger className={role === 'member' ? 'hidden md:inline-flex' : undefined} />
-      <Link
-        href={href(role === 'member' ? 'home' : 'overview')}
-        className="flex items-center gap-2 md:hidden"
-        aria-label="Viatik home"
-      >
+      <Link href={href('overview')} className="flex items-center gap-2 md:hidden" aria-label="Viatik home">
         <ViatikMark className="size-7" />
       </Link>
 
       <Breadcrumb className="hidden min-w-0 md:block">
         <BreadcrumbList className="flex-nowrap">
           <BreadcrumbItem className="min-w-0">
-            <BreadcrumbLink
-              render={<Link href={href(role === 'member' ? 'home' : 'overview')} />}
-              className="truncate"
-            >
+            <BreadcrumbLink render={<Link href={href('overview')} />} className="truncate">
               {scopeName}
             </BreadcrumbLink>
           </BreadcrumbItem>
@@ -131,12 +124,8 @@ export function Topbar() {
               </DropdownMenuLabel>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="gap-2 rounded-lg"
-              onClick={() => router.push(href(role === 'member' ? 'profile' : 'settings'))}
-            >
-              {role === 'member' ? <UserRound className="size-4" /> : <Settings className="size-4" />}
-              {role === 'member' ? 'Profile' : 'Settings'}
+            <DropdownMenuItem className="gap-2 rounded-lg" onClick={() => router.push(href('settings'))}>
+              <Settings className="size-4" /> Settings
             </DropdownMenuItem>
             <DropdownMenuItem
               className="gap-2 rounded-lg"

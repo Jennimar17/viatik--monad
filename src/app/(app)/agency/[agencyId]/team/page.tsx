@@ -5,20 +5,27 @@ import { MailPlus, UserPlus, Users } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import * as React from 'react'
 
+import { PeopleToJustifyList, personStatus, RemindButton } from '@/components/app/accountability-parts'
 import { InvitationLink } from '@/components/app/invitation-link'
 import { InviteSheet } from '@/components/app/invite-sheet'
 import { PageTabs } from '@/components/app/page-tabs'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
+import { useTabParam } from '@/components/app/use-tab-param'
 import { Button } from '@/components/ui/button'
 import { Amount } from '@/components/viatik/amount'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
 import { DataTable } from '@/components/viatik/data-table'
 import { EmptyState } from '@/components/viatik/feedback'
-import { PageHeader } from '@/components/viatik/layout'
+import { PageHeader, Panel } from '@/components/viatik/layout'
 import { PersonAvatar, roleIcons } from '@/components/viatik/people'
 import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useCommand, useViatikState } from '@/data/react'
-import { formatUsd, sum, type Cents } from '@/domain/money'
+import {
+  accountabilityByPerson,
+  JUSTIFY_WITHIN_DAYS,
+  type PersonAccountability,
+} from '@/domain/accountability'
+import { formatUsd, sum, ZERO, type Cents } from '@/domain/money'
 import { roleLabel } from '@/domain/permissions'
 import { userName } from '@/domain/queries'
 import type { Membership } from '@/domain/types'
@@ -32,14 +39,35 @@ type Row = {
   budgets: number
   allowance: Cents
   spent: Cents
+  /** Money for purchases still to justify. */
+  toJustify: Cents
+  /** What they still owe, if anything (money to justify or vendor receipts). */
+  owing?: PersonAccountability
 }
 
+const TABS = ['members', 'receipts', 'invitations'] as const
+
+/** Where a person's receipts stand, for the Receipts filter. */
+const receiptsState = (owing: PersonAccountability | undefined) =>
+  !owing ? 'none' : owing.overdueCount > 0 ? 'overdue' : 'pending'
+
 export default function TeamPage() {
+  // useSearchParams (the open tab) needs a boundary for the static prerender.
+  return (
+    <React.Suspense>
+      <Team />
+    </React.Suspense>
+  )
+}
+
+/** People in the Agency, who still owes receipts (`?tab=receipts`), and pending invitations. */
+function Team() {
   const { state, now } = useViatikState()
   const { scopeId: agencyId } = useRole()
   const href = useHref()
   const router = useRouter()
   const { can } = usePermissions()
+  const tabs = useTabParam(TABS, 'members')
   const [inviteOpen, setInviteOpen] = React.useState(false)
   const [cancelId, setCancelId] = React.useState<string | null>(null)
   const cancel = useCommand('cancelInvitation')
@@ -56,6 +84,11 @@ export default function TeamPage() {
   const month = now.slice(0, 7)
   // Fixed while the cancel sheet is open, so its copy does not change once the invitation expires.
   const cancelling = state.invitations.find((i) => i.id === cancelId)
+  // Everyone with money for purchases to justify or vendor receipts missing, most overdue first.
+  const people = accountabilityByPerson(state, agencyId, now)
+  const owingBy = new Map(people.map((p) => [p.userId, p]))
+  const overdueTotal = sum(people, (p) => p.overdue)
+  const pendingTotal = sum(people, (p) => p.pending)
 
   const rows: Row[] = memberships.map((m) => {
     const user = state.users.find((u) => u.id === m.userId)
@@ -85,6 +118,8 @@ export default function TeamPage() {
       budgets: allowances.length,
       allowance: sum(allowances, (a) => a.periodLimit),
       spent,
+      toJustify: owingBy.get(m.userId)?.pending ?? ZERO,
+      owing: owingBy.get(m.userId),
     }
   })
 
@@ -132,6 +167,21 @@ export default function TeamPage() {
       cell: ({ row }) => <Amount value={row.original.spent} size="sm" />,
     },
     {
+      accessorKey: 'toJustify',
+      header: 'To justify',
+      meta: { align: 'right' },
+      cell: ({ row }) => {
+        const { owing, toJustify } = row.original
+        if (!owing) return <span className="text-sm text-subtle">—</span>
+        return (
+          <span className="flex flex-col items-end gap-1">
+            {toJustify > 0 ? <Amount value={toJustify} size="sm" /> : null}
+            {owing.overdueCount > 0 || toJustify === 0 ? <StatusBadge status={personStatus(owing)} /> : null}
+          </span>
+        )
+      },
+    },
+    {
       id: 'status',
       header: 'Status',
       cell: ({ row }) => (
@@ -158,15 +208,20 @@ export default function TeamPage() {
           </span>
         }
         actions={
-          can('manage_team') ? (
-            <Button size="pill" onClick={() => setInviteOpen(true)}>
-              <UserPlus data-icon="inline-start" /> Invite member
-            </Button>
-          ) : null
+          <>
+            {/* Renders nothing when nobody can be reminded; stays (disabled) once everyone was reminded. */}
+            <RemindButton agencyId={agencyId} people={people} size="pill" />
+            {can('manage_team') ? (
+              <Button size="pill" onClick={() => setInviteOpen(true)}>
+                <UserPlus data-icon="inline-start" /> Invite member
+              </Button>
+            ) : null}
+          </>
         }
       />
 
       <PageTabs
+        {...tabs}
         tabs={[
           {
             value: 'members',
@@ -197,6 +252,16 @@ export default function TeamPage() {
                       { value: 'revoked', label: 'Removed' },
                     ],
                   },
+                  {
+                    id: 'receipts',
+                    label: 'Receipts',
+                    accessor: (r) => receiptsState(r.owing),
+                    options: [
+                      { value: 'overdue', label: 'Receipts overdue' },
+                      { value: 'pending', label: 'Receipts pending' },
+                      { value: 'none', label: 'Up to date' },
+                    ],
+                  },
                 ]}
                 onRowClick={(r) => router.push(href(`team/${r.membership.userId}`))}
                 initialSorting={[{ id: 'name', desc: false }]}
@@ -207,10 +272,13 @@ export default function TeamPage() {
                       <span className="truncate text-sm font-medium">{r.name}</span>
                       <span className="truncate text-xs text-subtle">
                         {roleLabel[r.membership.role]} · {formatUsd(r.allowance)} allowance
+                        {r.toJustify > 0 ? ` · ${formatUsd(r.toJustify)} to justify` : ''}
                       </span>
                     </span>
                     {r.membership.status === 'revoked' ? (
                       <StatusBadge status={{ label: 'Removed', tone: 'neutral' }} />
+                    ) : r.owing && r.owing.overdueCount > 0 ? (
+                      <StatusBadge status={personStatus(r.owing)} />
                     ) : null}
                   </div>
                 )}
@@ -223,6 +291,30 @@ export default function TeamPage() {
                   />
                 }
               />
+            ),
+          },
+          {
+            value: 'receipts',
+            label: 'Receipts pending',
+            count: people.length,
+            content: (
+              <Panel
+                title="Who still owes receipts"
+                description={
+                  pendingTotal > 0
+                    ? `${formatUsd(pendingTotal, { withCode: true })} to justify${overdueTotal > 0 ? `, ${formatUsd(overdueTotal, { withCode: true })} overdue` : ''}. Reminders go out at most once a day per person.`
+                    : people.length > 0
+                      ? 'Only receipts for vendor payments are missing. People add them from Expenses.'
+                      : `Money for purchases is justified with receipts within ${JUSTIFY_WITHIN_DAYS} days.`
+                }
+              >
+                <PeopleToJustifyList
+                  people={people}
+                  now={now}
+                  personHref={(userId) => href(`team/${userId}`)}
+                  action={(person) => <RemindButton agencyId={agencyId} person={person} />}
+                />
+              </Panel>
             ),
           },
           {

@@ -57,7 +57,7 @@ export default function TeamPaymentsPage() {
     accounts.find((a) => a.template === 'people')?.id ?? accounts[0]?.id,
   )
   const [memo, setMemo] = React.useState(`${monthName.format(new Date(now))} team payment`)
-  // Everyone paid before is preselected with their last amount.
+  // Everyone paid before is preselected with their last amount (a paid request for work is not payroll).
   const [rows, setRows] = React.useState<Row[]>(() =>
     people.map((m) => {
       const last = state.payments
@@ -65,6 +65,7 @@ export default function TeamPaymentsPage() {
           (p) =>
             p.recipient.kind === 'member' &&
             p.recipient.userId === m.userId &&
+            !p.requestId &&
             (p.type === 'team' || p.type === 'contractor'),
         )
         .sort((a, b) => (a.scheduledFor < b.scheduledFor ? 1 : -1))[0]

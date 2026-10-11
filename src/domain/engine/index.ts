@@ -2,7 +2,9 @@ import type { ViatikState } from '../types'
 import { execute, type CommandContext, type Tx } from './core'
 import * as funding from './funding'
 import * as operations from './operations'
+import * as outside from './outside'
 import * as people from './people'
+import * as schedules from './schedules'
 
 /**
  * Every state-changing operation in the product. The mock data source (client)
@@ -16,6 +18,7 @@ export const commands = {
   acceptAgreement: funding.acceptAgreement,
   setAgreementPaused: funding.setAgreementPaused,
   addFunds: funding.addFunds,
+  withdrawFunds: funding.withdrawFunds,
   fundAgreement: funding.fundAgreement,
   submitMilestoneEvidence: funding.submitMilestoneEvidence,
   requestTranche: funding.requestTranche,
@@ -43,6 +46,22 @@ export const commands = {
   attachReceipt: operations.attachReceipt,
   addDestination: operations.addDestination,
   returnUnusedFunds: operations.returnUnusedFunds,
+  withdrawBalance: operations.withdrawBalance,
+  addPayoutAddress: operations.addPayoutAddress,
+  removePayoutAddress: operations.removePayoutAddress,
+  updateDestination: operations.updateDestination,
+  setDestinationStatus: operations.setDestinationStatus,
+  payOutside: outside.payOutside,
+  addPaymentProof: outside.addPaymentProof,
+  returnToInvestor: outside.returnToInvestor,
+  remindReceipts: outside.remindReceipts,
+  createReminder: outside.createReminder,
+  setReminderStatus: outside.setReminderStatus,
+  schedulePayment: schedules.schedulePayment,
+  pauseSchedule: schedules.pauseSchedule,
+  resumeSchedule: schedules.resumeSchedule,
+  cancelSchedule: schedules.cancelSchedule,
+  dismissUnscheduledPayment: schedules.dismissUnscheduledPayment,
   invite: people.invite,
   acceptInvitation: people.acceptInvitation,
   cancelInvitation: people.cancelInvitation,
@@ -70,7 +89,7 @@ export function runCommand<N extends CommandName>(
 }
 
 export { DomainError, execute, Tx, type CommandContext, type DomainErrorCode, type VerifyInput } from './core'
-export { previewPolicy } from './operations'
+export { previewPolicy, workPaymentId } from './operations'
 export type {
   AllowanceDraft,
   CreateBudgetInput,
@@ -85,4 +104,13 @@ export type {
   TrancheDraft,
   EvidenceDraft,
 } from './funding'
+export type {
+  AddPaymentProofInput,
+  CreateReminderInput,
+  PayOutsideInput,
+  RemindReceiptsInput,
+  ReturnToInvestorInput,
+  SetReminderStatusInput,
+} from './outside'
 export type { CreateAgentInput } from './people'
+export type { DismissUnscheduledPaymentInput, ScheduleRefInput, SchedulePaymentInput } from './schedules'

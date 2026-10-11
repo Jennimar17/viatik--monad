@@ -41,6 +41,14 @@ contract ViatikLedgerStoryTest is Test {
         token = new TestUSD();
         ledger = new ViatikLedger(ITestUSD(address(token)), registrar, sink);
 
+        // Deposits move real tokens now: the Investor holds TestUSD and lets the ledger pull it.
+        token.mint(investor, token.MAX_MINT());
+        vm.prank(investor);
+        token.approve(address(ledger), type(uint256).max);
+        token.mint(stranger, token.MAX_MINT());
+        vm.prank(stranger);
+        token.approve(address(ledger), type(uint256).max);
+
         vm.startPrank(investor);
         ledger.createPortfolio(PF, PF_VAULT);
         ledger.registerAgency(AG, PF, FUND_VAULT);

@@ -46,6 +46,9 @@ contract ViatikLedgerReceiptsTest is LedgerFixture {
         assertEq(uint8(ViatikLedger.ReceiptKind.PaymentRejected), 6);
         assertEq(uint8(ViatikLedger.ReceiptKind.Return), 7);
         assertEq(uint8(ViatikLedger.ReceiptKind.Allocation), 8);
+        assertEq(uint8(ViatikLedger.ReceiptKind.Withdrawal), 9);
+        assertEq(uint8(ViatikLedger.ReceiptKind.OutsidePayment), 10);
+        assertEq(uint8(ViatikLedger.ReceiptKind.CapitalReturn), 11);
     }
 
     function testFuzz_PublicHelpersMatchTheSpecEncoding(
@@ -57,7 +60,7 @@ contract ViatikLedgerReceiptsTest is LedgerFixture {
         bytes32 evidence,
         address who
     ) public view {
-        ViatikLedger.ReceiptKind kind = ViatikLedger.ReceiptKind(uint8(bound(rawKind, 0, 8)));
+        ViatikLedger.ReceiptKind kind = ViatikLedger.ReceiptKind(uint8(bound(rawKind, 0, 11)));
         assertEq(
             ledger.receiptHash(opId, kind, amount, from, to, evidence), _hash(opId, kind, amount, from, to, evidence)
         );

@@ -1,8 +1,8 @@
 'use client'
 
-import { MoreHorizontal, PauseCircle, PlayCircle, Plus, UserPlus } from 'lucide-react'
+import { ArrowUpRight, MoreHorizontal, PauseCircle, PlayCircle, Plus, UserPlus } from 'lucide-react'
 import Link from '@/components/viatik/link'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import * as React from 'react'
 
 import { FormField, SimpleSelect } from '@/components/app/form-controls'
@@ -33,7 +33,7 @@ import { formatUsd, usd, ZERO, type Cents } from '@/domain/money'
 import { describeBudgetPolicy } from '@/domain/policy'
 import { accountName, actorName, destinationName, holderName } from '@/domain/queries'
 import { accountBalance, budgetUsage, holderSpentInPeriod, isHold, spendByMonth } from '@/domain/selectors'
-import { budgetStatus, requestStatus } from '@/domain/status'
+import { budgetStatus, requestStatusFor } from '@/domain/status'
 import { seriesColor, seriesKey } from '@/lib/chart-colors'
 import { formatDate, formatRelative, pluralize } from '@/lib/format'
 
@@ -44,6 +44,7 @@ export default function BudgetDetailPage() {
   const { state, now } = useViatikState()
   const { scopeId: agencyId } = useRole()
   const href = useHref()
+  const router = useRouter()
   const { can } = usePermissions()
   const [sheet, setSheet] = React.useState<SheetKind | null>(null)
   // What the open sheet acts on, fixed when it opens so a refresh cannot change its copy.
@@ -105,6 +106,16 @@ export default function BudgetDetailPage() {
   const revoking = state.allowances.find((a) => a.id === revokeId)
   const assignee = holderKey ? holderName(state, holderFromKey(holderKey)) : null
   const closeSheet = (open: boolean) => !open && setSheet(null)
+  // An open budget without a vendor list can pay an address outside Viatik (the engine refuses the others).
+  const canPayOutside = can('pay_outside')
+  const outsideBlocked =
+    budget.status !== 'active'
+      ? paused
+        ? 'Paused: resume it first'
+        : 'No longer active'
+      : budget.allowedDestinationIds.length > 0
+        ? 'Only pays its approved vendors'
+        : undefined
 
   return (
     <div className="flex flex-col gap-8">
@@ -131,27 +142,46 @@ export default function BudgetDetailPage() {
         }
         actions={
           <>
-            {can('pause_budget') ? (
+            {can('pause_budget') || canPayOutside ? (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={<Button variant="outline" size="icon-pill" aria-label="More actions" />}
                 >
                   <MoreHorizontal />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56 p-1.5">
-                  <DropdownMenuItem className="gap-2 rounded-lg" onClick={() => setSheet('fund')}>
-                    <Plus className="size-4" /> Add funds to budget
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="gap-2 rounded-lg"
-                    onClick={() => {
-                      setResuming(paused)
-                      setSheet('pause')
-                    }}
-                  >
-                    {paused ? <PlayCircle className="size-4" /> : <PauseCircle className="size-4" />}{' '}
-                    {paused ? 'Resume budget' : 'Pause budget'}
-                  </DropdownMenuItem>
+                <DropdownMenuContent align="end" className="w-60 p-1.5">
+                  {can('pause_budget') ? (
+                    <>
+                      <DropdownMenuItem className="gap-2 rounded-lg" onClick={() => setSheet('fund')}>
+                        <Plus className="size-4" /> Add funds to budget
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="gap-2 rounded-lg"
+                        onClick={() => {
+                          setResuming(paused)
+                          setSheet('pause')
+                        }}
+                      >
+                        {paused ? <PlayCircle className="size-4" /> : <PauseCircle className="size-4" />}{' '}
+                        {paused ? 'Resume budget' : 'Pause budget'}
+                      </DropdownMenuItem>
+                    </>
+                  ) : null}
+                  {canPayOutside ? (
+                    <DropdownMenuItem
+                      className="items-start gap-2 rounded-lg"
+                      disabled={Boolean(outsideBlocked)}
+                      onClick={() => router.push(href(`accounts/pay-outside?budget=${budget.id}`))}
+                    >
+                      <ArrowUpRight className="mt-0.5 size-4" />
+                      <span className="flex flex-col">
+                        Pay outside Viatik
+                        {outsideBlocked ? (
+                          <span className="text-xs text-subtle">{outsideBlocked}</span>
+                        ) : null}
+                      </span>
+                    </DropdownMenuItem>
+                  ) : null}
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}
@@ -282,7 +312,7 @@ export default function BudgetDetailPage() {
                   </span>
                   <span className="flex flex-col items-end gap-1">
                     <Amount value={r.amount} size="sm" />
-                    <StatusBadge status={requestStatus[r.status]} />
+                    <StatusBadge status={requestStatusFor(r)} />
                   </span>
                 </li>
               ))}

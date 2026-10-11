@@ -19,6 +19,7 @@ export type Capability =
   | 'create_agency'
   | 'create_agreement'
   | 'fund_agreement'
+  | 'withdraw_funds'
   | 'release_tranche'
   | 'request_tranche'
   | 'submit_milestone_evidence'
@@ -42,12 +43,25 @@ export type Capability =
   | 'view_verified_details'
   | 'view_reports'
   | 'manage_settings'
+  /** Pay outside Viatik (a tool, a subscription) from an account or an open budget. */
+  | 'pay_outside'
+  /** Return capital from an agency account to the Investor's Portfolio Vault. */
+  | 'return_capital'
+  /** Monthly reminders for things paid outside Viatik. */
+  | 'manage_reminders'
+  /**
+   * Pause, resume or cancel a scheduled payment. The Investor may too (the ledger lets the
+   * portfolio's Investor stop one); creating one is `send_payment` / `pay_member`.
+   */
+  | 'manage_schedules'
 
 export const PERMISSIONS: Record<Capability, Record<Role, Access>> = {
   view_portfolio: { investor: 'full', agency_admin: 'none', member: 'none' },
   create_agency: { investor: 'full', agency_admin: 'none', member: 'none' },
   create_agreement: { investor: 'full', agency_admin: 'none', member: 'none' },
   fund_agreement: { investor: 'full', agency_admin: 'none', member: 'none' },
+  // Only the Portfolio Vault can be withdrawn, and only by the Investor who funds it.
+  withdraw_funds: { investor: 'full', agency_admin: 'none', member: 'none' },
   release_tranche: { investor: 'full', agency_admin: 'none', member: 'none' },
   request_tranche: { investor: 'view', agency_admin: 'full', member: 'none' },
   submit_milestone_evidence: { investor: 'view', agency_admin: 'full', member: 'none' },
@@ -72,6 +86,10 @@ export const PERMISSIONS: Record<Capability, Record<Role, Access>> = {
   view_verified_details: { investor: 'full', agency_admin: 'full', member: 'own_only' },
   view_reports: { investor: 'full', agency_admin: 'full', member: 'none' },
   manage_settings: { investor: 'full', agency_admin: 'full', member: 'own_only' },
+  pay_outside: { investor: 'view', agency_admin: 'full', member: 'none' },
+  return_capital: { investor: 'view', agency_admin: 'full', member: 'none' },
+  manage_reminders: { investor: 'view', agency_admin: 'full', member: 'none' },
+  manage_schedules: { investor: 'full', agency_admin: 'full', member: 'none' },
 }
 
 /** Capabilities an AI Agent may exercise. Everything else is denied. */

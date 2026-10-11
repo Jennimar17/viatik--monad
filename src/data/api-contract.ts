@@ -95,6 +95,55 @@ export type VerifiedUpload = {
 /** `GET /v1/evidence/:evidenceId/link`: a short-lived link to open a file the caller may see. */
 export type EvidenceLink = { url: string }
 
+// ─── Reading a receipt or invoice with Kimi ──────────────────────────────────
+
+/**
+ * What the file is read for: a Member's receipt for money for purchases, or an
+ * Agency Admin's invoice of a payment outside Viatik.
+ */
+export type EvidenceReadPurpose = 'receipt' | 'invoice'
+
+/** `POST /v1/evidence/read`: one file the caller already uploaded and the server verified. */
+export type EvidenceReadRequest = { sha256: string; agencyId: string; purpose: EvidenceReadPurpose }
+
+/**
+ * What Kimi read in the file, after the server's checks. Only a proposal:
+ * nothing is saved, and the person confirms it through the usual forms.
+ * Amounts are in cents.
+ */
+export type EvidenceReadProposal = {
+  /** False when the file is not a receipt or invoice Kimi could read; the other fields are then empty. */
+  readable: boolean
+  /** Who was paid, cut to what the form accepts. */
+  merchant: string | null
+  /** The total, only when the document is in USD or shows no currency (`currencyUnknown`). */
+  amount: number | null
+  /** The total as printed when it is not in USD: shown, never used. */
+  foreignAmount: { amount: string; currency: string } | null
+  /** The document shows no currency: the person checks the amount is in USD. */
+  currencyUnknown: boolean
+  /** Purchase or issue date (YYYY-MM-DD); left out when in the future or more than two years old. */
+  date: string | null
+  /** The open item this document pays, once the server checked it fits and is still open. */
+  match: { kind: 'advance' | 'outside_payment'; id: string; label: string } | null
+  /** The document shows a monthly charge (a subscription, a monthly period, a next charge date). */
+  recurringMonthly: boolean
+  /** Why it looks monthly, in Kimi's words. */
+  recurringHint: string | null
+  /** Invoices of a monthly charge with no similar active monthly payment: what to fill in, if the person creates one. */
+  reminder: { title: string; payee: string; amount: number | null; dayOfMonth: number } | null
+  /** 0 to 1 for the whole reading; capped when the server had to leave something out. */
+  confidence: number
+  /** Short notes in product language, e.g. why a match was left out. */
+  notes: string[]
+}
+
+/** The answer of `POST /v1/evidence/read`: the proposal and the Kimi model that read it. */
+export type EvidenceReadAnswer = { proposal: EvidenceReadProposal; model: string }
+
+/** `GET /v1/evidence/read/status`: whether this deployment reads files with Kimi (the screens hide it otherwise). */
+export type EvidenceReaderStatus = { enabled: boolean }
+
 // ─── The ledger panel ────────────────────────────────────────────────────────
 
 /** Where a balance lives on the ledger. */
@@ -106,6 +155,25 @@ export type LedgerLocationKind = 'portfolio_vault' | 'funding_vault' | 'account'
  * for what the caller may see. The browser compares it with what its screens
  * show, so a balance is "verified" only when both agree.
  */
+/**
+ * The signed-in person's own account on Monad, for adding funds: the TestUSD it
+ * holds and how much of it the ledger may move (amounts in cents; the allowance
+ * is capped at the largest safe number). `available: false` on the demo ledger
+ * or before the person has an account.
+ */
+export type LedgerAccount =
+  | { available: false }
+  | {
+      available: true
+      address: Hex
+      token: Hex
+      ledger: Hex
+      balance: number
+      allowance: number
+      /** What one "Get test funds" press mints. */
+      testFunds: number
+    }
+
 export type LedgerView =
   | { settlement: 'demo' }
   | {
@@ -150,4 +218,44 @@ export type LedgerView =
       open: number
       /** People in the caller's workspaces who signed in with another account since the last reset. */
       needsReseed: string[]
+    }
+
+// ─── Network yield preview ───────────────────────────────────────────────────
+
+/**
+ * `GET /v1/ledger/yield` (public, no sign-in): Viatik's own test stake on Monad Testnet, a
+ * read-only preview of how rewards on idle assets would be reported. It is Viatik's, never
+ * anyone's capital: keep it out of balances, checks, charts and `Amount` (MON is not USD).
+ * Wei amounts are decimal strings (MON has 18 decimals; `formatMon` shows them).
+ * `available: false` when the network cannot be read and no recent read is left, or on mainnet.
+ */
+export type NetworkYield =
+  | { available: false }
+  | {
+      available: true
+      chainId: number
+      validatorId: number
+      /** Viatik's operator account, which staked its own test funds. */
+      delegator: Hex
+      /** Active stake: the part that earns rewards ("0" when the stake is gone, e.g. a testnet reset). */
+      stakeWei: string
+      /** Stake added that is not active yet, and the epoch it becomes active in. */
+      pendingStakeWei: string
+      pendingEpoch: number | null
+      /** Rewards earned since the stake became active (never claimed). */
+      rewardsWei: string
+      epoch: number
+      inEpochDelayPeriod: boolean
+      validator: { active: boolean; commissionPct: number; stakeWei: string }
+      /** When the stake started earning. */
+      activeFrom: { epoch: number; at: string }
+      /** The transaction that staked it. */
+      delegateTx: Hex
+      /** The block every value was read at, and that block's time. */
+      block: number
+      blockAt: string
+      /** When Viatik read it. */
+      readAt: string
+      /** The network could not be read just now: this is the last read, up to 15 minutes old. */
+      stale?: true
     }

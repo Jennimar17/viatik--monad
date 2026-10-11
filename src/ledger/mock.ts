@@ -1,3 +1,5 @@
+import { isAddress, isAddressEqual, zeroAddress, zeroHash } from 'viem'
+
 import { pseudoHash } from '@/domain/ids'
 import { formatUsd, type Cents } from '@/domain/money'
 import type { Id, LedgerReason, Location, ViatikState } from '@/domain/types'
@@ -37,6 +39,21 @@ const usd = (value: number) => formatUsd(value as Cents, { withCode: true })
 
 /** TestUSD mints at most 1,000,000 USD per call; the ledger refuses larger deposits. */
 const MAX_DEPOSIT = 100_000_000
+
+/** `DestinationNotAllowed(budget, 0)` from `payOutside`: a vendor list names vendors, never an address. */
+const ONLY_VENDORS = 'This budget only pays approved vendors. Pay outside Viatik from an account instead.'
+
+/** Who signs a plan marked `signer: 'keeper'` on the mock: the ledger's `keeper()`, which holds no role. */
+export const KEEPER_ACTOR = 'keeper'
+
+/** ViatikLedger's limits on schedules (`MIN_INTERVAL`, `MAX_RUNS`). */
+const MIN_INTERVAL = 60
+const MAX_RUNS = 52
+
+/** The contract's words for its errors, as revert.ts decodes them from Monad. */
+const NOT_ACCEPTED = 'The ledger did not accept this from your account.'
+const NOT_IN_STATE = 'The ledger is not in a state to do this right now.'
+const NOT_REGISTERED = 'Something this operation needs is not registered with the ledger yet.'
 
 type Options = {
   /** Simulated confirmation time of the one transaction. Monad finalizes in ~0.8 s; the mock stays close. */
@@ -80,13 +97,10 @@ export class MockLedgerAdapter implements LedgerAdapter {
     }
 
     // Simulate first, as the Monad adapter does: a revert sends nothing.
-    let run: Run
-    try {
-      run = new LedgerView(before).run(plan, this.now())
-    } catch (error) {
-      if (!(error instanceof Revert)) throw error
+    const run = simulateLedger(plan, before, this.now())
+    if (run.status === 'reverted') {
       emit('failed')
-      return { status: 'failed', records: [], error: error.error }
+      return { status: 'failed', records: [], error: run.error }
     }
 
     emit('waiting_for_confirmation')
@@ -95,7 +109,7 @@ export class MockLedgerAdapter implements LedgerAdapter {
     await sleep((this.options.latencyMs ?? 600) / 2)
 
     // A rejection the ledger recorded is a successful transaction that still answers no.
-    if (run.rejected) {
+    if (run.status === 'rejected') {
       emit('failed')
       return {
         status: 'failed',
@@ -113,12 +127,39 @@ export class MockLedgerAdapter implements LedgerAdapter {
   }
 }
 
+/** What the ledger holds after a run: every balance it keeps, the outside payments and the schedules it knows. */
+export type LedgerStorage = Pick<LedgerSnapshot, 'places' | 'members' | 'outside' | 'schedules'>
+
+/**
+ * A plan run on the mock ledger: what it recorded (`rejected` when it recorded a
+ * payment request's rejection) and its storage afterwards, or the revert.
+ */
+export type LedgerSimulation =
+  | ({ status: 'completed' | 'rejected'; records: LedgerRecord[] } & LedgerStorage)
+  | { status: 'reverted'; error: LedgerError }
+
+/**
+ * Runs a plan the way `settle` does, over the state the command ran on, without
+ * waiting. Besides the records it returns the ledger's storage afterwards, so a
+ * check can compare the ledger's own bookkeeping with the state the command
+ * produced (`ledgerSnapshot(after)`). A revert comes back as `reverted`.
+ */
+export function simulateLedger(plan: SettlementPlan, before: ViatikState, now: string): LedgerSimulation {
+  try {
+    const { rejected, ...run } = new LedgerView(before).run(plan, now)
+    return { status: rejected ? 'rejected' : 'completed', ...run }
+  } catch (error) {
+    if (!(error instanceof Revert)) throw error
+    return { status: 'reverted', error: error.error }
+  }
+}
+
 // ─── The contract, over the product state ───────────────────────────────────
 
 /** What a money operation leaves in the ledger's receipt, besides its id. */
 type Written = Omit<PlannedRecord, 'opId'>
 
-type Run = { records: LedgerRecord[]; rejected: boolean }
+type Run = { records: LedgerRecord[]; rejected: boolean } & LedgerStorage
 
 class Revert extends Error {
   constructor(readonly error: LedgerError) {
@@ -150,6 +191,8 @@ class LedgerView {
   private readonly allowances: LedgerSnapshot['allowances']
   private readonly requests: LedgerSnapshot['requests']
   private readonly members: LedgerSnapshot['members']
+  private readonly outside: LedgerSnapshot['outside']
+  private readonly schedules: LedgerSnapshot['schedules']
   private readonly processed: LedgerSnapshot['processed']
 
   private actor: Id | null = null
@@ -174,11 +217,13 @@ class LedgerView {
     this.allowances = snapshot.allowances
     this.requests = snapshot.requests
     this.members = snapshot.members
+    this.outside = snapshot.outside
+    this.schedules = snapshot.schedules
     this.processed = snapshot.processed
   }
 
   run(plan: SettlementPlan, now: string): Run {
-    this.actor = plan.signerUserId
+    this.actor = plan.signer === 'keeper' ? KEEPER_ACTOR : plan.signerUserId
     this.now = now
     // One command is one transaction: every record of the plan shares its hash.
     this.transaction = pseudoHash(
@@ -193,7 +238,14 @@ class LedgerView {
         'rule_drift',
         'The ledger would record this operation differently from the app. Nothing was moved.',
       )
-    return { records: this.records, rejected: this.rejected }
+    return {
+      records: this.records,
+      rejected: this.rejected,
+      places: this.places,
+      members: this.members,
+      outside: this.outside,
+      schedules: this.schedules,
+    }
   }
 
   private apply(op: LedgerOp, plan: SettlementPlan) {
@@ -511,7 +563,7 @@ class LedgerView {
         const budget = this.budgetOf(op.budgetId)
         this.requireHolder(op.budgetId, budget, requester)
         if (op.memberUserId && (op.memberUserId !== requester || op.destinationId))
-          revert('not_authorized', 'A reimbursement can only pay the person who asks.')
+          revert('not_authorized', 'A request can only pay the Viatik balance of the person who asks.')
         if (op.amount === 0) revert('invalid_state', 'Enter an amount.')
         if (this.requests.has(op.requestId))
           revert('already_processed', 'This request was already submitted.')
@@ -667,6 +719,40 @@ class LedgerView {
         )
         return
       }
+      case 'withdraw': {
+        this.claim(op.opId)
+        this.requireRole(op.portfolioId, 'investor')
+        // Only a Portfolio Vault can be named: capital committed to an Agency never leaves through here.
+        const vault = this.placeOf(op.vaultId, 'portfolio_vault')
+        if (vault.scope !== op.portfolioId)
+          revert('invalid_state', 'This vault belongs to another portfolio.')
+        if (op.amount === 0) revert('invalid_state', 'There is nothing to withdraw.')
+        if (op.amount > vault.balance)
+          revert('insufficient_funds', `Only ${usd(vault.balance)} is available.`)
+        vault.balance -= op.amount
+        this.record(
+          op.opId,
+          'withdraw',
+          'Only the Portfolio Vault can be withdrawn',
+          written('withdrawal', op.amount, { id: op.vaultId }, { address: op.to }),
+        )
+        return
+      }
+      case 'withdrawMemberBalance': {
+        this.claim(op.opId)
+        const key = `${op.agencyId}|${this.caller()}`
+        const balance = this.members.get(key) ?? 0
+        if (op.amount === 0 || op.amount > balance)
+          revert('insufficient_funds', `Only ${usd(balance)} is available.`)
+        this.members.set(key, balance - op.amount)
+        this.record(
+          op.opId,
+          'withdrawMemberBalance',
+          'A withdrawal only takes your own balance',
+          written('withdrawal', op.amount, { member: this.caller() }, { address: op.to }),
+        )
+        return
+      }
       case 'returnToAgency': {
         this.claim(op.opId)
         const role = this.roles.get(`${op.agencyId}|${this.caller()}`)
@@ -689,7 +775,207 @@ class LedgerView {
         )
         return
       }
+      case 'payOutside': {
+        this.claim(op.paymentId)
+        const source = this.places.get(op.sourceId)
+        if (!source || (source.kind !== 'account' && source.kind !== 'budget'))
+          revert('not_registered', 'The source of this payment is not registered.')
+        const agency = source.scope
+        this.requireRole(agency, 'admin')
+        // The contract also refuses its own address and the token's, which the mock cannot know.
+        if (op.amount === 0 || !isAddress(op.to, { strict: false }) || isAddressEqual(op.to, zeroAddress))
+          revert('invalid_state', 'Pay an amount to a valid address.')
+        if (source.kind === 'budget') {
+          const budget = this.budgetOf(op.sourceId)
+          if (budget.paused) revert('budget_paused', 'This budget is paused.')
+          if (op.amount > budget.perOperationLimit)
+            revert(
+              'limit_exceeded',
+              `The amount exceeds the per-operation limit of ${usd(budget.perOperationLimit)}.`,
+            )
+          // `anyDestination` is false: its list names vendors, and an address is not one of them.
+          if (budget.destinations.size > 0) revert('destination_not_allowed', ONLY_VENDORS)
+        }
+        const threshold = this.exceptionThreshold(agency)
+        if (op.amount > threshold)
+          revert('limit_exceeded', `Above the Investor's exception threshold of ${usd(threshold)}.`)
+        this.payOut(op.sourceId, agency, null, op.amount)
+        this.outside.set(`${agency}|${op.paymentId}`, { evidenceHash: anchored(op.evidenceHash) })
+        this.record(
+          op.paymentId,
+          'payOutside',
+          'Paid outside Viatik · within the exception threshold',
+          written('outside_payment', op.amount, { id: op.sourceId }, { address: op.to }, op.evidenceHash),
+        )
+        return
+      }
+      case 'recordEvidence': {
+        // No claim: the invoice is anchored once per payment, whoever sends it.
+        this.requireRole(op.agencyId, 'admin')
+        const proof = this.outside.get(`${op.agencyId}|${op.paymentId}`)
+        if (!proof) revert('not_registered', 'The ledger has no payment outside Viatik with this id.')
+        if (!anchored(op.evidenceHash)) revert('invalid_state', 'The invoice has no fingerprint.')
+        if (proof.evidenceHash)
+          revert('already_processed', 'This payment already has its invoice on the ledger.')
+        proof.evidenceHash = op.evidenceHash
+        this.confirm(op.paymentId, 'recordEvidence', 'Invoice fingerprinted · anchored once')
+        return
+      }
+      case 'createSchedule': {
+        const source = this.places.get(op.sourceId)
+        if (!source || (source.kind !== 'account' && source.kind !== 'budget'))
+          revert('not_registered', 'The source of this payment is not registered.')
+        const agency = source.scope
+        this.requireRole(agency, 'admin')
+        if (!op.scheduleId) revert('invalid_state', NOT_IN_STATE)
+        if (this.schedules.has(op.scheduleId))
+          revert('already_processed', 'The ledger already recorded this operation.')
+        const toMember = op.memberUserId !== null
+        // Exactly one payee: a Member or a vendor.
+        if (toMember === (op.destinationId !== null)) revert('invalid_state', NOT_IN_STATE)
+        if (toMember && !this.roles.has(`${agency}|${op.memberUserId}`))
+          revert('not_registered', NOT_REGISTERED)
+        const firstRunAt = Math.floor(Date.parse(op.firstRunAt) / 1000)
+        if (op.amount === 0 || op.runs === 0 || op.runs > MAX_RUNS || firstRunAt < this.seconds())
+          revert('invalid_state', NOT_IN_STATE)
+        // A single run has no interval; a repeating one cannot be faster than MIN_INTERVAL.
+        if (op.intervalSeconds === 0 ? op.runs !== 1 : op.intervalSeconds < MIN_INTERVAL)
+          revert('invalid_state', NOT_IN_STATE)
+        this.requirePayable(op.sourceId, source.kind, agency, op.destinationId, op.memberUserId, op.amount)
+        this.schedules.set(op.scheduleId, {
+          agency,
+          source: op.sourceId,
+          destination: op.destinationId,
+          member: op.memberUserId,
+          creator: this.caller(),
+          amount: op.amount,
+          nextRunAt: firstRunAt,
+          interval: op.intervalSeconds,
+          runsLeft: op.runs,
+          status: 'active',
+          pausedByInvestor: false,
+        })
+        this.confirm(op.scheduleId, 'createSchedule', 'Scheduled payment · authorized by an Agency Admin')
+        return
+      }
+      case 'setScheduleStatus': {
+        const target = this.schedules.get(op.scheduleId) ?? revert('not_registered', NOT_REGISTERED)
+        // `_requireScheduleManager`: an Admin of the agency, or the Investor of its portfolio.
+        const asInvestor =
+          this.roles.get(`${this.portfolioOf(target.agency)}|${this.caller()}`) === 'investor'
+        if (!asInvestor && this.roles.get(`${target.agency}|${this.caller()}`) !== 'admin')
+          revert('not_authorized', NOT_ACCEPTED)
+        if (op.status === 'paused') {
+          if (target.status !== 'active') revert('invalid_state', NOT_IN_STATE)
+          target.status = 'paused'
+          target.pausedByInvestor = asInvestor
+        } else if (op.status === 'active') {
+          if (target.status !== 'paused') revert('invalid_state', NOT_IN_STATE)
+          if (target.pausedByInvestor && !asInvestor) revert('not_authorized', NOT_ACCEPTED)
+          target.status = 'active'
+          target.pausedByInvestor = false
+          // Dates that passed while it was paused are skipped, not paid.
+          const now = this.seconds()
+          if (target.nextRunAt <= now) {
+            if (target.interval === 0) target.nextRunAt = now
+            else
+              target.nextRunAt +=
+                (Math.floor((now - target.nextRunAt) / target.interval) + 1) * target.interval
+          }
+        } else {
+          if (target.status !== 'active' && target.status !== 'paused') revert('invalid_state', NOT_IN_STATE)
+          target.status = 'cancelled'
+        }
+        this.confirm(op.scheduleId, 'setScheduleStatus', SCHEDULE_CHANGE_POLICY[op.status])
+        return
+      }
+      case 'runSchedule': {
+        if (this.caller() !== KEEPER_ACTOR) revert('not_authorized', NOT_ACCEPTED)
+        const run = this.schedules.get(op.scheduleId) ?? revert('not_registered', NOT_REGISTERED)
+        if (run.status === 'paused') revert('schedule_paused', 'This scheduled payment is paused.')
+        if (run.status !== 'active') revert('invalid_state', NOT_IN_STATE)
+        if (this.seconds() < run.nextRunAt)
+          revert('not_due', 'This scheduled payment is not due yet on the ledger.')
+        this.claim(op.paymentId)
+        if (this.roles.get(`${run.agency}|${run.creator}`) !== 'admin') revert('not_authorized', NOT_ACCEPTED)
+        if (run.member && !this.roles.has(`${run.agency}|${run.member}`))
+          revert('not_registered', NOT_REGISTERED)
+        const source = this.places.get(run.source)
+        if (!source) revert('not_registered', 'The source of this payment is not registered.')
+        this.requirePayable(run.source, source.kind, run.agency, run.destination, run.member, run.amount)
+        run.runsLeft -= 1
+        if (run.runsLeft === 0) run.status = 'completed'
+        else run.nextRunAt += run.interval
+        this.payOut(run.source, run.agency, run.member, run.amount)
+        // No evidence: a scheduled run anchors no document.
+        this.record(
+          op.paymentId,
+          'runSchedule',
+          'Scheduled payment · paid automatically when due',
+          written('payment', run.amount as Cents, { id: run.source }, target(run.destination, run.member)),
+        )
+        return
+      }
+      case 'returnCapital': {
+        this.claim(op.opId)
+        const agency = this.placeOf(op.fromAccountId, 'account').scope
+        this.requireRole(agency, 'admin')
+        if (this.placeOf(op.portfolioVaultId, 'portfolio_vault').scope !== this.portfolioOf(agency))
+          revert('invalid_state', 'Capital goes back to the Portfolio Vault of this Agency’s portfolio.')
+        if (op.agreementId && this.agreements.get(op.agreementId)?.agency !== agency)
+          revert('invalid_state', 'This agreement belongs to another Agency.')
+        if (op.amount === 0) revert('invalid_state', 'Enter an amount.')
+        // No exception threshold: returning capital is never an exception, even while the agreement is paused.
+        this.move(op.fromAccountId, op.portfolioVaultId, op.amount)
+        this.record(
+          op.opId,
+          'returnCapital',
+          'Capital returns go to the Portfolio Vault',
+          written(
+            'capital_return',
+            op.amount,
+            { id: op.fromAccountId },
+            { id: op.portfolioVaultId },
+            op.evidenceHash,
+          ),
+        )
+        return
+      }
     }
+  }
+
+  /**
+   * `_requirePayable`: what a direct payment by an Admin must satisfy, shared by schedules. From a
+   * budget: paused, its per-operation limit, an approved destination (not for a Member); then the
+   * Investor's exception threshold.
+   */
+  private requirePayable(
+    sourceId: Id,
+    kind: LocationKind,
+    agency: Id,
+    destinationId: Id | null,
+    member: Id | null,
+    amount: number,
+  ) {
+    if (kind === 'budget') {
+      const budget = this.budgetOf(sourceId)
+      if (budget.paused) revert('budget_paused', 'This budget is paused.')
+      if (amount > budget.perOperationLimit)
+        revert(
+          'limit_exceeded',
+          `The amount exceeds the per-operation limit of ${usd(budget.perOperationLimit)}.`,
+        )
+      if (!member && !allowed(budget, destinationId))
+        revert('destination_not_allowed', 'This payment destination is not approved for this budget.')
+    }
+    const threshold = this.exceptionThreshold(agency)
+    if (amount > threshold)
+      revert('limit_exceeded', `Above the Investor's exception threshold of ${usd(threshold)}.`)
+  }
+
+  /** `block.timestamp`: the run's time, in whole seconds. */
+  private seconds() {
+    return Math.floor(Date.parse(this.now) / 1000)
   }
 
   /** `_check`: paused → destination (not for reimbursements) → per-operation limit → available. */
@@ -875,7 +1161,7 @@ class LedgerView {
     })
   }
 
-  /** An operation the ledger confirms with its own event, without a receipt (a tranche request). */
+  /** An operation the ledger confirms with its own event, without a receipt (a tranche request, an invoice). */
   private confirm(opId: Id, call: LedgerCall, contractPolicy: string) {
     const verified = this.verified(`${opId}:${call}`, contractPolicy)
     delete verified.receiptHash
@@ -891,6 +1177,13 @@ class LedgerView {
       transaction: this.transaction,
     })
   }
+}
+
+/** What a schedule change's record says, by the status it moved to. */
+const SCHEDULE_CHANGE_POLICY: Record<'paused' | 'active' | 'cancelled', string> = {
+  paused: 'Scheduled payment paused · nothing is paid until it resumes',
+  active: 'Scheduled payment resumed · dates that passed are skipped',
+  cancelled: 'Scheduled payment cancelled',
 }
 
 function written(
@@ -928,7 +1221,13 @@ function sameRecords(a: readonly PlannedRecord[], b: readonly PlannedRecord[]) {
 
 function sameEnd(a: RecordEnd, b: RecordEnd) {
   if (a === null || b === null) return a === b
+  if ('address' in a) return 'address' in b && a.address.toLowerCase() === b.address.toLowerCase()
   return 'member' in a ? 'member' in b && a.member === b.member : 'id' in b && a.id === b.id
+}
+
+/** A fingerprint as the contract stores it: zero is none. */
+function anchored(hash: Hash | null): Hash | null {
+  return hash && hash !== zeroHash ? hash : null
 }
 
 function allowed(budget: BudgetView, destinationId: Id | null) {

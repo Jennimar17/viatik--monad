@@ -2,10 +2,15 @@ import {
   ArrowLeftRight,
   BadgeCheck,
   Ban,
+  BellRing,
   Bot,
   Briefcase,
   Building2,
+  CalendarClock,
+  CalendarX2,
   CircleCheck,
+  ExternalLink,
+  FileCheck,
   FilePlus2,
   FileText,
   HandCoins,
@@ -15,8 +20,11 @@ import {
   PauseCircle,
   PieChart,
   PlayCircle,
+  ReceiptText,
+  RotateCcw,
   Send,
   ShieldX,
+  Undo2,
   UserPlus,
   UserRound,
 } from 'lucide-react'
@@ -57,13 +65,32 @@ const icons: Record<ActivityType, LucideIcon> = {
   agent_resumed: PlayCircle,
   agency_created: Building2,
   portfolio_created: Briefcase,
+  funds_withdrawn: Landmark,
+  destination_updated: Building2,
+  paid_outside: ExternalLink,
+  payment_proof_added: FileCheck,
+  capital_returned: Undo2,
+  receipt_added: ReceiptText,
+  advance_returned: RotateCcw,
+  receipts_reminded: BellRing,
+  reminder_created: CalendarClock,
+  reminder_updated: CalendarClock,
+  payment_scheduled: CalendarClock,
+  schedule_updated: CalendarClock,
+  schedule_failed: CalendarX2,
 }
 
-const DANGER: ReadonlySet<ActivityType> = new Set(['policy_rejected', 'payment_declined', 'agreement_frozen'])
+const DANGER: ReadonlySet<ActivityType> = new Set([
+  'policy_rejected',
+  'payment_declined',
+  'agreement_frozen',
+  'schedule_failed',
+])
 const SUCCESS: ReadonlySet<ActivityType> = new Set([
   'tranche_released',
   'payment_completed',
   'bill_reconciled',
+  'capital_returned',
 ])
 
 /** Domain activity records → the presentational feed (person or AI Agent, icon, tone). */

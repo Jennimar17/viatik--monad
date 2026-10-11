@@ -62,6 +62,8 @@ contract Smoke is Script {
         _fund(member, 0.3 ether);
         ledger.createPortfolio(pf, pfVault);
         ledger.registerAgency(ag, pf, fundVault);
+        token.mint(investor, 50_000 * USD);
+        token.approve(address(ledger), 50_000 * USD);
         ledger.deposit(_id("dep"), pf, pfVault, 50_000 * USD);
         bytes32[] memory tranches = new bytes32[](2);
         tranches[0] = _id("tr_1");

@@ -6,6 +6,7 @@ import type {
   PaymentType,
   ReceiptKind,
   ReleaseModel,
+  Reminder,
   RequestType,
   SpendingCategory,
   VaultKind,
@@ -98,12 +99,14 @@ export const paymentTypeLabel: Record<PaymentType, string> = {
   refund: 'Refund',
   capital_return: 'Capital return',
   automation: 'Automation payment',
+  advance: 'Money for purchases',
 }
 
 export const requestTypeLabel: Record<RequestType, string> = {
-  funds: 'Request funds',
+  funds: 'Money for purchases',
   vendor_payment: 'Vendor payment',
   reimbursement: 'Reimbursement',
+  work: 'Payment for work',
   automation: 'Automation payment',
 }
 
@@ -135,7 +138,10 @@ export const vaultKindLabel: Record<VaultKind, { label: string; description: str
   },
   funding: { label: 'Funding Vault', description: 'Capital committed to an Agency and not yet released.' },
   agency_reserve: { label: 'Agency Reserve', description: 'Agency capital held back from normal spending.' },
-  yield: { label: 'Yield Vault', description: 'Optional future vault for eligible idle assets.' },
+  yield: {
+    label: 'Yield Vault',
+    description: 'A preview of how rewards on eligible idle assets would be reported.',
+  },
 }
 
 export const receiptKindLabel: Record<ReceiptKind, string> = {
@@ -145,4 +151,25 @@ export const receiptKindLabel: Record<ReceiptKind, string> = {
   funding: 'Funding receipt',
   transfer: 'Transfer receipt',
   allocation: 'Allocation receipt',
+  withdrawal: 'Withdrawal receipt',
+  outside_payment: 'Outside payment receipt',
+  capital_return: 'Capital return receipt',
+}
+
+export const reminderCadenceLabel: Record<Reminder['cadence'], string> = {
+  monthly: 'Monthly',
+}
+
+/**
+ * How often a scheduled payment runs: "Once", "Every 7 days", "Every 2 minutes". The ledger
+ * repeats by a fixed number of seconds, so a "month" is honestly "Every 30 days".
+ */
+export function scheduleCadenceLabel(schedule: { intervalSeconds: number; runs: number }): string {
+  if (schedule.intervalSeconds === 0 || schedule.runs <= 1) return 'Once'
+  const every = (count: number, unit: string) => `Every ${count === 1 ? unit : `${count} ${unit}s`}`
+  const seconds = schedule.intervalSeconds
+  if (seconds % 86_400 === 0) return seconds === 604_800 ? 'Every week' : every(seconds / 86_400, 'day')
+  if (seconds % 3_600 === 0) return every(seconds / 3_600, 'hour')
+  if (seconds % 60 === 0) return every(seconds / 60, 'minute')
+  return every(seconds, 'second')
 }

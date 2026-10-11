@@ -1,5 +1,7 @@
-import { attachmentsHash, decisionHash } from '@/domain/evidence'
+import { parseAddress } from '@/domain/address'
+import { attachmentsHash, decisionHash, evidenceSetHash } from '@/domain/evidence'
 import { ZERO, type Cents } from '@/domain/money'
+import { isOutsidePayment } from '@/domain/queries'
 import type {
   Actor,
   Budget,
@@ -8,19 +10,21 @@ import type {
   Movement,
   PaymentRequest,
   PolicyRuleId,
+  Schedule,
   SpendingAllowance,
   VerifiedDetails,
   ViatikState,
 } from '@/domain/types'
-import type {
-  LedgerError,
-  LedgerErrorCode,
-  LedgerOp,
-  LedgerRecord,
-  PlannedRecord,
-  RecordEnd,
-  SettlementPlan,
-  SettlementResult,
+import {
+  RECEIPTLESS_CALLS,
+  type LedgerError,
+  type LedgerErrorCode,
+  type LedgerOp,
+  type LedgerRecord,
+  type PlannedRecord,
+  type RecordEnd,
+  type SettlementPlan,
+  type SettlementResult,
 } from '@/ledger/types'
 
 /**
@@ -61,7 +65,9 @@ type PlanArgs = {
 export function planSettlement({ before, after, actor }: PlanArgs): SettlementPlan | null {
   const signerUserId = actor.kind === 'user' ? actor.userId : null
   const newMovements = added(before.movements, after.movements)
-  // Automations and the system have no account to sign with: their money stays offchain (demo).
+  // The system's money is a scheduled payment's due run, which the keeper signs.
+  if (actor.kind === 'system') return keeperPlan(before, after, newMovements)
+  // Automations have no account to sign with: their money stays offchain (demo).
   if (!signerUserId) {
     return newMovements.length > 0
       ? { ops: [], records: [], signerUserId, keepOnFailure: false, uncovered: newMovements.map((m) => m.id) }
@@ -262,9 +268,23 @@ export function planSettlement({ before, after, actor }: PlanArgs): SettlementPl
   }
 
   // 12. Payment requests: new ones, approvals and closings. Requests of
-  // automations never reach the ledger; their money stays uncovered.
+  // automations never reach the ledger; their money stays uncovered. Payment
+  // for work never reaches it as a request either: it stays offchain until an
+  // Agency Admin approves it, and is then paid with `pay` (section 13).
   for (const request of added(before.requests, after.requests)) {
     if (request.requester.kind !== 'user') continue
+    if (request.type === 'work') {
+      // Any rejection of work is refused before the ledger, and stays in the history.
+      if (request.status === 'rejected') {
+        keepOnFailure = true
+        refusal = {
+          code: 'policy_rejected',
+          message: request.decision.reason?.message ?? 'This request is outside the budget rules.',
+          retryable: false,
+        }
+      }
+      continue
+    }
     const base = requestCall(request)
     if (request.status === 'rejected') {
       // The rejection stays in the history and is the answer, whether the ledger records it or not.
@@ -299,7 +319,9 @@ export function planSettlement({ before, after, actor }: PlanArgs): SettlementPl
     }
   }
   for (const [previous, next] of changed(before.requests, after.requests)) {
-    if (previous.status !== 'needs_approval' || next.requester.kind !== 'user') continue
+    // Work waiting for an Admin is not on the ledger: declining it closes nothing there.
+    if (previous.status !== 'needs_approval' || next.requester.kind !== 'user' || next.type === 'work')
+      continue
     if (next.status === 'declined' || next.status === 'cancelled') {
       push({ call: 'closeRequest', requestId: next.id })
     } else if (next.paymentId) {
@@ -319,16 +341,108 @@ export function planSettlement({ before, after, actor }: PlanArgs): SettlementPl
     else uncovered.push(movement.id)
   }
 
+  // 14. Invoices added to payments made outside Viatik, anchored once. The invoice of a
+  // payment made in this command travels with its `payOutside`. No receipt: the ledger
+  // emits `EvidenceRecorded`, not `Recorded`.
+  for (const [previous, next] of changed(before.payments, after.payments)) {
+    if (!isOutsidePayment(next) || previous.proof || !next.proof) continue
+    push({
+      call: 'recordEvidence',
+      agencyId: next.agencyId,
+      paymentId: next.id,
+      // The same fingerprint `payOutside` records for an invoice that comes with the payment.
+      evidenceHash: evidenceSetHash([next.proof]),
+    })
+  }
+
+  // 15. Scheduled payments: pauses, resumes and cancellations first (rescheduling a bill cancels its
+  // schedule and creates another in one transaction), then new schedules. No receipt: the ledger
+  // proves them with ScheduleStatusChanged and ScheduleCreated. A run is only ever the keeper's.
+  for (const [previous, next] of changed(before.schedules ?? [], after.schedules ?? [])) {
+    if (previous.status === next.status) continue
+    if (next.status === 'paused' || next.status === 'cancelled')
+      push({ call: 'setScheduleStatus', scheduleId: next.id, status: next.status })
+    else if (next.status === 'active' && previous.status === 'paused')
+      push({ call: 'setScheduleStatus', scheduleId: next.id, status: 'active' })
+    else uncovered.push(next.id)
+  }
+  for (const schedule of added(before.schedules ?? [], after.schedules ?? []))
+    push(createScheduleCall(schedule))
+
   if (ops.length === 0 && !refusal && uncovered.length === 0) return null
   return { ops, records, signerUserId, keepOnFailure, ...(refusal ? { refusal } : {}), uncovered }
+}
+
+/** `createSchedule` for a new schedule, from an account or its budget, to a vendor or a Member. */
+function createScheduleCall(schedule: Schedule): LedgerOp {
+  return {
+    call: 'createSchedule',
+    scheduleId: schedule.id,
+    sourceId: schedule.budgetId ?? schedule.sourceAccountId,
+    destinationId: schedule.recipient.kind === 'destination' ? schedule.recipient.destinationId : null,
+    memberUserId: schedule.recipient.kind === 'member' ? schedule.recipient.userId : null,
+    amount: schedule.amount,
+    firstRunAt: schedule.firstRunAt,
+    intervalSeconds: schedule.intervalSeconds,
+    runs: schedule.runs,
+  }
+}
+
+/**
+ * What the system's command needs from the ledger. Only a scheduled payment's
+ * due run moves money for it (`runScheduledPayment`): a payment made for a
+ * schedule run becomes `runSchedule`, signed by the keeper, recording a payment
+ * with no evidence from the schedule's source to its payee. Any other money is
+ * uncovered (the Monad ledger refuses the plan); a command that moves nothing
+ * (a notification) needs no plan.
+ */
+function keeperPlan(
+  before: ViatikState,
+  after: ViatikState,
+  newMovements: Movement[],
+): SettlementPlan | null {
+  if (newMovements.length === 0) return null
+  const ops: LedgerOp[] = []
+  const records: PlannedRecord[] = []
+  const uncovered: Id[] = []
+  const known = new Set((before.schedules ?? []).map((s) => s.id))
+  for (const movement of newMovements) {
+    const payment =
+      movement.kind === 'payment' && movement.refId
+        ? after.payments.find((p) => p.id === movement.refId)
+        : undefined
+    const schedule = payment?.scheduleId
+      ? after.schedules.find((s) => s.id === payment.scheduleId)
+      : undefined
+    if (!payment || !schedule || !known.has(schedule.id) || payment.recipient.kind === 'address') {
+      uncovered.push(movement.id)
+      continue
+    }
+    const sourceId = payment.budgetId ?? payment.sourceAccountId
+    const destinationId = payment.recipient.kind === 'destination' ? payment.recipient.destinationId : null
+    const memberUserId = payment.recipient.kind === 'member' ? payment.recipient.userId : null
+    ops.push({ call: 'runSchedule', scheduleId: schedule.id, paymentId: payment.id })
+    records.push(
+      record(payment.id, 'payment', movement.amount, { id: sourceId }, target(destinationId, memberUserId)),
+    )
+  }
+  return {
+    ops,
+    records,
+    signerUserId: null,
+    ...(ops.length > 0 ? { signer: 'keeper' as const } : {}),
+    keepOnFailure: false,
+    uncovered,
+  }
 }
 
 /**
  * Writes what the ledger recorded onto the state the command produced, after
  * every settlement (the mock now, Monad's confirm in step 8.3): the verified
  * details of the command's receipts, of a payment request (also a rejected
- * one) and of a tranche request. A request refused before the ledger gets no
- * ledger record, so no screen can say the ledger refused it.
+ * one), of a tranche request and of an invoice anchored after its outside
+ * payment. A request refused before the ledger gets no ledger record, so no
+ * screen can say the ledger refused it.
  *
  * It changes `after` in place, so a command's result (which points into it)
  * carries the same details.
@@ -347,7 +461,10 @@ export function applySettlement(
   const known = new Set(before.receipts.map((r) => r.id))
   for (const receipt of after.receipts) {
     if (known.has(receipt.id)) continue
-    const record = result.records.find((r) => r.opId === receipt.operationId && r.call !== 'requestTranche')
+    // Records without money (a tranche request, an invoice anchored later, a schedule) belong to no receipt.
+    const record = result.records.find(
+      (r) => r.opId === receipt.operationId && !RECEIPTLESS_CALLS.has(r.call),
+    )
     if (!record) continue
     receipt.verified = {
       ...record.verified,
@@ -393,17 +510,58 @@ export function applySettlement(
         : undefined
       if (milestone) milestone.submissionVerified = details
     }
+    // The invoice of an outside payment, anchored after it. The payment's receipt keeps its own
+    // fingerprint: its receipt hash committed to what the payment carried when it was made.
+    if (op.call === 'recordEvidence') {
+      const record = recorded(op.paymentId, 'recordEvidence')
+      const payment = after.payments.find((p) => p.id === op.paymentId)
+      if (!record || !payment) continue
+      payment.proofVerified = {
+        ...record.verified,
+        contractPolicy: 'Invoice fingerprinted · anchored once',
+        evidenceHash: op.evidenceHash,
+      }
+    }
+    // A schedule created, or paused, resumed or cancelled: what the ledger recorded for it.
+    if (op.call === 'createSchedule' || op.call === 'setScheduleStatus') {
+      const record = recorded(op.scheduleId, op.call)
+      const schedule = (after.schedules ?? []).find((s) => s.id === op.scheduleId)
+      if (!record || !schedule) continue
+      if (op.call === 'createSchedule') {
+        schedule.ledger = {
+          ...record.verified,
+          contractPolicy:
+            'Scheduled payment · authorized once by an Agency Admin, paid automatically when due',
+        }
+      } else {
+        schedule.changeLedger = { ...record.verified, contractPolicy: SCHEDULE_CHANGE_POLICY[op.status] }
+      }
+    }
   }
+}
+
+/** What the ledger's record of a schedule change says, by the status it moved to. */
+const SCHEDULE_CHANGE_POLICY: Record<'paused' | 'active' | 'cancelled', string> = {
+  paused: 'Scheduled payment paused · nothing is paid until it resumes',
+  active: 'Scheduled payment resumed · dates that passed are skipped',
+  cancelled: 'Scheduled payment cancelled',
 }
 
 /** The fingerprint a record carries: a payment's documents, or the decision behind a release. */
 function fingerprints(record: PlannedRecord | undefined): Partial<VerifiedDetails> {
   if (!record) return {}
-  if (record.kind === 'tranche_release')
-    return record.evidenceHash ? { decisionHash: record.evidenceHash } : {}
-  if (record.kind === 'payment' || record.kind === 'payment_pending' || record.kind === 'payment_rejected')
-    return { evidenceHash: record.evidenceHash }
-  return {}
+  switch (record.kind) {
+    case 'tranche_release':
+      return record.evidenceHash ? { decisionHash: record.evidenceHash } : {}
+    case 'payment':
+    case 'payment_pending':
+    case 'payment_rejected':
+    case 'outside_payment':
+    case 'capital_return':
+      return { evidenceHash: record.evidenceHash }
+    default:
+      return {}
+  }
 }
 
 /**
@@ -458,6 +616,34 @@ function movementCall(
         ),
       }
     }
+    case 'withdrawal': {
+      const address = to.kind === 'external' && to.address ? parseAddress(to.address) : null
+      if (!address) return null
+      if (from.kind === 'vault')
+        return {
+          op: {
+            call: 'withdraw',
+            opId: refId,
+            portfolioId: movement.portfolioId,
+            vaultId: from.vaultId,
+            amount,
+            to: address,
+          },
+          record: record(refId, 'withdrawal', amount, { id: from.vaultId }, { address }),
+        }
+      if (from.kind === 'recipient' && from.recipient.kind === 'member' && movement.agencyId)
+        return {
+          op: {
+            call: 'withdrawMemberBalance',
+            opId: refId,
+            agencyId: movement.agencyId,
+            amount,
+            to: address,
+          },
+          record: record(refId, 'withdrawal', amount, { member: signerUserId }, { address }),
+        }
+      return null
+    }
     case 'transfer':
       if (from.kind === 'account' && to.kind === 'account')
         return {
@@ -499,11 +685,28 @@ function movementCall(
     case 'payment': {
       if (settledPayments.has(refId)) return 'settled'
       const payment = after.payments.find((p) => p.id === refId)
-      // A payment for a request is settled by the request (paid at once or approved).
-      if (!payment || payment.requestId) return null
-      const bill = payment.billId ? after.bills.find((b) => b.id === payment.billId) : undefined
-      const evidenceHash = bill ? attachmentsHash([bill.document]) : null
+      if (!payment) return null
       const sourceId = payment.budgetId ?? payment.sourceAccountId
+      // Paid outside Viatik: the ledger records the address it went to, and the invoice if it came with it.
+      if (payment.recipient.kind === 'address') {
+        const address = payment.recipient.address ? parseAddress(payment.recipient.address) : null
+        if (!address) return null
+        const evidenceHash = payment.proof ? attachmentsHash([payment.proof]) : null
+        return {
+          op: { call: 'payOutside', paymentId: payment.id, sourceId, to: address, amount, evidenceHash },
+          record: record(payment.id, 'outside_payment', amount, { id: sourceId }, { address }, evidenceHash),
+        }
+      }
+      // A payment for a request is settled by the request (paid at once or approved), except
+      // payment for work, which the approving Admin pays with `pay` into the requester's balance.
+      const request = payment.requestId ? after.requests.find((r) => r.id === payment.requestId) : undefined
+      if (payment.requestId && request?.type !== 'work') return null
+      const bill = payment.billId ? after.bills.find((b) => b.id === payment.billId) : undefined
+      const evidenceHash = bill
+        ? attachmentsHash([bill.document])
+        : request
+          ? attachmentsHash(request.attachments)
+          : null
       const destinationId = payment.recipient.kind === 'destination' ? payment.recipient.destinationId : null
       const memberUserId = payment.recipient.kind === 'member' ? payment.recipient.userId : null
       return {
@@ -526,6 +729,21 @@ function movementCall(
         ),
       }
     }
+    // Capital an Admin returns from an agency account to its Portfolio Vault, under the agreement it names.
+    case 'capital_return':
+      if (from.kind !== 'account' || to.kind !== 'vault') return null
+      return {
+        op: {
+          call: 'returnCapital',
+          opId: refId,
+          fromAccountId: from.accountId,
+          portfolioVaultId: to.vaultId,
+          agreementId: movement.agreementId ?? null,
+          amount,
+          evidenceHash: null,
+        },
+        record: record(refId, 'capital_return', amount, { id: from.accountId }, { id: to.vaultId }),
+      }
     default:
       return null
   }

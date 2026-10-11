@@ -1,17 +1,26 @@
 'use client'
 
 import type { ColumnDef } from '@tanstack/react-table'
-import { ArrowLeftRight, PieChart } from 'lucide-react'
+import { ArrowLeftRight, ArrowUpRight, MoreHorizontal, PieChart, Undo2 } from 'lucide-react'
 import Link from '@/components/viatik/link'
 import { useParams } from 'next/navigation'
+import * as React from 'react'
 
 import { accountHistory } from '@/components/app/account-parts'
 import { BalanceCheckNote } from '@/components/app/balance-check'
 import { ButtonLink } from '@/components/app/button-link'
 import { locationLabel, movementLabel } from '@/components/app/capital-trail-panel'
 import { useReceiptDrawer } from '@/components/app/receipt-details'
+import { ReturnToInvestorSheet } from '@/components/app/return-to-investor-sheet'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Amount } from '@/components/viatik/amount'
 import { MoneyAreaChart } from '@/components/viatik/charts'
 import { DataTable } from '@/components/viatik/data-table'
@@ -20,6 +29,7 @@ import { KpiTile } from '@/components/viatik/finance'
 import { HairlineGrid, PageHeader, Panel } from '@/components/viatik/layout'
 import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useLedger, useViatikState } from '@/data/react'
+import { shortAddress } from '@/domain/address'
 import { accountTemplate } from '@/domain/labels'
 import { cents, sum } from '@/domain/money'
 import { receiptFor } from '@/domain/queries'
@@ -36,6 +46,7 @@ export default function AccountDetailPage() {
   const href = useHref()
   const { can } = usePermissions()
   const receipts = useReceiptDrawer()
+  const [returnOpen, setReturnOpen] = React.useState(false)
 
   const account = state.accounts.find((a) => a.id === accountId && a.agencyId === agencyId)
   if (!account) {
@@ -56,8 +67,29 @@ export default function AccountDetailPage() {
   const outflow = sum(movements.filter(isOutflow), (m) => m.amount)
   const budgets = state.budgets.filter((b) => b.sourceAccountId === account.id)
   const history = accountHistory(state, account, now)
-  const counterparty = (m: Movement) => locationLabel(state, isInflow(m) ? m.from : m.to)
+  // Paid outside Viatik by an Agency Admin: the payee and the address it went to.
+  const outsideAddress = (m: Movement) =>
+    m.kind === 'payment' && !isInflow(m) && m.to.kind === 'external' ? (m.to.address ?? '') : undefined
+  const counterparty = (m: Movement) => {
+    const other = isInflow(m) ? m.from : m.to
+    // Agency Admins do not see the Portfolio Vault itself: the return's receipt names it.
+    if (m.kind === 'capital_return') {
+      return receiptFor(state, m.receiptId)?.toLabel ?? locationLabel(state, other)
+    }
+    if (other.kind === 'external' && other.address) return `${other.label} · ${shortAddress(other.address)}`
+    return locationLabel(state, other)
+  }
   const signedAmount = (m: Movement) => (isInflow(m) ? m.amount : cents(-m.amount))
+  const balance = accountBalance(state, account.id)
+  const canPayOutside = can('pay_outside')
+  const canReturn = can('return_capital')
+  // Why money cannot leave this account now, for the actions that move it.
+  const blockedReason =
+    account.status === 'frozen'
+      ? `${account.name} is frozen: it cannot move money.`
+      : balance === 0
+        ? `${account.name} has no money yet.`
+        : undefined
 
   const columns: ColumnDef<Movement, unknown>[] = [
     {
@@ -77,7 +109,12 @@ export default function AccountDetailPage() {
     {
       id: 'counterparty',
       header: 'Counterparty',
-      cell: ({ row }) => <span className="text-sm text-muted-foreground">{counterparty(row.original)}</span>,
+      cell: ({ row }) => (
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm text-muted-foreground">{counterparty(row.original)}</span>
+          {outsideAddress(row.original) !== undefined ? <Tag className="shrink-0">Outside Viatik</Tag> : null}
+        </span>
+      ),
     },
     {
       id: 'amount',
@@ -121,15 +158,58 @@ export default function AccountDetailPage() {
           <>
             <Tag>{accountTemplate[account.template].label}</Tag>
             {account.status === 'frozen' ? (
-              <StatusBadge status={{ label: 'Frozen', tone: 'warning' }} />
+              <>
+                <StatusBadge status={{ label: 'Frozen', tone: 'warning' }} />
+                {/* Visible, and the reason the disabled "Pay outside Viatik" points to. */}
+                <span id="account-frozen-note" className="text-sm text-subtle">
+                  It cannot move money until it is active again.
+                </span>
+              </>
             ) : null}
           </>
         }
         actions={
           <>
+            {canReturn ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={<Button variant="outline" size="icon-pill" aria-label="More account actions" />}
+                >
+                  <MoreHorizontal />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64 p-1.5">
+                  <DropdownMenuItem
+                    className="items-start gap-2 rounded-lg"
+                    disabled={Boolean(blockedReason)}
+                    onClick={() => setReturnOpen(true)}
+                  >
+                    <Undo2 className="mt-0.5 size-4" />
+                    <span className="flex flex-col">
+                      Return to Investor
+                      {blockedReason ? <span className="text-xs text-subtle">{blockedReason}</span> : null}
+                    </span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
             {can('transfer_funds') ? (
               <ButtonLink href={href(`accounts/transfer?from=${account.id}`)} variant="outline" size="pill">
                 <ArrowLeftRight data-icon="inline-start" /> Transfer funds
+              </ButtonLink>
+            ) : null}
+            {/* Only a frozen account blocks it (the note beside the Frozen badge says why). An empty one
+                still opens the page, which says so and can pay from a budget or another account instead. */}
+            {canPayOutside && account.status === 'frozen' ? (
+              <Button variant="outline" size="pill" disabled aria-describedby="account-frozen-note">
+                <ArrowUpRight data-icon="inline-start" /> Pay outside Viatik
+              </Button>
+            ) : canPayOutside ? (
+              <ButtonLink
+                href={href(`accounts/pay-outside?from=${account.id}`)}
+                variant="outline"
+                size="pill"
+              >
+                <ArrowUpRight data-icon="inline-start" /> Pay outside Viatik
               </ButtonLink>
             ) : null}
             {can('create_budget') ? (
@@ -144,7 +224,7 @@ export default function AccountDetailPage() {
       <HairlineGrid className="grid-cols-2 lg:grid-cols-4">
         <KpiTile
           label="Balance"
-          value={accountBalance(state, account.id)}
+          value={balance}
           hint={<BalanceCheckNote check={checks?.check(account.id)} />}
           emphasis
         />
@@ -200,7 +280,10 @@ export default function AccountDetailPage() {
           columns={columns}
           caption={`${account.name} movements`}
           searchPlaceholder="Search movements"
-          searchText={(m) => `${movementLabel[m.kind]} ${counterparty(m)}`}
+          searchText={(m) => {
+            const address = outsideAddress(m)
+            return `${movementLabel[m.kind]} ${counterparty(m)}${address === undefined ? '' : ` Outside Viatik ${address}`}`
+          }}
           facets={[
             {
               id: 'direction',
@@ -226,6 +309,7 @@ export default function AccountDetailPage() {
                 <span className="truncate text-sm font-medium">{movementLabel[m.kind]}</span>
                 <span className="truncate text-xs text-subtle">
                   {counterparty(m)} · {formatDateTime(m.createdAt)}
+                  {outsideAddress(m) !== undefined ? ' · Outside Viatik' : ''}
                 </span>
               </span>
               <Amount value={signedAmount(m)} size="sm" signed tone={isInflow(m) ? 'positive' : 'default'} />
@@ -234,6 +318,12 @@ export default function AccountDetailPage() {
         />
       </section>
       {receipts.drawer}
+      <ReturnToInvestorSheet
+        open={returnOpen}
+        onOpenChange={setReturnOpen}
+        agencyId={agencyId}
+        accountId={account.id}
+      />
     </div>
   )
 }

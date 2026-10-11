@@ -118,3 +118,29 @@ export function nameFromEmail(email: string | null | undefined): string {
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ')
 }
+
+const WEI_DECIMALS = 18
+
+/**
+ * MON from wei (18 decimals), for the network's own test stake only: "3 MON", "0.0122 MON",
+ * "26,739,948 MON". Never app money (that is integer cents, `formatUsd`), and BigInt math so
+ * screens never bundle viem. Rounds down to `digits` decimals and drops trailing zeros; an
+ * amount too small to show reads "< 0.0001 MON". Anything that is not a whole number of wei
+ * reads "—".
+ */
+export function formatMon(wei: bigint | string, digits = 4): string {
+  let value: bigint
+  try {
+    value = typeof wei === 'bigint' ? wei : BigInt(wei)
+  } catch {
+    return '—'
+  }
+  const places = Math.min(WEI_DECIMALS, Math.max(0, Math.trunc(digits)))
+  const negative = value < 0n
+  const abs = negative ? -value : value
+  const shown = abs / 10n ** BigInt(WEI_DECIMALS - places)
+  if (shown === 0n && abs > 0n) return `< ${places === 0 ? '1' : `0.${'1'.padStart(places, '0')}`} MON`
+  const unit = 10n ** BigInt(places)
+  const fraction = places > 0 ? (shown % unit).toString().padStart(places, '0').replace(/0+$/, '') : ''
+  return `${negative ? '−' : ''}${(shown / unit).toLocaleString('en-US')}${fraction ? `.${fraction}` : ''} MON`
+}

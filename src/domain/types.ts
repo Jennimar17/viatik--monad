@@ -76,6 +76,8 @@ export type Agency = {
   timeZone: string
   status: AgencyStatus
   createdAt: ISODate
+  /** Scoped states only: the governing agreement's exception threshold, for viewers who cannot see agreements. */
+  exceptionThreshold?: Cents
 }
 
 // ─── Funding ─────────────────────────────────────────────────────────────────
@@ -270,7 +272,8 @@ export type PaymentDestination = {
   /** Generic, country-neutral settlement label. */
   settlementLabel: string
   website?: string
-  status: 'approved' | 'pending_review'
+  /** Paused and archived destinations cannot be paid; `approved` ones can. */
+  status: 'approved' | 'pending_review' | 'paused' | 'archived'
   addedAt: ISODate
 }
 
@@ -286,7 +289,14 @@ export type OperationStatus =
   | 'failed'
   | 'action_required'
 
-export type RequestType = 'funds' | 'vendor_payment' | 'reimbursement' | 'automation'
+/**
+ * - funds: money into the requester's Viatik balance for purchases (an advance they justify with receipts).
+ * - reimbursement: money back into the requester's Viatik balance for something they paid; carries its receipt.
+ * - work: payment for work into the requester's Viatik balance; an Agency Admin always reviews it, and it
+ *   reaches the ledger only when paid (`pay` from the budget).
+ * - vendor_payment / automation: paid to an approved vendor.
+ */
+export type RequestType = 'funds' | 'vendor_payment' | 'reimbursement' | 'work' | 'automation'
 
 export type RequestStatus =
   'needs_approval' | 'approved' | 'processing' | 'completed' | 'rejected' | 'declined' | 'cancelled'
@@ -307,6 +317,8 @@ export type PolicyRuleId =
   | 'agent_active'
   | 'approval_threshold'
   | 'exception_threshold'
+  /** Payment for work: always reviewed by an Agency Admin (non-blocking). */
+  | 'work_review'
 
 export type PolicyCheck = {
   rule: PolicyRuleId
@@ -338,6 +350,10 @@ export type PaymentRequest = {
   category: SpendingCategory
   purpose: string
   attachments: Evidence[]
+  /** Reimbursement: where the requester bought it. */
+  merchant?: string
+  /** Reimbursement: when the requester paid. */
+  spentAt?: ISODate
   status: RequestStatus
   decision: PolicyDecision
   approvedBy?: Id
@@ -351,9 +367,27 @@ export type PaymentRequest = {
 }
 
 export type PaymentType =
-  'team' | 'contractor' | 'reimbursement' | 'vendor' | 'tool' | 'refund' | 'capital_return' | 'automation'
+  | 'team'
+  | 'contractor'
+  | 'reimbursement'
+  | 'vendor'
+  | 'tool'
+  | 'refund'
+  | 'capital_return'
+  | 'automation'
+  /** Money a person requested for purchases: they justify it with receipts or return the rest. */
+  | 'advance'
 
-export type PaymentRecipient = { kind: 'destination'; destinationId: Id } | { kind: 'member'; userId: Id }
+/** Who Viatik pays inside the product: an approved vendor or a person's Viatik balance. */
+export type ViatikRecipient = { kind: 'destination'; destinationId: Id } | { kind: 'member'; userId: Id }
+
+export type PaymentRecipient =
+  | ViatikRecipient
+  /**
+   * Paid outside Viatik by an Agency Admin (a tool, a subscription). `address` is checksummed;
+   * it is absent only for viewers who may not see it (visibility).
+   */
+  | { kind: 'address'; payee: string; address?: string }
 
 export type Payment = {
   id: Id
@@ -374,6 +408,16 @@ export type Payment = {
   billId?: Id
   receiptId?: Id
   batchId?: Id
+  /** Outside payments: the invoice, attached once (with the payment or later). */
+  proof?: Evidence
+  /** What the ledger recorded when the invoice was anchored after the payment (recordEvidence). */
+  proofVerified?: VerifiedDetails
+  /** The monthly reminder this payment answered. */
+  reminderId?: Id
+  /** A run of a scheduled payment: the schedule the keeper paid it for. */
+  scheduleId?: Id
+  /** Which run of that schedule it was (1 = the first). */
+  scheduleRun?: number
 }
 
 export type BillStatus = 'to_pay' | 'scheduled' | 'paid' | 'reconciled'
@@ -393,7 +437,10 @@ export type Bill = {
   document: Evidence
   notes?: string
   paymentId?: Id
+  /** While scheduled: when its schedule is due (`Schedule.nextRunAt`). */
   scheduledFor?: ISODate
+  /** The schedule that pays it (status `scheduled`), kept once it paid it. */
+  scheduleId?: Id
   createdBy: Id
   createdAt: ISODate
 }
@@ -464,7 +511,16 @@ export type VerifiedDetails = {
   decisionHash?: `0x${string}`
 }
 
-export type ReceiptKind = 'payment' | 'tranche_release' | 'deposit' | 'funding' | 'transfer' | 'allocation'
+export type ReceiptKind =
+  | 'payment'
+  | 'tranche_release'
+  | 'deposit'
+  | 'funding'
+  | 'transfer'
+  | 'allocation'
+  | 'withdrawal'
+  | 'outside_payment'
+  | 'capital_return'
 
 export type Receipt = {
   id: Id
@@ -486,11 +542,15 @@ export type Receipt = {
 // ─── Ledger movements (capital trail) ────────────────────────────────────────
 
 export type Location =
-  | { kind: 'external'; label: string }
+  /**
+   * Outside Viatik. `address` is where the money went: a withdrawal's only its owner sees in
+   * full; an outside payment's, the Agency's Admins and its Investors.
+   */
+  | { kind: 'external'; label: string; address?: string }
   | { kind: 'vault'; vaultId: Id }
   | { kind: 'account'; accountId: Id }
   | { kind: 'budget'; budgetId: Id }
-  | { kind: 'recipient'; recipient: PaymentRecipient }
+  | { kind: 'recipient'; recipient: ViatikRecipient }
 
 export type MovementKind =
   | 'deposit'
@@ -501,6 +561,7 @@ export type MovementKind =
   | 'deallocate'
   | 'payment'
   | 'capital_return'
+  | 'withdrawal'
 
 /**
  * Every balance in the product is derived from these movements, so every
@@ -517,6 +578,8 @@ export type Movement = {
   agreementId?: Id
   refId?: Id
   receiptId?: Id
+  /** A give-back that settles an advance: the advance payment it returns money for. */
+  settlesPaymentId?: Id
   createdAt: ISODate
 }
 
@@ -586,6 +649,22 @@ export type ActivityType =
   | 'agent_resumed'
   | 'agency_created'
   | 'portfolio_created'
+  | 'funds_withdrawn'
+  | 'destination_updated'
+  | 'paid_outside'
+  | 'payment_proof_added'
+  | 'capital_returned'
+  | 'receipt_added'
+  | 'advance_returned'
+  | 'receipts_reminded'
+  | 'reminder_created'
+  | 'reminder_updated'
+  /** A payment scheduled for later (its runs are `payment_completed`). */
+  | 'payment_scheduled'
+  /** A scheduled payment paused, resumed or cancelled. */
+  | 'schedule_updated'
+  /** A due run of a scheduled payment could not be paid (it stays due). */
+  | 'schedule_failed'
 
 export type Activity = {
   id: Id
@@ -601,6 +680,9 @@ export type Activity = {
   createdAt: ISODate
 }
 
+/** A notification screens react to, besides showing it (absent on ordinary ones). */
+export type NotificationKind = 'funds_arrived'
+
 export type Notification = {
   id: Id
   userId: Id
@@ -609,6 +691,8 @@ export type Notification = {
   href: string
   createdAt: ISODate
   readAt?: ISODate
+  /** `funds_arrived`: money reached the person's Viatik account (from Alchemy), so its balance is read again. */
+  kind?: NotificationKind
 }
 
 export type Invitation = {
@@ -626,6 +710,145 @@ export type Invitation = {
 // ─── Aggregate state ─────────────────────────────────────────────────────────
 
 /** Everything the product knows, as one serializable snapshot. */
+/** An address a person saved to send their money to (their own wallets, in practice). */
+export type PayoutAddress = {
+  id: Id
+  userId: Id
+  label: string
+  address: string
+  createdAt: ISODate
+}
+
+export type ReminderStatus = 'active' | 'paused' | 'archived'
+
+/**
+ * A monthly reminder for an Agency Admin: something Viatik cannot pay directly
+ * (a tool, a subscription) that the Admin pays outside Viatik and documents with
+ * its invoice. Due dates are derived (src/domain/accountability.ts); nothing is
+ * scheduled and nothing reaches the ledger.
+ */
+export type Reminder = {
+  id: Id
+  agencyId: Id
+  /** What to do, e.g. "Pay Claude Teams and upload the invoice". */
+  title: string
+  /** Who gets paid, e.g. "Anthropic". */
+  payee: string
+  /** The usual amount, when known. */
+  amount?: Cents
+  category: SpendingCategory
+  cadence: 'monthly'
+  /** The day of the month it is due (1–28). */
+  dayOfMonth: number
+  /** The account it is usually paid from. */
+  sourceAccountId?: Id
+  status: ReminderStatus
+  createdBy: Id
+  createdAt: ISODate
+  updatedAt: ISODate
+}
+
+// ─── Scheduled payments ──────────────────────────────────────────────────────
+
+/**
+ * - active: the keeper pays each run once it is due (within minutes of its time).
+ * - paused: nothing is paid; on resume, dates that passed are skipped, not paid.
+ * - cancelled: stopped for good by an Agency Admin or the Investor.
+ * - completed: every run was paid.
+ */
+export type ScheduleStatus = 'active' | 'paused' | 'cancelled' | 'completed'
+
+/** Why the latest attempt at a due run could not pay. The run stays due and is tried again. */
+export type ScheduleFailure = {
+  /** The run it concerns (1 = the first). */
+  run: number
+  /** A domain or ledger error code (`insufficient_funds`, `budget_paused`…). */
+  code: string
+  /** Product language, safe to show to the Agency's Admins and Investors. */
+  message: string
+  /** When this run first failed for this reason. */
+  at: ISODate
+}
+
+/**
+ * A payment an Agency Admin authorized once, from an account or a budget to a
+ * vendor or a person's Viatik balance, for a later date (and possibly every
+ * `intervalSeconds` after it, `runs` times). It mirrors the ledger's schedule
+ * (`createSchedule`), whose id is this id; the keeper runs it when it is due,
+ * and each run is an ordinary completed Payment (`scheduleId`, `scheduleRun`).
+ */
+export type Schedule = {
+  id: Id
+  agencyId: Id
+  /** The account it pays from: a budget's source account when paying from a budget. */
+  sourceAccountId: Id
+  budgetId?: Id
+  recipient: ViatikRecipient
+  type: Exclude<PaymentType, 'advance'>
+  amount: Cents
+  category: SpendingCategory
+  memo: string
+  /** The bill it pays, when it was scheduled from one. */
+  billId?: Id
+  /** When the first run was due (whole seconds). */
+  firstRunAt: ISODate
+  /** When the next run is due; once completed, when the last one was due. */
+  nextRunAt: ISODate
+  /** Seconds between runs; 0 = a single run. */
+  intervalSeconds: number
+  runs: number
+  runsLeft: number
+  status: ScheduleStatus
+  /** Whether the Investor paused it: then only the Investor resumes it. */
+  pausedByInvestor?: boolean
+  pausedBy?: Id
+  pausedAt?: ISODate
+  cancelledBy?: Id
+  cancelledAt?: ISODate
+  completedAt?: ISODate
+  /** The Agency Admin who authorized it: if they lose the role, it stops. */
+  createdBy: Id
+  createdAt: ISODate
+  /** The payments its runs made, oldest first. */
+  paymentIds: Id[]
+  /** The latest due run that could not be paid, while it is still that run. */
+  failure?: ScheduleFailure
+  /**
+   * How many times it was resumed (absent: never). A resume clears the failure, so a run that
+   * fails again after it is noted and told again (the keeper seeds each failure with this).
+   */
+  resumes?: number
+  /** What the ledger recorded when it was created. */
+  ledger?: VerifiedDetails
+  /** What the ledger recorded for its last pause, resume or cancellation. */
+  changeLedger?: VerifiedDetails
+}
+
+/** One pass of the keeper over an Agency (src/server/keeper.ts), as screens show it. */
+export type KeeperRun = {
+  at: ISODate
+  /** `automatic`: the timer (Supabase Cron); `manual`: an Agency Admin pressed "Run due payments". */
+  trigger: 'automatic' | 'manual'
+  /** Manual runs: who pressed it. */
+  by?: Id
+  /** Runs paid in this pass. */
+  paid: number
+  /** Due runs that could not be paid (they stay due and are tried again). */
+  failed: number
+  /** Due runs left for the next pass (time ran out, or still confirming on Monad). */
+  waiting: number
+  /** Monthly payments whose due day was told to the Admins. */
+  reminders: number
+}
+
+/** What the keeper last did, kept with the state so screens can say "Last run 4 min ago". */
+export type KeeperStatus = {
+  /** When the timer last ran the keeper (for every Agency). */
+  lastAutomaticAt?: ISODate
+  /** Per Agency: the last pass that looked at it, automatic or manual. */
+  agencies: Record<Id, KeeperRun>
+}
+
 export type ViatikState = {
   version: number
   generatedAt: ISODate
@@ -653,4 +876,9 @@ export type ViatikState = {
   agentDecisions: AgentDecision[]
   activity: Activity[]
   notifications: Notification[]
+  payoutAddresses: PayoutAddress[]
+  reminders: Reminder[]
+  schedules: Schedule[]
+  /** What the keeper last did (absent until it first runs). */
+  keeper?: KeeperStatus
 }

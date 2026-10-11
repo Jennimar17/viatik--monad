@@ -2,12 +2,13 @@
 
 import * as React from 'react'
 
+import { requestRecipientLabel } from '@/components/app/request-parts'
 import {
   VerifiedDetailsButton,
   VerifiedDetailsDrawer,
   type VerifiedRecord,
 } from '@/components/viatik/verified-details-drawer'
-import { accountName, agencyName, budgetName, recipientName } from '@/domain/queries'
+import { accountName, agencyName, budgetName } from '@/domain/queries'
 import type { PaymentRequest, Receipt, Tranche, ViatikState } from '@/domain/types'
 
 export function receiptRecord(receipt: Receipt): VerifiedRecord {
@@ -27,7 +28,7 @@ export function requestRecord(state: ViatikState, request: PaymentRequest): Veri
     title: request.purpose,
     amount: request.amount,
     fromLabel: budgetName(state, request.budgetId),
-    toLabel: recipientName(state, request.destination),
+    toLabel: requestRecipientLabel(state, request),
     details: request.ledger,
   }
 }

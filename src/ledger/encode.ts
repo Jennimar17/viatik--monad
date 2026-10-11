@@ -34,6 +34,9 @@ const RECORD_KIND: Record<RecordKind, number> = {
   payment_rejected: 6,
   return: 7,
   allocation: 8,
+  withdrawal: 9,
+  outside_payment: 10,
+  capital_return: 11,
 }
 
 /** A plan that cannot become calldata yet: a person without an account, or no registrar to sign a permit. */
@@ -172,8 +175,58 @@ export function encodeOp(op: LedgerOp, chain: ChainContext, permit?: JoinPermit)
       ])
     case 'returnToAgency':
       return call('returnToAgency', [id(op.opId), id(op.agencyId), units(op.amount)])
+    case 'withdraw':
+      return call('withdraw', [id(op.opId), id(op.portfolioId), id(op.vaultId), units(op.amount), op.to])
+    case 'withdrawMemberBalance':
+      return call('withdrawMemberBalance', [id(op.opId), id(op.agencyId), units(op.amount), op.to])
+    case 'payOutside':
+      return call('payOutside', [
+        id(op.paymentId),
+        id(op.sourceId),
+        op.to,
+        units(op.amount),
+        hash(op.evidenceHash),
+      ])
+    case 'recordEvidence':
+      return call('recordEvidence', [id(op.agencyId), id(op.paymentId), op.evidenceHash])
+    case 'returnCapital':
+      return call('returnCapital', [
+        id(op.opId),
+        id(op.fromAccountId),
+        id(op.portfolioVaultId),
+        optionalId(op.agreementId),
+        units(op.amount),
+        hash(op.evidenceHash),
+      ])
+    case 'createSchedule':
+      return call('createSchedule', [
+        {
+          id: id(op.scheduleId),
+          source: id(op.sourceId),
+          destination: optionalId(op.destinationId),
+          member: member(op.memberUserId),
+          amount: units(op.amount),
+          firstRunAt: BigInt(Math.floor(Date.parse(op.firstRunAt) / 1000)),
+          interval: op.intervalSeconds,
+          runs: op.runs,
+        },
+      ])
+    case 'setScheduleStatus':
+      return call(SCHEDULE_STATUS_CALL[op.status], [id(op.scheduleId)])
+    case 'runSchedule':
+      return call('runSchedule', [id(op.scheduleId), id(op.paymentId)])
   }
 }
+
+/** The contract function behind each schedule status change. */
+const SCHEDULE_STATUS_CALL = {
+  paused: 'pauseSchedule',
+  active: 'resumeSchedule',
+  cancelled: 'cancelSchedule',
+} as const
+
+/** `ScheduleStatus` in the contract. */
+export const LEDGER_SCHEDULE_STATUS = { none: 0, active: 1, paused: 2, cancelled: 3, completed: 4 } as const
 
 /** The whole plan as one transaction: `multicall(bytes[])` on the ledger. */
 export function encodePlan(
@@ -193,6 +246,8 @@ export function encodePlan(
 export function receiptHashOf(record: PlannedRecord, chain: ChainContext): Hex {
   const end = (value: RecordEnd): Hex => {
     if (value === null) return zeroHash
+    // Where a withdrawal or an outside payment went: the address, as the contract hashes it (`memberLocation`).
+    if ('address' in value) return memberLocation(value.address)
     if ('member' in value) {
       const address = chain.addressOf(value.member)
       if (!address) throw new NotEncodable('account', value.member)

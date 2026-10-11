@@ -1,18 +1,33 @@
 'use client'
 
-import { CalendarClock, FileText, Link2, Send } from 'lucide-react'
+import { FileText, Info, Link2, Send } from 'lucide-react'
 import Link from '@/components/viatik/link'
 import { useParams } from 'next/navigation'
 import * as React from 'react'
 
 import { ActivityList } from '@/components/app/activity'
 import { ButtonLink } from '@/components/app/button-link'
-import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
+import { FormField, SimpleSelect } from '@/components/app/form-controls'
 import { receiptHref } from '@/components/app/nav'
 import { OpenFileButton } from '@/components/app/open-file'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
 import { useHref, useRole } from '@/components/app/role-context'
+import {
+  billSchedule,
+  firstRunFor,
+  paidAtText,
+  PAY_NOW,
+  resolveWhen,
+  ScheduleList,
+  useClock,
+  usePayTiming,
+  useScheduleActionSheet,
+  whenText,
+  WhenToPayField,
+  type WhenChoice,
+} from '@/components/app/schedules'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import { Amount } from '@/components/viatik/amount'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
@@ -24,17 +39,24 @@ import { categoryLabel } from '@/domain/labels'
 import { formatUsd, ZERO } from '@/domain/money'
 import { accountName, billState, budgetName, receiptFor, userName } from '@/domain/queries'
 import { accountBalance, budgetUsage } from '@/domain/selectors'
-import { billStatus } from '@/domain/status'
-import { dueLabel, formatDate, formatDateTime, fromDateInput } from '@/lib/format'
+import { scheduleState } from '@/domain/schedules'
+import { billStatus, scheduleStatus } from '@/domain/status'
+import { dueLabel, formatDate, formatDateTime } from '@/lib/format'
+import { formatLocalDateTime, fromLocalInputs } from '@/lib/local-time'
 import { cn } from '@/lib/utils'
 
 const NO_BUDGET = 'none'
 
 export default function BillDetailPage() {
   const { billId } = useParams<{ billId: string }>()
-  const { state, now } = useViatikState()
+  const { state, now, mode } = useViatikState()
   const { scopeId: agencyId } = useRole()
   const href = useHref()
+  const clock = useClock()
+  // Whether due payments run on a timer here: the copy promises only what happens.
+  const timing = usePayTiming(clock)
+  // Above the scheduled payment's panel, which leaves once it is cancelled: its success stays.
+  const scheduleSheet = useScheduleActionSheet(clock)
   const pay = useCommand('payBill')
   const reconcile = useCommand('reconcile')
   const [sheet, setSheet] = React.useState<'pay' | 'reconcile' | null>(null)
@@ -43,14 +65,28 @@ export default function BillDetailPage() {
   // The pay form starts from the bill's own account and budget; closing the sheet restores them.
   const [accountId, setAccountId] = React.useState<string | null>(bill?.accountId ?? null)
   const [budgetId, setBudgetId] = React.useState<string>(bill?.budgetId ?? NO_BUDGET)
-  const [when, setWhen] = React.useState<'now' | 'schedule'>('now')
-  const [scheduledFor, setScheduledFor] = React.useState('')
+  const [when, setWhen] = React.useState<WhenChoice>(PAY_NOW)
+  const resolved = resolveWhen(when, clock)
+  const scheduling = resolved.scheduled
+  const steps = useSigningSteps(pay.phase, {
+    prepared: scheduling
+      ? "Viatik checks the payment against its source's limits and the ledger's rules, and that the money is there today."
+      : "Viatik checks the payment against its source's limits and the ledger's rules.",
+    done: scheduling
+      ? {
+          label: 'Scheduled',
+          detail:
+            timing === 'automatic'
+              ? 'Recorded on Monad. Viatik pays the bill when it is due.'
+              : 'Recorded on Monad. The bill is paid once it is due and due payments run.',
+        }
+      : { label: 'Paid', detail: 'Recorded on Monad, with its receipt.' },
+  })
   const resetPayForm = () => {
     pay.reset()
     setAccountId(bill?.accountId ?? null)
     setBudgetId(bill?.budgetId ?? NO_BUDGET)
-    setWhen('now')
-    setScheduledFor('')
+    setWhen(PAY_NOW)
   }
   if (!bill) {
     return (
@@ -77,15 +113,21 @@ export default function BillDetailPage() {
     : accountId
       ? accountBalance(state, accountId)
       : ZERO
-  const payingNow = when === 'now'
-  const scheduledIso = fromDateInput(scheduledFor)
+  const payingNow = !scheduling
+  // The schedule paying it now (status scheduled), and every schedule it ever had, for its activity.
+  const schedule = billSchedule(state, bill)
+  const scheduleIds = new Set(state.schedules.filter((s) => s.billId === bill.id).map((s) => s.id))
+  const shownSchedule = schedule ? scheduleState(state, schedule, clock) : undefined
   const insufficient = available < bill.amount
   // Whether any source could pay it; if none can, point to where money comes from.
   const anyCovers =
     accounts.some((a) => accountBalance(state, a.id) >= bill.amount) ||
     budgets.some((b) => budgetUsage(state, b, now).available >= bill.amount)
-  const scheduleError =
-    !payingNow && scheduledIso && scheduledIso <= now ? 'Choose a date in the future.' : undefined
+  const scheduleError = resolved.scheduled ? resolved.error : undefined
+  const demo = mode === 'demo'
+  const previously = schedule
+    ? formatLocalDateTime(schedule.nextRunAt, { withYear: true, withZone: true })
+    : undefined
 
   return (
     <div className="flex flex-col gap-8">
@@ -195,11 +237,15 @@ export default function BillDetailPage() {
                   id: 'paid',
                   label:
                     bill.status === 'scheduled'
-                      ? `Payment scheduled for ${formatDate(bill.scheduledFor ?? bill.dueDate)}`
+                      ? `Payment scheduled for ${formatLocalDateTime(schedule?.nextRunAt ?? bill.scheduledFor ?? bill.dueDate)}`
                       : 'Payment completed',
                   detail: payment?.completedAt
-                    ? `${formatDateTime(payment.completedAt)} · ${formatUsd(payment.amount, { withCode: true })}`
-                    : undefined,
+                    ? `${formatDateTime(payment.completedAt)} · ${formatUsd(payment.amount, { withCode: true })}${payment.scheduleId ? ' · paid as scheduled' : ''}`
+                    : shownSchedule && shownSchedule !== 'scheduled'
+                      ? scheduleStatus[shownSchedule].label
+                      : bill.status === 'scheduled'
+                        ? `${paidAtText(timing)}.`
+                        : undefined,
                   state:
                     payment?.status === 'completed'
                       ? 'done'
@@ -219,6 +265,15 @@ export default function BillDetailPage() {
             />
             <ReceiptDetailsButton receipt={receipt} className="mt-5" />
           </Panel>
+
+          {schedule ? (
+            <Panel
+              title="Scheduled payment"
+              description={`${paidAtText(timing, 'its time')}, and the bill is marked paid. You can pause or cancel it until then.`}
+            >
+              <ScheduleList schedules={[schedule]} now={clock} links={false} onAction={scheduleSheet.act} />
+            </Panel>
+          ) : null}
         </div>
       </div>
 
@@ -226,7 +281,10 @@ export default function BillDetailPage() {
         <ActivityList
           state={state}
           records={state.activity.filter(
-            (a) => a.entity.id === bill.id || (payment !== undefined && a.entity.id === payment.id),
+            (a) =>
+              a.entity.id === bill.id ||
+              (payment !== undefined && a.entity.id === payment.id) ||
+              scheduleIds.has(a.entity.id),
           )}
           now={now}
         />
@@ -240,36 +298,49 @@ export default function BillDetailPage() {
         description={`${vendorName} · ${bill.number}`}
         summary={{
           what: payingNow
-            ? `${vendorName} is paid now and the bill is marked as paid.`
-            : `The payment is scheduled and runs on ${scheduledIso ? formatDate(scheduledIso) : 'the chosen date'}.`,
+            ? `${vendorName} is paid now and the bill is marked as paid.${previously ? ` The payment scheduled for ${previously} is cancelled.` : ''}`
+            : `${vendorName} is paid ${whenText(resolved)} and the bill is marked as paid. ${paidAtText(timing)}.${previously ? ` It replaces the payment scheduled for ${previously}.` : ''}`,
           amount: bill.amount,
           from: chosenBudget
             ? `${accountName(state, chosenBudget.sourceAccountId)} · ${chosenBudget.name}`
             : accountName(state, accountId ?? undefined),
           to: `${vendorName} · ${vendor?.settlementLabel ?? 'Payment destination'}`,
-          reversible: 'Cannot be undone once completed. A refund would be a new payment from the vendor.',
-          policy: chosenBudget
-            ? `${chosenBudget.name}: per-operation limit ${formatUsd(chosenBudget.perOperationLimit, { withCode: true })}, approved destinations only.`
-            : 'Agency account payment, authorized by an Agency Admin.',
+          reversible: payingNow
+            ? 'Cannot be undone once completed. A refund would be a new payment from the vendor.'
+            : 'You, another Agency Admin or the Investor can pause or cancel it until it is paid. Once paid, it cannot be undone.',
+          policy: `${
+            chosenBudget
+              ? `${chosenBudget.name}: per-operation limit ${formatUsd(chosenBudget.perOperationLimit, { withCode: true })}, approved destinations only.`
+              : 'Agency account payment, authorized by an Agency Admin.'
+          }${payingNow ? '' : ' Checked again when it is paid.'}`,
         }}
-        confirmLabel={payingNow ? 'Pay bill' : 'Schedule payment'}
-        // A scheduled payment needs the money too: nothing pays it later if it is not there.
-        disabled={!accountId || insufficient || (!payingNow && (!scheduledIso || Boolean(scheduleError)))}
+        confirmLabel={payingNow ? 'Pay bill' : schedule ? 'Reschedule payment' : 'Schedule payment'}
+        // A scheduled payment needs the money there today too: scheduling without it is refused.
+        disabled={
+          pay.phase === 'idle' && (!accountId || insufficient || (!payingNow && Boolean(scheduleError)))
+        }
         phase={pay.phase}
         error={pay.error}
+        steps={steps}
         onConfirm={() =>
           pay.run({
             billId: bill.id,
             accountId: chosenBudget ? chosenBudget.sourceAccountId : (accountId ?? undefined),
             budgetId: chosenBudget ? chosenBudget.id : null,
-            scheduledFor: payingNow ? undefined : scheduledIso,
+            scheduledFor: firstRunFor(resolved),
           })
         }
         success={{
           title: payingNow ? 'Payment completed' : 'Payment scheduled',
           body: payingNow
             ? 'The bill is paid. Reconcile it to link the payment and its evidence.'
-            : 'We will pay this bill on the scheduled date.',
+            : `This bill is due to be paid on ${
+                schedule
+                  ? formatLocalDateTime(schedule.nextRunAt, { withWeekday: true, withZone: true })
+                  : 'the scheduled date'
+              }. ${paidAtText(timing)}, and the bill is marked paid. Until then you can pause or cancel it here or in Payments ▸ Scheduled.${
+                demo ? ' In this demo nothing runs on a timer.' : ''
+              }`,
           actions: payingNow ? (
             <Button size="pill-sm" onClick={() => setSheet('reconcile')}>
               <Link2 data-icon="inline-start" /> Reconcile payment
@@ -328,41 +399,23 @@ export default function BillDetailPage() {
               />
             </FormField>
           )}
-          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="When">
-            {(['now', 'schedule'] as const).map((option) => (
-              <button
-                key={option}
-                type="button"
-                role="radio"
-                aria-checked={when === option}
-                onClick={() => setWhen(option)}
-                className={cn(
-                  'flex h-11 items-center justify-center gap-2 rounded-full border text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  when === option
-                    ? 'border-mist bg-mist/10 text-foreground'
-                    : 'border-border text-muted-foreground hover:bg-muted',
-                )}
-              >
-                {option === 'now' ? (
-                  <Send className="size-4" aria-hidden="true" />
-                ) : (
-                  <CalendarClock className="size-4" aria-hidden="true" />
-                )}
-                {option === 'now' ? 'Pay now' : 'Schedule'}
-              </button>
-            ))}
-          </div>
-          {payingNow ? null : (
-            <FormField label="Payment date" htmlFor="bill-date" error={scheduleError}>
-              <PillInput
-                id="bill-date"
-                type="date"
-                value={scheduledFor}
-                aria-invalid={Boolean(scheduleError) || undefined}
-                onChange={(e) => setScheduledFor(e.target.value)}
-              />
-            </FormField>
-          )}
+          <WhenToPayField
+            id="bill-when"
+            value={when}
+            onChange={setWhen}
+            now={clock}
+            // A new schedule starts on the bill's due date (at 9:00 on the person's clock) while it is ahead.
+            suggested={fromLocalInputs(bill.dueDate.slice(0, 10), '09:00')}
+            error={scheduleError}
+            disabled={pay.phase !== 'idle'}
+          />
+          {scheduling && demo ? (
+            <p className="flex gap-2 rounded-lg border border-border bg-muted/50 p-3 text-sm text-pretty text-muted-foreground">
+              <Info className="mt-0.5 size-4 shrink-0 text-subtle" aria-hidden="true" />
+              This demo is simulated, and nothing runs on a timer: once it is due, press Run due payments in
+              Payments ▸ Scheduled.
+            </p>
+          ) : null}
         </div>
       </ApprovalSheet>
 
@@ -397,6 +450,7 @@ export default function BillDetailPage() {
           ) : undefined,
         }}
       />
+      {scheduleSheet.sheet}
     </div>
   )
 }

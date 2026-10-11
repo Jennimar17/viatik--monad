@@ -3,7 +3,10 @@
 import {
   ArrowRight,
   ArrowUpRight,
+  CalendarClock,
+  CalendarPlus,
   FileClock,
+  FilePlus2,
   HandCoins,
   PieChart,
   ReceiptText,
@@ -11,19 +14,30 @@ import {
   Users,
 } from 'lucide-react'
 import Link from '@/components/viatik/link'
+import * as React from 'react'
 
+import { InvoicesPendingList, PeopleToJustifyList, RemindButton } from '@/components/app/accountability-parts'
 import { ActivityList } from '@/components/app/activity'
+import { AddInvoiceSheet } from '@/components/app/add-invoice-sheet'
 import { ButtonLink } from '@/components/app/button-link'
+import { isDueNow, MonthlyPayments } from '@/components/app/reminders'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { WelcomeCard } from '@/components/app/welcome-card'
+import { Button } from '@/components/ui/button'
 import { Amount } from '@/components/viatik/amount'
 import { MoneyBarChart } from '@/components/viatik/charts'
 import { EmptyState } from '@/components/viatik/feedback'
 import { BudgetHealth, KpiTile } from '@/components/viatik/finance'
-import { HairlineGrid, PageHeader, Panel } from '@/components/viatik/layout'
+import { HairlineGrid, PageHeader, Panel, SectionLabel } from '@/components/viatik/layout'
 import { PersonAvatar } from '@/components/viatik/people'
 import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useViatikState } from '@/data/react'
+import {
+  accountabilityByPerson,
+  agencyAccountability,
+  PROOF_WITHIN_DAYS,
+  remindersDue,
+} from '@/domain/accountability'
 import { formatUsd } from '@/domain/money'
 import {
   agreementsOf,
@@ -33,10 +47,11 @@ import {
   destinationName,
   openBills,
 } from '@/domain/queries'
+import { schedulesNeedingAttention } from '@/domain/schedules'
 import { agencyCapital, budgetUsage, spendByMonth } from '@/domain/selectors'
 import { budgetStatus, trancheStatus } from '@/domain/status'
 import { seriesColor, seriesKey } from '@/lib/chart-colors'
-import { dueLabel, formatDate, formatRelative, partOfDay, pluralize } from '@/lib/format'
+import { daysUntil, dueLabel, formatDate, formatRelative, partOfDay, pluralize } from '@/lib/format'
 
 const monthName = new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' })
 
@@ -45,6 +60,9 @@ export default function AgencyOverviewPage() {
   const { scopeId: agencyId } = useRole()
   const href = useHref()
   const { can } = usePermissions()
+  // Kept while the invoice sheet closes, so it does not go blank.
+  const [invoiceFor, setInvoiceFor] = React.useState<string | null>(null)
+  const [invoiceOpen, setInvoiceOpen] = React.useState(false)
 
   const agency = state.agencies.find((a) => a.id === agencyId)
   const capital = agencyCapital(state, agencyId, now)
@@ -95,6 +113,21 @@ export default function AgencyOverviewPage() {
     budgetSeries.reduce((sum, s) => sum + Number(row[s.key] ?? 0), 0),
   )
   const pending = [...approvals.mine, ...approvals.withInvestor]
+  // What people still have to justify, invoices still to add and monthly payments due.
+  const accountability = agencyAccountability(state, agencyId, now)
+  const people = accountabilityByPerson(state, agencyId, now)
+  const monthlyDue = remindersDue(state, agencyId, now).filter((r) => isDueNow(r, now))
+  const canPayOutside =
+    can('pay_outside') && state.accounts.some((a) => a.agencyId === agencyId && a.status === 'active')
+  const canInvoice = can('pay_outside')
+  // Scheduled payments that were due and could not be paid, or stopped (their Admin left).
+  const scheduleAttention = can('send_payment') ? schedulesNeedingAttention(state, agencyId, now) : []
+  const followUps =
+    accountability.peopleOverdue + accountability.proofOverdue + monthlyDue.length + scheduleAttention.length
+  const addInvoice = (paymentId: string) => {
+    setInvoiceFor(paymentId)
+    setInvoiceOpen(true)
+  }
 
   return (
     <div className="flex flex-col gap-8">
@@ -138,7 +171,7 @@ export default function AgencyOverviewPage() {
                 <span className="flex flex-col">
                   <span className="font-medium">{a.title}</span>
                   <span className="text-muted-foreground">
-                    {formatUsd(a.committed)} committed ·{' '}
+                    {formatUsd(a.committed, { withCode: true })} committed ·{' '}
                     {state.portfolios.find((p) => p.id === a.portfolioId)?.name}
                   </span>
                 </span>
@@ -147,6 +180,114 @@ export default function AgencyOverviewPage() {
                 </ButtonLink>
               </li>
             ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {followUps > 0 ? (
+        <section
+          aria-label="Needs a follow-up"
+          className="flex flex-col gap-3 rounded-xl border border-warning/30 bg-warning-soft p-4"
+        >
+          <p className="text-sm font-medium">Needs a follow-up</p>
+          <ul className="flex flex-col gap-2">
+            {scheduleAttention.length > 0 ? (
+              <li className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                <span className="flex flex-col">
+                  <span className="font-medium">
+                    {scheduleAttention.length === 1
+                      ? '1 scheduled payment needs attention'
+                      : `${scheduleAttention.length} scheduled payments need attention`}
+                  </span>
+                  <span className="text-muted-foreground">
+                    Due and not paid, or stopped. Viatik keeps trying the ones that are due.
+                  </span>
+                </span>
+                <ButtonLink href={href('payments?tab=scheduled')} variant="outline" size="pill-sm">
+                  Open scheduled payments <ArrowRight data-icon="inline-end" />
+                </ButtonLink>
+              </li>
+            ) : null}
+            {accountability.peopleOverdue > 0 ? (
+              <li className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                <span className="flex flex-col">
+                  <span className="font-medium">
+                    {accountability.peopleOverdue === 1
+                      ? '1 person has receipts overdue'
+                      : `${accountability.peopleOverdue} people have receipts overdue`}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {formatUsd(accountability.overdue, { withCode: true })} of money for purchases is not
+                    justified in time.
+                  </span>
+                </span>
+                <ButtonLink href={href('team?tab=receipts')} variant="outline" size="pill-sm">
+                  See who <ArrowRight data-icon="inline-end" />
+                </ButtonLink>
+              </li>
+            ) : null}
+            {accountability.proofOverdue > 0 ? (
+              <li className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                <span className="flex flex-col">
+                  <span className="font-medium">
+                    {accountability.proofOverdue === 1
+                      ? '1 invoice is overdue'
+                      : `${accountability.proofOverdue} invoices are overdue`}
+                  </span>
+                  <span className="text-muted-foreground">
+                    Paid outside Viatik more than {PROOF_WITHIN_DAYS} days ago, still without the invoice.
+                  </span>
+                </span>
+                <ButtonLink href={href('bills?tab=invoices')} variant="outline" size="pill-sm">
+                  Add invoices <ArrowRight data-icon="inline-end" />
+                </ButtonLink>
+              </li>
+            ) : null}
+            {monthlyDue.length > 2 ? (
+              <li className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                <span className="flex flex-col">
+                  <span className="font-medium">{monthlyDue.length} monthly payments are due</span>
+                  <span className="text-muted-foreground">
+                    {monthlyDue.map((r) => r.reminder.title).join(', ')}
+                  </span>
+                </span>
+                <ButtonLink href={href('bills?tab=monthly')} variant="outline" size="pill-sm">
+                  Open monthly payments <ArrowRight data-icon="inline-end" />
+                </ButtonLink>
+              </li>
+            ) : (
+              monthlyDue.map(({ reminder, dueAt }) => (
+                <li key={reminder.id} className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                  <span className="flex flex-col">
+                    <span className="font-medium">
+                      {reminder.title}{' '}
+                      {daysUntil(dueAt, now) < 0 ? `was due ${formatDate(dueAt)}` : 'is due today'}
+                    </span>
+                    <span className="text-muted-foreground">
+                      Monthly payment to {reminder.payee}
+                      {reminder.amount !== undefined
+                        ? `, about ${formatUsd(reminder.amount, { withCode: true })}`
+                        : ''}
+                      .
+                    </span>
+                  </span>
+                  {canPayOutside ? (
+                    <ButtonLink
+                      href={href(`accounts/pay-outside?reminder=${reminder.id}`)}
+                      variant="outline"
+                      size="pill-sm"
+                    >
+                      Pay now<span className="sr-only"> for “{reminder.title}”</span>{' '}
+                      <ArrowRight data-icon="inline-end" />
+                    </ButtonLink>
+                  ) : (
+                    <ButtonLink href={href('bills?tab=monthly')} variant="outline" size="pill-sm">
+                      Open <ArrowRight data-icon="inline-end" />
+                    </ButtonLink>
+                  )}
+                </li>
+              ))
+            )}
           </ul>
         </section>
       ) : null}
@@ -170,6 +311,11 @@ export default function AgencyOverviewPage() {
         {can('transfer_funds') ? (
           <ButtonLink href={href('accounts/transfer')} variant="secondary" size="pill-sm">
             <Send data-icon="inline-start" /> Transfer funds
+          </ButtonLink>
+        ) : null}
+        {canPayOutside ? (
+          <ButtonLink href={href('accounts/pay-outside')} variant="secondary" size="pill-sm">
+            <ArrowUpRight data-icon="inline-start" /> Pay outside Viatik
           </ButtonLink>
         ) : null}
       </div>
@@ -329,6 +475,93 @@ export default function AgencyOverviewPage() {
         </Panel>
       </div>
 
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Panel
+          title="Money to justify"
+          description={
+            accountability.pending > 0
+              ? `${formatUsd(accountability.pending, { withCode: true })} pending${accountability.overdue > 0 ? ` · ${formatUsd(accountability.overdue, { withCode: true })} overdue` : ', nothing overdue'}`
+              : 'Receipts for the money for purchases people received.'
+          }
+          // On phones "Remind everyone" goes under the list: beside the title it squeezes the text.
+          action={<RemindButton agencyId={agencyId} people={people} className="max-sm:hidden" />}
+        >
+          <PeopleToJustifyList
+            people={people}
+            now={now}
+            limit={4}
+            personHref={(userId) => href(`team/${userId}`)}
+            action={(person) => <RemindButton agencyId={agencyId} person={person} />}
+          />
+          <RemindButton agencyId={agencyId} people={people} className="mt-2 w-fit sm:hidden" />
+        </Panel>
+
+        <Panel
+          title="Outside Viatik"
+          description="Invoices to add and monthly payments that are due."
+          action={
+            <ButtonLink href={href('bills?tab=invoices')} variant="ghost" size="pill-sm">
+              Bills <ArrowUpRight data-icon="inline-end" />
+            </ButtonLink>
+          }
+        >
+          {accountability.withoutProof.length === 0 && monthlyDue.length === 0 ? (
+            <EmptyState
+              compact
+              icon={<CalendarClock />}
+              title="Nothing to follow up"
+              description="Payments made outside Viatik wait here for their invoice, and monthly payments show here when they are due."
+              action={
+                can('manage_reminders') ? (
+                  <ButtonLink href={href('bills?tab=monthly&new=monthly')} variant="outline" size="pill-sm">
+                    <CalendarPlus data-icon="inline-start" /> New monthly payment
+                  </ButtonLink>
+                ) : undefined
+              }
+            />
+          ) : (
+            <div className="flex flex-col gap-5">
+              <div className="flex flex-col gap-1">
+                <SectionLabel>
+                  Invoices pending
+                  {accountability.withoutProof.length > 0
+                    ? ` · ${accountability.withoutProof.length}${accountability.proofOverdue > 0 ? ` (${accountability.proofOverdue} late)` : ''}`
+                    : ''}
+                </SectionLabel>
+                <InvoicesPendingList
+                  items={accountability.withoutProof}
+                  now={now}
+                  limit={3}
+                  showAddress={false}
+                  action={
+                    canInvoice
+                      ? (payment) => (
+                          <Button variant="outline" size="pill-sm" onClick={() => addInvoice(payment.id)}>
+                            <FilePlus2 data-icon="inline-start" /> Add invoice
+                          </Button>
+                        )
+                      : undefined
+                  }
+                  empty={<p className="py-2 text-sm text-muted-foreground">Every invoice is in.</p>}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <SectionLabel>
+                  Monthly payments due{monthlyDue.length > 0 ? ` · ${monthlyDue.length}` : ''}
+                </SectionLabel>
+                <MonthlyPayments
+                  agencyId={agencyId}
+                  limit={3}
+                  dueOnly
+                  manage={false}
+                  empty={<p className="py-2 text-sm text-muted-foreground">No monthly payment is due.</p>}
+                />
+              </div>
+            </div>
+          )}
+        </Panel>
+      </div>
+
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Panel className="xl:col-span-2" title="Spending by budget" description="Last six months.">
           {hasSpend ? (
@@ -405,6 +638,13 @@ export default function AgencyOverviewPage() {
           now={now}
         />
       </Panel>
+
+      <AddInvoiceSheet
+        paymentId={invoiceFor}
+        open={invoiceOpen}
+        onOpenChange={setInvoiceOpen}
+        onClosed={() => setInvoiceFor(null)}
+      />
     </div>
   )
 }

@@ -1,7 +1,7 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 
 import { and, eq, inArray, ne, sql } from 'drizzle-orm'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import type { Address } from 'viem'
 
 import { createDemoState } from '@/domain/fixtures'
@@ -13,6 +13,14 @@ import type { AppEnv } from './context'
 import { getDb } from './db/client'
 import { operations, users, type WorldLedger } from './db/schema'
 import { ApiError } from './errors'
+import {
+  keepKeeperLease,
+  KEEPER_USER,
+  newLeaseHolder,
+  releaseKeeperLease,
+  renewKeeperLease,
+  takeKeeperLease,
+} from './keeper'
 import { chainContextFor, getMonadLedger, saveBalancesAfter } from './ledger'
 import { resetWorld, withWorld } from './repository'
 
@@ -50,8 +58,29 @@ export const admin = new Hono<AppEnv>().post('/seed', async (c) => {
     throw new ApiError(401, 'unauthenticated', 'A valid admin token is required.')
   }
 
+  // The keeper signs with the same key as the genesis (one nonce) and runs on the state being replaced:
+  // the seed waits for its pass to end, and holds its lease meanwhile (renewed while it works, and
+  // again right before the genesis is sent).
+  const lease = newLeaseHolder()
+  if (!(await takeKeeperLease(lease)))
+    throw new ApiError(409, 'keeper_busy', 'Scheduled payments are running right now. Try again in a minute.')
+  const stopRenewing = keepKeeperLease(lease, c.get('requestId'))
+  try {
+    return await seed(c.req.query('ledger') === 'off', c.get('requestId'), c, lease)
+  } finally {
+    stopRenewing()
+    await releaseKeeperLease(lease).catch((error: unknown) =>
+      console.error(
+        `[api] ${c.get('requestId')} keeper lease: ${error instanceof Error ? error.message : error}`,
+      ),
+    )
+  }
+})
+
+async function seed(ledgerOff: boolean, requestId: string, c: Context<AppEnv>, lease: string) {
+  const env = readServerEnv()
   const state = createDemoState(new Date().toISOString())
-  const monad = c.req.query('ledger') === 'off' ? null : getMonadLedger()
+  const monad = ledgerOff ? null : getMonadLedger()
   let ledger: WorldLedger | null = null
   let genesisBlock = 0
   if (monad) {
@@ -98,6 +127,10 @@ export const admin = new Hono<AppEnv>().post('/seed', async (c) => {
         `The demo story cannot be imported: ${error.problems.join('; ')}`,
       )
     }
+    // The keeper's key signs the genesis: only while the seed still holds the lease (renewed now, so
+    // it lasts the whole genesis), never alongside a keeper pass that took it after it expired.
+    if (!(await renewKeeperLease(lease)))
+      throw new ApiError(409, 'keeper_busy', 'Scheduled payments started running. Try again in a minute.')
     // Well inside the route's 60 s, so a slow receipt is answered with its hash rather than cut off.
     const run = await monad.runGenesis(genesis, { receiptTimeoutMs: 30_000 })
     if (run.status === 'failed') {
@@ -121,8 +154,10 @@ export const admin = new Hono<AppEnv>().post('/seed', async (c) => {
       await resetWorld(tx, { state, ledger })
       // Replays would answer with results from the old story. Refusals and divergences stay (the
       // review trail), and operations still open are closed with the reason, so a device confirming
-      // one is told why.
-      await tx.delete(operations).where(eq(operations.status, 'done'))
+      // one is told why. The keeper's rows stay (its lease, held right now, and its runs' trail).
+      await tx
+        .delete(operations)
+        .where(and(eq(operations.status, 'done'), ne(operations.userId, KEEPER_USER)))
       await tx
         .update(operations)
         .set({
@@ -141,10 +176,7 @@ export const admin = new Hono<AppEnv>().post('/seed', async (c) => {
   } catch (error) {
     if (!ledger) throw error
     // The genesis landed but the switch did not: Viatik is unchanged, and seeding again is safe.
-    console.error(
-      `[api] ${c.get('requestId')} seed not saved after genesis ${ledger.namespace}`,
-      ledger.genesis,
-    )
+    console.error(`[api] ${requestId} seed not saved after genesis ${ledger.namespace}`, ledger.genesis)
     throw new ApiError(
       500,
       'seed_not_saved',
@@ -155,7 +187,7 @@ export const admin = new Hono<AppEnv>().post('/seed', async (c) => {
   // the seed is done either way, and the Ledger panel can read them again).
   if (monad && ledger) {
     const chain = await chainContextFor(ledger).catch(() => null)
-    if (chain) await saveBalancesAfter(monad, chain, genesisBlock, c.get('requestId'))
+    if (chain) await saveBalancesAfter(monad, chain, genesisBlock, requestId)
   }
   return c.json({
     status: 'seeded',
@@ -163,4 +195,4 @@ export const admin = new Hono<AppEnv>().post('/seed', async (c) => {
     namespace: ledger?.namespace ?? null,
     transactions: ledger?.genesis?.transactions ?? [],
   })
-})
+}

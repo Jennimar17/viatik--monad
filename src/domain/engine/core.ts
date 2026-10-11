@@ -12,6 +12,7 @@ import type {
   Location,
   Movement,
   MovementKind,
+  NotificationKind,
   Receipt,
   ReceiptKind,
   ViatikState,
@@ -125,7 +126,15 @@ export class Tx {
     amount: Cents,
     from: Location,
     to: Location,
-    meta: { portfolioId: Id; agencyId?: Id; agreementId?: Id; refId?: Id; receiptId?: Id },
+    meta: {
+      portfolioId: Id
+      agencyId?: Id
+      agreementId?: Id
+      refId?: Id
+      receiptId?: Id
+      /** A give-back that settles an advance. */
+      settlesPaymentId?: Id
+    },
   ): Movement {
     const movement: Movement = { id: newId('mv'), kind, amount, from, to, createdAt: this.now, ...meta }
     this.state.movements.push(movement)
@@ -184,10 +193,18 @@ export class Tx {
     return record
   }
 
-  notify(userIds: Id[], title: string, body: string, href: string) {
+  notify(userIds: Id[], title: string, body: string, href: string, kind?: NotificationKind) {
     for (const userId of new Set(userIds)) {
       if (this.ctx.actor.kind === 'user' && this.ctx.actor.userId === userId) continue
-      this.state.notifications.unshift({ id: newId('ntf'), userId, title, body, href, createdAt: this.now })
+      this.state.notifications.unshift({
+        id: newId('ntf'),
+        userId,
+        title,
+        body,
+        href,
+        createdAt: this.now,
+        ...(kind ? { kind } : {}),
+      })
     }
   }
 
@@ -305,5 +322,6 @@ function idsIn(state: ViatikState): Set<Id> {
   for (const request of state.requests) for (const item of request.attachments) ids.add(item.id)
   for (const bill of state.bills) ids.add(bill.document.id)
   for (const expense of state.expenses) if (expense.receipt) ids.add(expense.receipt.id)
+  for (const payment of state.payments) if (payment.proof) ids.add(payment.proof.id)
   return ids
 }

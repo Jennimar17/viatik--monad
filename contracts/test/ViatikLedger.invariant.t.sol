@@ -155,6 +155,18 @@ contract ViatikLedgerInvariantTest is LedgerFixture {
             "ledger TestUSD != booked + donations"
         );
         assertEq(token.balanceOf(sink), handler.ghostVendorPaid(), "sink != vendor payouts");
+        assertEq(token.balanceOf(handler.OUTSIDE()), handler.ghostPaidOutside(), "outside != paid outside");
+    }
+
+    /// Every payment made outside Viatik stays recorded with the proof it got, and a proof,
+    /// once anchored, never changes.
+    function invariant_OutsidePaymentsKeepTheirProof() public view {
+        bytes32[] memory ops = handler.outsideOps();
+        for (uint256 i; i < ops.length; ++i) {
+            (bool paid, bytes32 proof) = ledger.outsidePayment(handler.outsideAgency(ops[i]), ops[i]);
+            assertTrue(paid, "an outside payment was forgotten");
+            assertEq(proof, handler.outsideEvidence(ops[i]), "an outside payment's proof changed");
+        }
     }
 
     /// Booked (deposits + imports - vendor payouts) is the sum of every location and every
@@ -435,6 +447,7 @@ contract ViatikLedgerInvariantTest is LedgerFixture {
         invariant_EveryCallFollowsTheRules();
         invariant_OutsidersChangeNothing();
         invariant_ReleasableTranchesStayReleasable();
+        invariant_OutsidePaymentsKeepTheirProof();
     }
 
     function _sum(bytes32[] memory ids) internal view returns (uint256 total) {

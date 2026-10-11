@@ -173,7 +173,7 @@ contract ViatikLedgerGenesisTest is LedgerFixture {
             + ledger.balanceOf(LUMEN_VAULT) + ledger.memberBalance(ARC, alex);
         assertEq(booked, IMPORTED);
         assertEq(token.balanceOf(address(ledger)), IMPORTED);
-        assertEq(token.totalSupply(), IMPORTED, "nothing else was minted");
+        assertEq(token.totalSupply() - equippedSupply, IMPORTED, "nothing else was minted");
     }
 
     function test_GenesisMintsInChunksAndRecordsNoReceipts() public {

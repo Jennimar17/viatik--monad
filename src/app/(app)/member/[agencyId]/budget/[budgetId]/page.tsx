@@ -5,6 +5,7 @@ import Link from '@/components/viatik/link'
 import { useParams } from 'next/navigation'
 
 import { ButtonLink } from '@/components/app/button-link'
+import { requestRecipientLabel } from '@/components/app/request-parts'
 import { useHref, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
 import { Amount } from '@/components/viatik/amount'
@@ -17,9 +18,9 @@ import { useViatikState } from '@/data/react'
 import { budgetPeriodLabel, budgetPeriodUnit, categoryLabel } from '@/domain/labels'
 import { formatUsd, sum } from '@/domain/money'
 import { describeBudgetPolicy } from '@/domain/policy'
-import { destinationName, memberBudgets, recipientName } from '@/domain/queries'
+import { destinationName, memberBudgets } from '@/domain/queries'
 import { committedAt, lastMonths } from '@/domain/selectors'
-import { budgetStatus, requestStatus } from '@/domain/status'
+import { budgetStatus, requestStatusFor } from '@/domain/status'
 import type { RequestStatus } from '@/domain/types'
 import { formatDate, formatRelative, pluralize } from '@/lib/format'
 
@@ -59,6 +60,7 @@ export default function MemberBudgetDetailPage() {
   const rules = describeBudgetPolicy(budget, {
     destinationNames: budget.allowedDestinationIds.map((id) => destinationName(state, id)),
     categoryLabels: categoryLabel,
+    allowance,
   })
 
   return (
@@ -114,7 +116,7 @@ export default function MemberBudgetDetailPage() {
           <PolicySummary
             title="In plain language"
             lines={[
-              `You can spend up to ${formatUsd(allowance.periodLimit, { withCode: true })} per ${unit}${allowance.perOperationLimit ? ` and ${formatUsd(allowance.perOperationLimit, { withCode: true })} per payment` : ''}.`,
+              `You can spend up to ${formatUsd(allowance.periodLimit, { withCode: true })} per ${unit}.`,
               ...rules.slice(1),
             ]}
           />
@@ -194,12 +196,12 @@ export default function MemberBudgetDetailPage() {
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-sm font-medium">{r.purpose}</span>
                     <span className="truncate text-xs text-subtle">
-                      {recipientName(state, r.destination)} · {formatRelative(r.createdAt, now)}
+                      {requestRecipientLabel(state, r, userId)} · {formatRelative(r.createdAt, now)}
                     </span>
                   </span>
                   <span className="flex flex-col items-end gap-1">
                     <Amount value={r.amount} size="sm" />
-                    <StatusBadge status={requestStatus[r.status]} />
+                    <StatusBadge status={requestStatusFor(r)} />
                   </span>
                 </Link>
               </li>

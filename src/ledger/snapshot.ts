@@ -54,6 +54,24 @@ export type RequestView = {
   status: RequestState
 }
 
+export type ScheduleState = 'active' | 'paused' | 'cancelled' | 'completed'
+export type ScheduleView = {
+  agency: Id
+  /** An account or a budget. */
+  source: Id
+  destination: Id | null
+  member: Id | null
+  /** The Admin who authorized it. */
+  creator: Id
+  amount: number
+  /** Seconds since the epoch, as the ledger keeps it. */
+  nextRunAt: number
+  interval: number
+  runsLeft: number
+  status: ScheduleState
+  pausedByInvestor: boolean
+}
+
 export type LedgerSnapshot = {
   scopes: Map<Id, 'portfolio' | 'agency'>
   agencyPortfolio: Map<Id, Id>
@@ -72,6 +90,17 @@ export type LedgerSnapshot = {
   requests: Map<Id, RequestView>
   /** `agencyId|userId` → what the Member holds. */
   members: Map<string, number>
+  /**
+   * `agencyId|paymentId` → a payment made outside Viatik (`payOutside`) and the
+   * invoice anchored for it (null: none yet). The money already left the ledger.
+   */
+  outside: Map<string, { evidenceHash: Hash | null }>
+  /**
+   * Scheduled payments, as the app mirrors them (`state.schedules`). Only the mock reads them:
+   * the genesis cannot create schedules (it signs as the owner, not an Admin), so after a
+   * re-seed the app forgets the old ones and they stay on the old namespace, unrunnable.
+   */
+  schedules: Map<Id, ScheduleView>
   processed: Set<Id>
 }
 
@@ -96,6 +125,8 @@ export function ledgerSnapshot(state: ViatikState): LedgerSnapshot {
     allowances: new Map(),
     requests: new Map(),
     members: new Map(),
+    outside: new Map(),
+    schedules: new Map(),
     processed: new Set(),
   }
   const { places } = snapshot
@@ -189,7 +220,8 @@ export function ledgerSnapshot(state: ViatikState): LedgerSnapshot {
   }
   for (const request of state.requests) {
     snapshot.processed.add(request.id)
-    if (request.requester.kind !== 'user') continue
+    // Payment for work never exists on the ledger as a request: an Agency Admin pays it with `pay`.
+    if (request.requester.kind !== 'user' || request.type === 'work') continue
     snapshot.requests.set(request.id, {
       budget: request.budgetId,
       agency: request.agencyId,
@@ -201,12 +233,38 @@ export function ledgerSnapshot(state: ViatikState): LedgerSnapshot {
       status: requestState(request.status),
     })
   }
-  for (const payment of state.payments) snapshot.processed.add(payment.id)
+  for (const payment of state.payments) {
+    snapshot.processed.add(payment.id)
+    if (payment.recipient.kind === 'address' && payment.status === 'completed')
+      snapshot.outside.set(`${payment.agencyId}|${payment.id}`, {
+        evidenceHash: payment.proof ? attachmentsHash([payment.proof]) : null,
+      })
+  }
   for (const receipt of state.receipts) snapshot.processed.add(receipt.operationId)
+  for (const schedule of state.schedules ?? []) {
+    snapshot.schedules.set(schedule.id, {
+      agency: schedule.agencyId,
+      source: schedule.budgetId ?? schedule.sourceAccountId,
+      destination: schedule.recipient.kind === 'destination' ? schedule.recipient.destinationId : null,
+      member: schedule.recipient.kind === 'member' ? schedule.recipient.userId : null,
+      creator: schedule.createdBy,
+      amount: schedule.amount,
+      nextRunAt: Math.floor(Date.parse(schedule.nextRunAt) / 1000),
+      interval: schedule.intervalSeconds,
+      runsLeft: schedule.runsLeft,
+      status: schedule.status,
+      pausedByInvestor: schedule.pausedByInvestor === true,
+    })
+    for (const paymentId of schedule.paymentIds) snapshot.processed.add(paymentId)
+  }
   return snapshot
 }
 
-/** Moves a balance in the snapshot: a ledger location, or what a Member holds in an agency. */
+/**
+ * Moves a balance in the snapshot: a ledger location, or what a Member holds in an agency.
+ * Money that leaves the ledger (a vendor payout, an outside payment, a withdrawal) only
+ * debits its source: an `external` end or a vendor holds nothing on the ledger.
+ */
 export function adjustBalance(
   snapshot: Pick<LedgerSnapshot, 'places' | 'members'>,
   location: Location,

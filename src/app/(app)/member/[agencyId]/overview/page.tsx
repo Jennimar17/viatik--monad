@@ -1,31 +1,44 @@
 'use client'
 
-import { ArrowUpRight, CalendarClock, FileWarning, PieChart, Plus, Upload } from 'lucide-react'
+import { ArrowUpRight, PieChart, Plus } from 'lucide-react'
+import * as React from 'react'
+
 import Link from '@/components/viatik/link'
 
 import { ButtonLink } from '@/components/app/button-link'
+import { MemberAccountabilityBanner, useMemberAccountability } from '@/components/app/member-advances'
+import { SettlementNote, useMemberViatikAccount } from '@/components/app/member-viatik-account'
+import { MemberWithdrawSheet } from '@/components/app/member-withdraw-sheet'
+import { requestRecipientLabel } from '@/components/app/request-parts'
 import { useHref, useRole } from '@/components/app/role-context'
 import { WelcomeCard } from '@/components/app/welcome-card'
+import { Button } from '@/components/ui/button'
 import { Amount } from '@/components/viatik/amount'
 import { UsageRing } from '@/components/viatik/charts'
 import { EmptyState } from '@/components/viatik/feedback'
 import { UsageBar } from '@/components/viatik/finance'
-import { PageHeader, Panel } from '@/components/viatik/layout'
+import { KeyValueList, PageHeader, Panel } from '@/components/viatik/layout'
 import { PolicySummary } from '@/components/viatik/policy'
 import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useViatikState } from '@/data/react'
 import { budgetPeriodUnit, categoryLabel } from '@/domain/labels'
 import { formatUsd, min, sum } from '@/domain/money'
 import { describeBudgetPolicy } from '@/domain/policy'
-import { destinationName, memberBudgets, recipientName } from '@/domain/queries'
-import { requestStatus } from '@/domain/status'
-import { formatDate, formatRelative, formatShortDate } from '@/lib/format'
+import { destinationName, memberBudgets } from '@/domain/queries'
+import { upcomingPayments } from '@/domain/schedules'
+import { requestStatusFor } from '@/domain/status'
+import { formatRelative, formatShortDate } from '@/lib/format'
+import { formatLocalDateTime } from '@/lib/local-time'
 
-export default function MemberHomePage() {
+export default function MemberOverviewPage() {
   const { state, now, user, userId } = useViatikState()
   const { scopeId: agencyId } = useRole()
   const href = useHref()
   const agency = state.agencies.find((a) => a.id === agencyId)
+  const agencyName = agency?.name ?? 'your Agency'
+  const account = useMemberViatikAccount(agencyId)
+  const acc = useMemberAccountability(agencyId)
+  const [sendOpen, setSendOpen] = React.useState(false)
 
   const budgets = memberBudgets(state, agencyId, userId, now)
   const availableTotal = sum(budgets, (b) => min(b.remaining, b.usage.available))
@@ -39,19 +52,17 @@ export default function MemberHomePage() {
   const pending = myRequests.filter(
     (r) => r.status === 'needs_approval' || r.status === 'approved' || r.status === 'processing',
   )
-  const nextPayment = state.payments
-    .filter(
-      (p) =>
-        p.agencyId === agencyId &&
-        p.recipient.kind === 'member' &&
-        p.recipient.userId === userId &&
-        p.status === 'scheduled',
-    )
-    .sort((a, b) => (a.scheduledFor < b.scheduledFor ? -1 : 1))[0]
+  const paidToMe = state.payments.filter(
+    (p) => p.agencyId === agencyId && p.recipient.kind === 'member' && p.recipient.userId === userId,
+  )
+  // A scheduled payment to me, soonest first: Viatik pays it when it is due.
+  const nextPayment = upcomingPayments(state, { agencyId, recipientUserId: userId })[0]
+  const lastReceived = paidToMe
+    .filter((p) => p.status === 'completed' && p.completedAt)
+    .sort((a, b) => ((a.completedAt ?? '') < (b.completedAt ?? '') ? 1 : -1))[0]
   const expenses = state.expenses
     .filter((e) => e.agencyId === agencyId && e.userId === userId)
     .sort((a, b) => (a.spentAt < b.spentAt ? 1 : -1))
-  const missing = expenses.filter((e) => !e.receipt)
 
   return (
     <div className="flex flex-col gap-8">
@@ -63,7 +74,7 @@ export default function MemberHomePage() {
           </>
         }
         title={`Hi, ${user?.name.split(' ')[0]}`}
-        description="What you can spend, what is pending, and what still needs a receipt."
+        description="What you can spend, your Viatik balance, money still to justify with receipts, and what is pending."
         actions={
           <ButtonLink href={href('requests/new')} size="pill" className="hidden sm:inline-flex">
             <Plus data-icon="inline-start" /> New request
@@ -133,25 +144,8 @@ export default function MemberHomePage() {
         </section>
       )}
 
-      {missing.length > 0 ? (
-        <Link
-          href={href('expenses')}
-          className="flex items-center gap-4 rounded-xl border border-warning/30 bg-warning-soft p-4 transition-colors outline-none hover:bg-warning/20 focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <FileWarning className="size-5 shrink-0 text-warning" aria-hidden="true" />
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="text-sm font-medium">
-              {missing.length} {missing.length === 1 ? 'expense needs' : 'expenses need'} a receipt
-            </span>
-            <span className="text-sm text-muted-foreground">
-              Upload them so your Agency can reconcile the payments.
-            </span>
-          </span>
-          <span className="inline-flex items-center gap-1.5 text-sm font-medium">
-            <Upload className="size-4" aria-hidden="true" /> Upload receipt
-          </span>
-        </Link>
-      ) : null}
+      {/* Money for purchases to justify and missing vendor receipts, in one banner (hidden when nothing is open). */}
+      <MemberAccountabilityBanner agencyId={agencyId} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Panel
@@ -179,12 +173,12 @@ export default function MemberHomePage() {
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span className="truncate text-sm font-medium">{r.purpose}</span>
                       <span className="text-xs text-subtle">
-                        {recipientName(state, r.destination)} · {formatRelative(r.createdAt, now)}
+                        {requestRecipientLabel(state, r, userId)} · {formatRelative(r.createdAt, now)}
                       </span>
                     </span>
                     <span className="flex flex-col items-end gap-1">
                       <Amount value={r.amount} size="sm" />
-                      <StatusBadge status={requestStatus[r.status]} />
+                      <StatusBadge status={requestStatusFor(r)} />
                     </span>
                   </Link>
                 </li>
@@ -193,26 +187,75 @@ export default function MemberHomePage() {
           )}
         </Panel>
 
-        <Panel title="Next expected payment">
-          {nextPayment ? (
-            <div className="flex items-center gap-4">
-              <span className="flex size-12 shrink-0 items-center justify-center rounded-xl border border-border text-subtle">
-                <CalendarClock className="size-5" aria-hidden="true" />
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <Amount value={nextPayment.amount} size="lg" />
-                <span className="text-sm text-muted-foreground">
-                  {nextPayment.memo} · {formatDate(nextPayment.scheduledFor)}
-                </span>
-              </span>
-            </div>
-          ) : (
-            <EmptyState
-              compact
-              title="No payments scheduled"
-              description="Payouts your Agency schedules for you will show here."
+        <Panel
+          title="Viatik balance"
+          description={`What ${agencyName} paid you and you still hold.`}
+          action={
+            <ButtonLink href={href('payments')} variant="ghost" size="pill-sm">
+              All payments <ArrowUpRight data-icon="inline-end" />
+            </ButtonLink>
+          }
+        >
+          <div className="flex flex-col gap-4">
+            <Amount value={account.held} size="xl" />
+            <KeyValueList
+              dense
+              items={[
+                {
+                  label: 'Last received',
+                  value: lastReceived
+                    ? `+${formatUsd(lastReceived.amount)} · ${formatShortDate(lastReceived.completedAt ?? '')}`
+                    : 'Nothing yet',
+                  hint: lastReceived?.memo,
+                },
+                {
+                  label: 'Next payment',
+                  value: nextPayment
+                    ? `${formatUsd(nextPayment.amount)} · ${formatLocalDateTime(nextPayment.scheduledFor)}`
+                    : 'Nothing scheduled',
+                  hint: nextPayment?.memo,
+                },
+                ...(acc.pending > 0
+                  ? [
+                      {
+                        label: 'Still to justify',
+                        value:
+                          acc.overdueCount > 0 ? (
+                            <span className="text-danger">
+                              {formatUsd(acc.pending)} · {acc.overdueCount} overdue
+                            </span>
+                          ) : (
+                            formatUsd(acc.pending)
+                          ),
+                        hint: 'Money for purchases',
+                      },
+                    ]
+                  : []),
+              ]}
             />
-          )}
+            {/* Why "Send to my account" is unavailable, once the network check is done. */}
+            {account.canMove && !account.canSendNow && !account.own.loading ? (
+              <SettlementNote account={account} agencyName={agencyName} />
+            ) : null}
+            {account.canMove ? (
+              <Button
+                size="pill-sm"
+                className="w-fit"
+                disabled={!account.canSendNow}
+                onClick={() => setSendOpen(true)}
+              >
+                <ArrowUpRight data-icon="inline-start" /> Send to my account
+              </Button>
+            ) : null}
+          </div>
+          <MemberWithdrawSheet
+            open={sendOpen && account.canMove}
+            onOpenChange={setSendOpen}
+            agencyId={agencyId}
+            agencyName={agencyName}
+            held={account.held}
+            own={account.own}
+          />
         </Panel>
       </div>
 
@@ -265,6 +308,7 @@ export default function MemberHomePage() {
                 ...describeBudgetPolicy(main.budget, {
                   destinationNames: main.budget.allowedDestinationIds.map((id) => destinationName(state, id)),
                   categoryLabels: categoryLabel,
+                  allowance: main.allowance,
                 }).slice(1),
               ]}
             />

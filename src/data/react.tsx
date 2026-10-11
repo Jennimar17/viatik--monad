@@ -7,6 +7,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
+import { usePathname } from 'next/navigation'
 import * as React from 'react'
 import { toast } from 'sonner'
 
@@ -15,6 +16,7 @@ import { newId } from '@/domain/ids'
 import { subjectFor } from '@/domain/permissions'
 import type { Evidence, Membership, User, ViatikState } from '@/domain/types'
 
+import { apiFetch } from './api'
 import { canonical } from './canonical'
 import { ledgerChecks } from './ledger-check'
 import {
@@ -57,7 +59,16 @@ export const STATE_KEY = ['viatik', 'state'] as const
 /** Prefix of the ledger view queries. Under `STATE_KEY`, so whatever reloads the state reloads them too. */
 export const LEDGER_KEY = [...STATE_KEY, 'ledger'] as const
 
+/** Prefix of the signed-in person's Viatik account reads (`useLedgerAccount`); not under `STATE_KEY`. */
+export const LEDGER_ACCOUNT_KEY = ['ledger-account'] as const
+
 const DEMO_LEDGER: LedgerView = { settlement: 'demo' }
+
+/** Screens that show the person's Viatik account balance: an Investor's Add funds, a Member's Payments. */
+const WATCHING_ACCOUNT = /^\/(investor\/[^/]+\/vaults\/add-funds|member\/[^/]+\/payments)\/?$/
+
+/** Whether this deployment hears from Alchemy (`GET /v1/webhooks/alchemy/status`, no sign-in). */
+const ALCHEMY_WEBHOOK_KEY = ['alchemy-webhook'] as const
 
 /** One query cache for the product: the session and the Viatik state both live in it. */
 export function QueryProvider({ children }: { children: React.ReactNode }) {
@@ -93,12 +104,25 @@ export function ViatikProvider({
   children: React.ReactNode
 }) {
   const shared = mode !== null && getDataSource(mode).kind === 'api'
+  // Where a person waits for money to reach their Viatik account, a "Funds arrived" shows sooner, but
+  // only when this deployment hears from Alchemy: otherwise none can come, and the usual pace is kept.
+  const watchingAccount = WATCHING_ACCOUNT.test(usePathname() ?? '')
+  const webhook = useQuery({
+    queryKey: ALCHEMY_WEBHOOK_KEY,
+    queryFn: () =>
+      apiFetch<{ enabled: boolean }>('/v1/webhooks/alchemy/status', { credentials: { accessToken: null } }),
+    enabled: shared && watchingAccount,
+    staleTime: 10 * 60_000,
+    // An older deployment without the route, or any failure: the usual pace.
+    retry: false,
+  })
+  const pollFast = watchingAccount && webhook.data?.enabled === true
   const query = useQuery({
     queryKey: [...STATE_KEY, mode, userId],
     queryFn: () => getDataSource(mode as SessionMode).load(userId as string, { profile, credentials }),
     enabled: Boolean(userId && mode),
     staleTime: shared ? 5_000 : 60_000,
-    refetchInterval: shared ? 15_000 : false,
+    refetchInterval: shared ? (pollFast ? 5_000 : 15_000) : false,
     refetchOnWindowFocus: shared,
     // A poll that changes nothing must not re-render every screen.
     notifyOnChangeProps: ['data', 'isLoading', 'isLoadingError', 'error'],
@@ -127,6 +151,28 @@ export function ViatikProvider({
     shownState.current = state
     void queryClient.invalidateQueries({ queryKey: LEDGER_KEY })
   }, [state, queryClient])
+
+  // Money sent to the person's Viatik account from outside Viatik (Alchemy tells the server, which
+  // leaves a "Funds arrived" notification): read the account again and say so. Arrivals already
+  // there on the first load are in the notifications and not announced again.
+  const announced = React.useRef<{ userId: string; ids: Set<string> } | null>(null)
+  React.useEffect(() => {
+    if (!shared || !state || !userId) return
+    const arrived = state.notifications.filter(
+      (n) => n.kind === 'funds_arrived' && n.userId === userId && !n.readAt,
+    )
+    if (announced.current?.userId !== userId) {
+      announced.current = { userId, ids: new Set(arrived.map((n) => n.id)) }
+      return
+    }
+    const seen = announced.current.ids
+    const fresh = arrived.filter((n) => !seen.has(n.id))
+    if (fresh.length === 0) return
+    for (const notification of fresh) seen.add(notification.id)
+    void queryClient.invalidateQueries({ queryKey: LEDGER_ACCOUNT_KEY })
+    toast.success('Funds arrived in your Viatik account')
+  }, [shared, state, userId, queryClient])
+
   const loaded = Boolean(query.data)
   const resumedFor = React.useRef<string | null>(null)
   React.useEffect(() => {
@@ -240,7 +286,11 @@ export function useCommand<N extends CommandName>(
       if (error instanceof DataSourceError && UNSETTLED_CODES.has(error.code)) toast(message)
       else toast.error(message)
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: STATE_KEY }),
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: STATE_KEY }),
+        queryClient.invalidateQueries({ queryKey: LEDGER_ACCOUNT_KEY }),
+      ]),
   })
 
   const { mutateAsync, reset: resetMutation } = mutation
@@ -319,6 +369,40 @@ export function useLedger() {
     refresh: refresh.mutate,
     refreshing: refresh.isPending,
   }
+}
+
+/**
+ * The signed-in person's Viatik account on Monad (TestUSD held and allowed to
+ * the ledger). Disabled in the demo, which has no accounts. `refetch` after a
+ * mint or an approval lands.
+ *
+ * `refetchInterval` reads it again on a timer, so TestUSD sent from another
+ * account shows up by itself. Each read costs Monad calls: only Add funds polls
+ * (every 15 s), and React Query pauses it while the tab is hidden.
+ */
+export function useLedgerAccount(options: { refetchInterval?: number | false } = {}) {
+  const { userId, mode, credentials } = useViatik()
+  const source = mode ? getDataSource(mode as SessionMode) : null
+  const query = useQuery({
+    queryKey: [...LEDGER_ACCOUNT_KEY, mode, userId],
+    queryFn: () => source!.ledgerAccount!(userId as string, { credentials }),
+    enabled: Boolean(userId && mode && source?.ledgerAccount),
+    staleTime: 5_000,
+    refetchInterval: options.refetchInterval ?? false,
+  })
+  return { account: query.data, isLoading: query.isLoading, isError: query.isError, refetch: query.refetch }
+}
+
+/**
+ * Reads the Viatik account again on every screen that shows it, e.g. after a
+ * transaction sent outside `useWalletActions` (Developer settings' checks).
+ */
+export function useRefreshLedgerAccount() {
+  const queryClient = useQueryClient()
+  return React.useCallback(
+    () => queryClient.invalidateQueries({ queryKey: LEDGER_ACCOUNT_KEY }),
+    [queryClient],
+  )
 }
 
 /**

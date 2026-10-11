@@ -1,3 +1,4 @@
+import type { ScheduleState } from './schedules'
 import type {
   AgencyStatus,
   AgentStatus,
@@ -6,6 +7,7 @@ import type {
   BudgetStatus,
   MilestoneStatus,
   OperationStatus,
+  ReminderStatus,
   RequestStatus,
   TrancheStatus,
 } from './types'
@@ -75,6 +77,16 @@ export const requestStatus: Record<RequestStatus, StatusDescriptor> = {
   cancelled: { label: 'Cancelled', tone: 'neutral' },
 }
 
+/** A request's badge: like `requestStatus`, but a rejection by the Investor's exception threshold says so. */
+export function requestStatusFor(request: {
+  status: RequestStatus
+  decision?: { reason?: { rule: string } }
+}): StatusDescriptor {
+  if (request.status === 'rejected' && request.decision?.reason?.rule === 'exception_threshold')
+    return { label: 'Above exception threshold', tone: 'danger' }
+  return requestStatus[request.status]
+}
+
 export const budgetStatus: Record<BudgetStatus, StatusDescriptor> = {
   active: { label: 'Active', tone: 'success' },
   paused: { label: 'Paused', tone: 'warning' },
@@ -94,6 +106,53 @@ export const agentStatus: Record<AgentStatus, StatusDescriptor> = {
   active: { label: 'Active', tone: 'success' },
   paused: { label: 'Paused', tone: 'warning' },
   expired: { label: 'Expired', tone: 'neutral' },
+}
+
+/**
+ * The invoice of a payment made outside Viatik. It is overdue when it is still
+ * missing some days after the payment (src/domain/accountability.ts decides).
+ */
+export type ProofState = 'missing' | 'attached' | 'overdue'
+
+export const proofStatus: Record<ProofState, StatusDescriptor> = {
+  missing: { label: 'Invoice pending', tone: 'warning' },
+  attached: { label: 'Invoice attached', tone: 'success' },
+  overdue: { label: 'Invoice overdue', tone: 'danger' },
+}
+
+export const proofState = (payment: { proof?: unknown }, overdue: boolean): ProofState =>
+  payment.proof ? 'attached' : overdue ? 'overdue' : 'missing'
+
+/**
+ * Money a person requested for purchases: pending until receipts (or what they
+ * give back) cover it, overdue when that takes too long (src/domain/accountability.ts).
+ */
+export type JustificationState = 'pending' | 'overdue' | 'justified'
+
+export const justificationStatus: Record<JustificationState, StatusDescriptor> = {
+  pending: { label: 'Receipts pending', tone: 'info' },
+  overdue: { label: 'Receipts overdue', tone: 'danger' },
+  justified: { label: 'Justified', tone: 'success' },
+}
+
+export const justificationState = (standing: { settled: boolean; overdue: boolean }): JustificationState =>
+  standing.settled ? 'justified' : standing.overdue ? 'overdue' : 'pending'
+
+export const reminderStatus: Record<ReminderStatus, StatusDescriptor> = {
+  active: { label: 'Active', tone: 'success' },
+  paused: { label: 'Paused', tone: 'warning' },
+  archived: { label: 'Archived', tone: 'neutral' },
+}
+
+/** A scheduled payment's badge, from `scheduleState` (src/domain/schedules.ts). */
+export const scheduleStatus: Record<ScheduleState, StatusDescriptor> = {
+  scheduled: { label: 'Scheduled', tone: 'info' },
+  due: { label: 'Due · paying soon', tone: 'accent' },
+  needs_attention: { label: 'Needs attention', tone: 'danger' },
+  stopped: { label: 'Stopped', tone: 'warning' },
+  paused: { label: 'Paused', tone: 'warning' },
+  cancelled: { label: 'Cancelled', tone: 'neutral' },
+  completed: { label: 'Completed', tone: 'success' },
 }
 
 // ─── Transition guards ───────────────────────────────────────────────────────
@@ -138,6 +197,13 @@ const requestTransitions: Record<RequestStatus, RequestStatus[]> = {
   cancelled: [],
 }
 
+/** Paused and running reminders switch freely; archiving is final. */
+const reminderTransitions: Record<ReminderStatus, ReminderStatus[]> = {
+  active: ['paused', 'archived'],
+  paused: ['active', 'archived'],
+  archived: [],
+}
+
 function guard<S extends string>(table: Record<S, S[]>) {
   return (from: S, to: S) => table[from].includes(to)
 }
@@ -146,6 +212,7 @@ export const canTransitionAgreement = guard(agreementTransitions)
 export const canTransitionTranche = guard(trancheTransitions)
 export const canTransitionMilestone = guard(milestoneTransitions)
 export const canTransitionRequest = guard(requestTransitions)
+export const canTransitionReminder = guard(reminderTransitions)
 
 export class InvalidTransitionError extends Error {
   constructor(entity: string, from: string, to: string) {

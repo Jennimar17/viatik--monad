@@ -1,7 +1,7 @@
 'use client'
 
 import type { ColumnDef } from '@tanstack/react-table'
-import { ArrowRight, ArrowUpRight, Building2, FileClock, Plus } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Building2, FileClock, Plus, TriangleAlert } from 'lucide-react'
 import Link from '@/components/viatik/link'
 import { useRouter } from 'next/navigation'
 
@@ -18,7 +18,13 @@ import { HairlineGrid, PageHeader, Panel } from '@/components/viatik/layout'
 import { OrgAvatar } from '@/components/viatik/people'
 import { StatusBadge, Tag, type StatusDescriptor } from '@/components/viatik/status'
 import { useViatikState } from '@/data/react'
-import { percentOf, sum, type Cents } from '@/domain/money'
+import {
+  JUSTIFY_WITHIN_DAYS,
+  portfolioAccountability,
+  PROOF_WITHIN_DAYS,
+  type AgencyAccountability,
+} from '@/domain/accountability'
+import { formatUsd, percentOf, sum, type Cents } from '@/domain/money'
 import { agreementsOf, investorApprovals } from '@/domain/queries'
 import {
   agencyCapital,
@@ -29,6 +35,30 @@ import {
 } from '@/domain/selectors'
 import { agreementStatus, milestoneStatus } from '@/domain/status'
 import { formatDate, formatShortDate, partOfDay, pluralize } from '@/lib/format'
+
+/** "1 invoice and 400.00 USD to justify are overdue": what is late in one Agency. */
+function overdueHeadline(item: AgencyAccountability): string {
+  const parts = [
+    item.proofOverdue > 0 ? pluralize(item.proofOverdue, 'invoice') : null,
+    item.overdue > 0 ? `${formatUsd(item.overdue, { withCode: true })} to justify` : null,
+  ].filter(Boolean)
+  const several = parts.length > 1 || item.proofOverdue > 1
+  return `${parts.join(' and ')} ${several ? 'are' : 'is'} overdue`
+}
+
+/** Why it is late, in the Agency's terms. */
+function overdueDetail(item: AgencyAccountability): string {
+  return [
+    item.proofOverdue > 0
+      ? `${pluralize(item.proofOverdue, 'payment')} made outside Viatik ${item.proofOverdue === 1 ? 'has' : 'have'} no invoice after ${PROOF_WITHIN_DAYS} days.`
+      : null,
+    item.overdue > 0
+      ? `${pluralize(item.peopleOverdue, 'person', 'people')} ${item.peopleOverdue === 1 ? 'has' : 'have'} not justified money for purchases within ${JUSTIFY_WITHIN_DAYS} days.`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' ')
+}
 
 type AgencyRow = {
   id: string
@@ -185,6 +215,12 @@ export default function InvestorOverviewPage() {
     { id: 'status', header: 'Status', cell: ({ row }) => <StatusBadge status={row.original.status} /> },
   ]
 
+  // Agencies with something overdue (invoices, or money for purchases not justified), most late first.
+  // Overdue blocks nothing, so this row is how the Investor hears about it.
+  const overdue = portfolioAccountability(state, portfolioId, now)
+    .filter((item) => item.proofOverdue > 0 || item.overdue > 0)
+    .sort((a, b) => b.overdue - a.overdue || b.proofOverdue - a.proofOverdue)
+
   const reviewTranche = approvals.tranches[0]
   const reviewMilestone = reviewTranche?.milestoneId
     ? state.milestones.find((m) => m.id === reviewTranche.milestoneId)
@@ -253,6 +289,39 @@ export default function InvestorOverviewPage() {
         </Link>
       ) : null}
 
+      {overdue.length > 0 ? (
+        <div className="flex flex-col gap-3">
+          {overdue.map((item) => {
+            const agency = agencies.find((a) => a.id === item.agencyId)
+            if (!agency) return null
+            return (
+              <Link
+                key={item.agencyId}
+                href={href(`agencies/${item.agencyId}?tab=accountability`)}
+                className="group flex flex-col gap-4 rounded-xl border border-danger/30 bg-danger-soft p-5 transition-colors outline-none hover:bg-danger/20 focus-visible:ring-2 focus-visible:ring-ring sm:flex-row sm:items-center"
+              >
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-danger/40 text-danger">
+                  <TriangleAlert className="size-5" aria-hidden="true" />
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col gap-1">
+                  <span className="text-sm font-medium text-pretty text-foreground">
+                    {agency.name}: {overdueHeadline(item)}
+                  </span>
+                  <span className="text-sm text-pretty text-muted-foreground">{overdueDetail(item)}</span>
+                </span>
+                <span className="inline-flex h-10 w-fit shrink-0 items-center gap-2 rounded-full border border-border bg-card px-5 text-sm font-medium text-foreground">
+                  Open accountability
+                  <ArrowRight
+                    className="size-4 transition-transform group-hover:translate-x-0.5"
+                    aria-hidden="true"
+                  />
+                </span>
+              </Link>
+            )
+          })}
+        </div>
+      ) : null}
+
       <HairlineGrid className="grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <KpiTile
           label="Total committed"
@@ -271,7 +340,15 @@ export default function InvestorOverviewPage() {
           trend={history.map((h) => h.released)}
           hint={`${percentOf(capital.released, capital.funded)}% of funded`}
         />
-        <KpiTile label="Available capital" value={capital.availableCapital} hint="In the Portfolio Vault" />
+        <KpiTile
+          label="Available capital"
+          value={capital.availableCapital}
+          hint={
+            capital.returned > 0
+              ? `In the Portfolio Vault · ${formatUsd(capital.returned)} returned by Agencies`
+              : 'In the Portfolio Vault'
+          }
+        />
         <KpiTile
           label="Active agencies"
           value={<span className="font-display text-2xl">{capital.activeAgencies}</span>}

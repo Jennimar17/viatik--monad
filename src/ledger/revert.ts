@@ -1,6 +1,7 @@
-import { BaseError, decodeErrorResult, type Hex } from 'viem'
+import { BaseError, decodeErrorResult, zeroHash, type Hex } from 'viem'
 
 import { formatUsd, type Cents } from '@/domain/money'
+import { testUsdAbi } from '@/web3/abi/test-usd'
 import { viatikLedgerAbi } from '@/web3/abi/viatik-ledger'
 
 import { translateLedgerError, type TranslatedError } from './errors'
@@ -15,12 +16,16 @@ import { unitsToCents } from './units'
 
 const usd = (units: bigint) => formatUsd(unitsToCents(units).cents as Cents, { withCode: true })
 
-/** `LimitRule` in the contract. */
+/**
+ * `LimitRule` in the contract. The exception threshold only reverts a payment an
+ * Admin makes (`pay`, `payOutside`, a schedule), which has no Investor path, so its message
+ * says only the limit (the mock words it the same way).
+ */
 const LIMIT_MESSAGE: Record<number, (limit: bigint) => string> = {
   0: (limit) => `The amount exceeds the per-operation limit of ${usd(limit)}.`,
   1: (limit) => `Funding would exceed what is left of the commitment (${usd(limit)}).`,
   2: () => 'Tranches must add up to the commitment.',
-  3: (limit) => `Above the Investor’s exception threshold of ${usd(limit)}. The Investor decides.`,
+  3: (limit) => `Above the Investor's exception threshold of ${usd(limit)}.`,
   4: (limit) => `A single deposit can be up to ${usd(limit)}.`,
 }
 
@@ -40,7 +45,13 @@ function fromContractError(name: string, args: readonly unknown[]): LedgerError 
         LIMIT_MESSAGE[Number(args[0])]?.(args[1] as bigint) ?? 'The amount is above a limit of the rules.',
       )
     case 'DestinationNotAllowed':
-      return error('destination_not_allowed', 'This payment destination is not approved for this budget.')
+      // No destination named: `payOutside` from a budget limited to approved vendors.
+      return args[1] === zeroHash
+        ? error(
+            'destination_not_allowed',
+            'This budget only pays approved vendors. Pay outside Viatik from an account instead.',
+          )
+        : error('destination_not_allowed', 'This payment destination is not approved for this budget.')
     case 'BudgetPaused':
       return error('budget_paused', 'This budget is paused. New payments are on hold.')
     case 'AgreementPaused':
@@ -49,17 +60,48 @@ function fromContractError(name: string, args: readonly unknown[]): LedgerError 
       return error('not_registered', 'Something this operation needs is not registered with the ledger yet.')
     case 'InvalidState':
       return error('invalid_state', 'The ledger is not in a state to do this right now.')
+    case 'NotDue':
+      return error('not_due', 'This scheduled payment is not due yet on the ledger.')
+    case 'SchedulePaused':
+      return error('schedule_paused', 'This scheduled payment is paused.')
     default:
       return null
   }
 }
 
-/** One of the ledger's errors, from raw revert data. */
+/**
+ * The token's own refusals, which the ledger passes on when it cannot pull a deposit from
+ * the Investor's account: not allowed to move it yet, or not enough of it.
+ */
+function fromTokenError(name: string, args: readonly unknown[]): LedgerError | null {
+  const error = (code: LedgerErrorCode, message: string): LedgerError => ({ code, message, retryable: false })
+  switch (name) {
+    case 'ERC20InsufficientAllowance':
+      return error('allowance_required', 'Allow Viatik to move your TestUSD first, then deposit again.')
+    case 'ERC20InsufficientBalance':
+      return error(
+        'wallet_insufficient',
+        `Your account holds ${usd(args[1] as bigint)} of TestUSD, which is not enough for this deposit.`,
+      )
+    default:
+      return null
+  }
+}
+
+/** One of the ledger's errors (or the token's, through it), from raw revert data. */
 export function ledgerErrorOf(data: Hex): TranslatedError | null {
   try {
     const decoded = decodeErrorResult({ abi: viatikLedgerAbi, data })
     const args = decoded.args ?? []
     const error = fromContractError(decoded.errorName, args)
+    return error ? { ...error, raw: `${decoded.errorName}(${args.join(', ')})` } : null
+  } catch {
+    // Not one of the ledger's own errors: it may be the token's.
+  }
+  try {
+    const decoded = decodeErrorResult({ abi: testUsdAbi, data })
+    const args = decoded.args ?? []
+    const error = fromTokenError(decoded.errorName, args)
     return error ? { ...error, raw: `${decoded.errorName}(${args.join(', ')})` } : null
   } catch {
     return null

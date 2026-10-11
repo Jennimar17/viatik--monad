@@ -105,7 +105,7 @@ const capitalMeta: { key: keyof CapitalStates; label: string; color: string; des
     key: 'returned',
     label: 'Returned',
     color: 'var(--color-chart-4)',
-    description: 'Sent back under agreement rules',
+    description: 'Sent back to the Portfolio Vault by Agencies',
   },
 ]
 

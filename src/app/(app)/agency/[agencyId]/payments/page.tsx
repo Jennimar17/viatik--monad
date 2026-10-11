@@ -1,12 +1,17 @@
 'use client'
 
-import { ChevronDown, ReceiptText, Send, Users } from 'lucide-react'
+import { ArrowUpRight, CalendarClock, ChevronDown, FilePlus2, ReceiptText, Send, Users } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import * as React from 'react'
 
+import { OutsidePaymentsTable } from '@/components/app/accountability-parts'
+import { AddInvoiceSheet } from '@/components/app/add-invoice-sheet'
 import { ButtonLink } from '@/components/app/button-link'
 import { PageTabs } from '@/components/app/page-tabs'
 import { PaymentsTable } from '@/components/app/payments-table'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
+import { ScheduledPayments, scheduledHint, UNSCHEDULED_STATUS } from '@/components/app/schedules'
+import { useTabParam } from '@/components/app/use-tab-param'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -16,29 +21,68 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { EmptyState } from '@/components/viatik/feedback'
 import { KpiTile } from '@/components/viatik/finance'
-import { HairlineGrid, PageHeader } from '@/components/viatik/layout'
+import { HairlineGrid, PageHeader, Panel } from '@/components/viatik/layout'
 import { useViatikState } from '@/data/react'
+import { outsidePaymentsWithoutProof } from '@/domain/accountability'
 import { sum } from '@/domain/money'
+import { isOutsidePayment } from '@/domain/queries'
+import {
+  isUnscheduledPayment,
+  schedulesNeedingAttention,
+  schedulesOf,
+  upcomingPayments,
+} from '@/domain/schedules'
 import type { Payment, PaymentType } from '@/domain/types'
 import { pluralize } from '@/lib/format'
 
+const TABS = ['all', 'scheduled', 'team', 'vendors', 'reimbursements', 'outside', 'automation'] as const
+
 export default function PaymentsPage() {
+  // useSearchParams (the open tab) needs a boundary for the static prerender.
+  return (
+    <React.Suspense>
+      <Payments />
+    </React.Suspense>
+  )
+}
+
+/**
+ * Every payment from the Agency, by type, and the ones scheduled for later. `?tab=scheduled` opens
+ * the scheduled payments (with Run due payments), `?tab=outside` the payments made outside Viatik.
+ */
+function Payments() {
   const { state, now } = useViatikState()
   const { scopeId: agencyId } = useRole()
   const href = useHref()
   const router = useRouter()
   const { can } = usePermissions()
+  const tabs = useTabParam(TABS, 'all')
+  // Kept while the invoice sheet closes, so it does not go blank.
+  const [invoiceFor, setInvoiceFor] = React.useState<string | null>(null)
+  const [invoiceOpen, setInvoiceOpen] = React.useState(false)
 
   const payments = state.payments.filter((p) => p.agencyId === agencyId)
+  const outside = payments.filter(isOutsidePayment)
+  const withoutInvoice = outsidePaymentsWithoutProof(state, agencyId, now)
+  const canInvoice = can('pay_outside', { agencyId })
+  const canPayOutside =
+    canInvoice && state.accounts.some((a) => a.agencyId === agencyId && a.status === 'active')
   const month = now.slice(0, 7)
   const thisMonth = payments.filter(
     (p) => p.status === 'completed' && (p.completedAt ?? '').startsWith(month),
   )
-  const scheduled = payments.filter((p) => p.status === 'scheduled')
+  // A scheduled payment is not a payment until Viatik pays it: its next run, from the schedules.
+  const scheduled = upcomingPayments(state, { agencyId })
+  const attention = schedulesNeedingAttention(state, agencyId, now).length
+  const openSchedules = schedulesOf(state, { agencyId, open: true })
+  const paused = openSchedules.filter((s) => s.status === 'paused').length
   const byType = (types: PaymentType[]) => payments.filter((p) => types.includes(p.type))
+  // Saved as scheduled before scheduled payments ran automatically: never paid, so not "Action required".
+  const statusFor = (payment: Payment) => (isUnscheduledPayment(payment) ? UNSCHEDULED_STATUS : undefined)
   const table = (rows: Payment[], what: string) => (
     <PaymentsTable
       payments={rows}
+      statusFor={statusFor}
       empty={
         <EmptyState
           compact
@@ -54,7 +98,7 @@ export default function PaymentsPage() {
     <div className="flex flex-col gap-8">
       <PageHeader
         title="Payments"
-        description="Every payment from the Agency, with its budget, policy, and verifiable receipt."
+        description="Every payment from the Agency, including those scheduled for later and those paid outside Viatik, with its budget, policy, and verifiable receipt."
         actions={
           can('send_payment') ? (
             <div className="flex">
@@ -73,7 +117,13 @@ export default function PaymentsPage() {
                 >
                   <ChevronDown />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-52 p-1.5">
+                <DropdownMenuContent align="end" className="w-56 p-1.5">
+                  <DropdownMenuItem
+                    className="gap-2 rounded-lg"
+                    onClick={() => router.push(href('payments/new?when=schedule'))}
+                  >
+                    <CalendarClock className="size-4" /> Schedule a payment
+                  </DropdownMenuItem>
                   {can('pay_member') ? (
                     <DropdownMenuItem
                       className="gap-2 rounded-lg"
@@ -85,6 +135,14 @@ export default function PaymentsPage() {
                   {can('manage_bills') ? (
                     <DropdownMenuItem className="gap-2 rounded-lg" onClick={() => router.push(href('bills'))}>
                       <ReceiptText className="size-4" /> Pay a bill
+                    </DropdownMenuItem>
+                  ) : null}
+                  {canPayOutside ? (
+                    <DropdownMenuItem
+                      className="gap-2 rounded-lg"
+                      onClick={() => router.push(href('accounts/pay-outside'))}
+                    >
+                      <ArrowUpRight className="size-4" /> Pay outside Viatik
                     </DropdownMenuItem>
                   ) : null}
                 </DropdownMenuContent>
@@ -104,7 +162,13 @@ export default function PaymentsPage() {
         <KpiTile
           label="Scheduled"
           value={sum(scheduled, (p) => p.amount)}
-          hint={`${scheduled.length} upcoming`}
+          hint={
+            attention > 0 ? (
+              <span className="text-danger">{scheduledHint(scheduled.length, attention, paused)}</span>
+            ) : (
+              scheduledHint(scheduled.length, attention, paused)
+            )
+          }
         />
         <KpiTile
           label="Team this month"
@@ -125,8 +189,22 @@ export default function PaymentsPage() {
       </HairlineGrid>
 
       <PageTabs
+        {...tabs}
         tabs={[
           { value: 'all', label: 'All', content: table(payments, 'payments') },
+          {
+            value: 'scheduled',
+            label: 'Scheduled',
+            count: openSchedules.length,
+            content: (
+              <Panel
+                title="Scheduled payments"
+                description="Authorized once by an Agency Admin, from an account or a budget. Viatik pays each one when it is due."
+              >
+                <ScheduledPayments agencyId={agencyId} viewer="agency" />
+              </Panel>
+            ),
+          },
           { value: 'team', label: 'Team', content: table(byType(['team', 'contractor']), 'team payments') },
           {
             value: 'vendors',
@@ -139,11 +217,64 @@ export default function PaymentsPage() {
             content: table(byType(['reimbursement']), 'reimbursements'),
           },
           {
+            value: 'outside',
+            label: 'Outside Viatik',
+            count: withoutInvoice.length,
+            content: (
+              <OutsidePaymentsTable
+                payments={outside}
+                now={now}
+                action={
+                  canInvoice
+                    ? (payment) =>
+                        payment.proof ? null : (
+                          <Button
+                            variant="outline"
+                            size="pill-sm"
+                            onClick={() => {
+                              setInvoiceFor(payment.id)
+                              setInvoiceOpen(true)
+                            }}
+                          >
+                            <FilePlus2 data-icon="inline-start" /> Add invoice
+                            {payment.recipient.kind === 'address' ? (
+                              <span className="sr-only"> for “{payment.recipient.payee}”</span>
+                            ) : null}
+                          </Button>
+                        )
+                    : undefined
+                }
+                empty={
+                  <EmptyState
+                    compact
+                    icon={<ArrowUpRight />}
+                    title="Nothing paid outside Viatik yet"
+                    description="Tools and subscriptions an Agency Admin pays to an address outside Viatik show here, with their invoice."
+                    action={
+                      canPayOutside ? (
+                        <ButtonLink href={href('accounts/pay-outside')} variant="outline" size="pill-sm">
+                          <ArrowUpRight data-icon="inline-start" /> Pay outside Viatik
+                        </ButtonLink>
+                      ) : undefined
+                    }
+                  />
+                }
+              />
+            ),
+          },
+          {
             value: 'automation',
             label: 'Automation',
             content: table(byType(['automation']), 'automation payments'),
           },
         ]}
+      />
+
+      <AddInvoiceSheet
+        paymentId={invoiceFor}
+        open={invoiceOpen}
+        onOpenChange={setInvoiceOpen}
+        onClosed={() => setInvoiceFor(null)}
       />
     </div>
   )

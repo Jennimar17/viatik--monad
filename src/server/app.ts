@@ -10,10 +10,12 @@ import { requestId, type AppEnv } from './context'
 import { getDb } from './db/client'
 import { toErrorResponse } from './errors'
 import { evidence } from './evidence'
+import { keeper } from './keeper'
 import { session } from './session'
 import { getMonadLedger } from './ledger'
 import { ledgerView } from './ledger-view'
 import { invitations, state } from './state'
+import { webhooks } from './webhooks'
 
 /** The ledger check, kept for a minute: the endpoint is public and each check costs four RPC calls. */
 let ledgerChecked: { at: number; status: 'ok' | 'unavailable' | 'not_configured' } | null = null
@@ -86,6 +88,11 @@ export const app = new Hono<AppEnv>()
   .route('/v1/evidence', evidence)
   .route('/v1/ledger', ledgerView)
   .route('/v1/admin', admin)
+  // Scheduled payments and monthly reminders when they are due: Supabase Cron (`/run`, with
+  // KEEPER_TRIGGER_TOKEN) and the Admins' "Run due payments" (`/run-now`).
+  .route('/v1/keeper', keeper)
+  // Alchemy's deliveries (no sign-in, signed by Alchemy); absent without ALCHEMY_WEBHOOK_SIGNING_KEY.
+  .route('/v1/webhooks', webhooks)
 
 app.notFound((c) =>
   c.json<ApiErrorBody>({ error: { code: 'not_found', message: 'This endpoint does not exist.' } }, 404),

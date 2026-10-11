@@ -6,6 +6,7 @@ import type {
   PolicyCheck,
   PolicyDecision,
   PolicyOutcome,
+  RequestType,
   SpendingAllowance,
   SpendingCategory,
 } from './types'
@@ -200,6 +201,69 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
   return { outcome, checks, reason, evaluatedAt: now }
 }
 
+/**
+ * Requests that pay the requester's own Viatik balance (money for purchases, a
+ * reimbursement, payment for work). The others pay an approved vendor.
+ */
+export function paysRequester(type: RequestType): boolean {
+  return type === 'funds' || type === 'reimbursement' || type === 'work'
+}
+
+/**
+ * The rules a request meets on top of its budget's policy, as the ledger applies them:
+ * - Above the Investor's exception threshold nothing approves itself: the Investor decides.
+ * - Payment for work reaches the ledger only when an Agency Admin pays it, so an Agency Admin
+ *   always reviews it, and above the exception threshold it cannot be paid at all: it is refused.
+ *
+ * `isException` says whether the Investor decides (never for work).
+ */
+export function withAgreementRules(
+  decision: PolicyDecision,
+  request: { type: RequestType; amount: Cents },
+  exceptionThreshold: Cents | undefined,
+): { decision: PolicyDecision; isException: boolean } {
+  const aboveException = exceptionThreshold !== undefined && request.amount > exceptionThreshold
+  const threshold = exceptionThreshold === undefined ? '' : fmt(exceptionThreshold)
+  if (request.type === 'work') {
+    // The budget's automatic limit plays no part: work is always reviewed.
+    const checks = decision.checks.filter((check) => check.rule !== 'approval_threshold')
+    if (aboveException) {
+      checks.push({
+        rule: 'exception_threshold',
+        passed: false,
+        blocking: true,
+        message: `Payment for work cannot be above the Investor's exception threshold of ${threshold}.`,
+      })
+    }
+    const failure = checks.find((check) => check.blocking && !check.passed)
+    if (failure) {
+      return { decision: { ...decision, outcome: 'rejected', checks, reason: failure }, isException: false }
+    }
+    const review: PolicyCheck = {
+      rule: 'work_review',
+      passed: false,
+      blocking: false,
+      message: 'Payment for work is always reviewed by an Agency Admin.',
+    }
+    return {
+      decision: { ...decision, outcome: 'needs_approval', checks: [...checks, review], reason: review },
+      isException: false,
+    }
+  }
+  if (!aboveException || decision.outcome === 'rejected') return { decision, isException: aboveException }
+  // Within the automatic limit or not, the reason shown is the exception: the Investor decides.
+  const reason: PolicyCheck = {
+    rule: 'exception_threshold',
+    passed: false,
+    blocking: false,
+    message: `Above the Investor's exception threshold of ${threshold}. The Investor decides.`,
+  }
+  return {
+    decision: { ...decision, outcome: 'needs_approval', checks: [...decision.checks, reason], reason },
+    isException: true,
+  }
+}
+
 /** An allowance without a per-operation limit of its own (unset or 0) follows the budget's, as onchain. */
 function minDefined(a: Cents, b: Cents | undefined): Cents {
   return !b ? a : (Math.min(a, b) as Cents)
@@ -226,22 +290,27 @@ export function describeBudgetPolicy(
     destinationNames?: string[]
     categoryLabels?: Record<SpendingCategory, string>
     locale?: string
+    /** A Member's spending access: their own per-payment cap, when lower, is the one that applies. */
+    allowance?: Pick<SpendingAllowance, 'perOperationLimit'>
   } = {},
 ): string[] {
   const lines: string[] = []
   const periodWord =
     budget.period === 'one_time' ? 'in total' : `per ${budget.period === 'monthly' ? 'month' : 'quarter'}`
   lines.push(`Up to ${fmt(budget.periodLimit)} can be spent ${periodWord}.`)
-  lines.push(`A single payment cannot exceed ${fmt(budget.perOperationLimit)}.`)
+  lines.push(
+    `A single payment cannot exceed ${fmt(minDefined(budget.perOperationLimit, options.allowance?.perOperationLimit))}.`,
+  )
   lines.push(
     budget.approvalThreshold > 0
       ? `Payments up to ${fmt(budget.approvalThreshold)} are approved automatically. Anything above needs an Agency Admin.`
       : 'Every payment needs an Agency Admin approval.',
   )
+  // The vendor list limits vendor payments only: money a person requests goes to their own Viatik balance.
   if (options.destinationNames && options.destinationNames.length > 0) {
-    lines.push(`Money can only go to ${joinList(options.destinationNames)}.`)
+    lines.push(`Vendor payments can only go to ${joinList(options.destinationNames)}.`)
   } else {
-    lines.push('Money can go to any approved payment destination of the Agency.')
+    lines.push('Vendor payments can go to any approved payment destination of the Agency.')
   }
   if (options.categoryLabels) {
     lines.push(

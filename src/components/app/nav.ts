@@ -5,7 +5,6 @@ import {
   Building2,
   ChartColumn,
   HandCoins,
-  House,
   Landmark,
   LayoutDashboard,
   Layers,
@@ -15,7 +14,7 @@ import {
   Send,
   Settings,
   ShieldCheck,
-  UserRound,
+  Store,
   Users,
   Vault,
   WalletCards,
@@ -35,7 +34,12 @@ export type NavItem<R extends Role = Role> = {
   icon: LucideIcon
   /** Rendered only when the subject can at least view this capability. */
   capability?: Capability
-  badge?: 'approvals' | 'bills' | 'requests' | 'agreements'
+  /**
+   * A count on the item (see `useBadgeCounts`): approvals waiting, Bills' to-dos (open bills,
+   * invoices pending, monthly payments overdue), scheduled payments needing attention, my requests
+   * waiting, agreements to accept, and a Member's money for purchases overdue (`receipts`).
+   */
+  badge?: 'approvals' | 'bills' | 'schedules' | 'requests' | 'agreements' | 'receipts'
 }
 
 export type RoleNavigation<R extends Role = Role> = {
@@ -67,7 +71,14 @@ export const NAVIGATION: { [R in Role]: RoleNavigation<R> } = {
       { key: 'funding', label: 'Funding', path: 'funding', icon: HandCoins, badge: 'agreements' },
       { key: 'accounts', label: 'Accounts', path: 'accounts', icon: Landmark, capability: 'view_treasury' },
       { key: 'budgets', label: 'Budgets', path: 'budgets', icon: PieChart },
-      { key: 'payments', label: 'Payments', path: 'payments', icon: Send, capability: 'send_payment' },
+      {
+        key: 'payments',
+        label: 'Payments',
+        path: 'payments',
+        icon: Send,
+        capability: 'send_payment',
+        badge: 'schedules',
+      },
       {
         key: 'bills',
         label: 'Bills',
@@ -76,6 +87,7 @@ export const NAVIGATION: { [R in Role]: RoleNavigation<R> } = {
         capability: 'manage_bills',
         badge: 'bills',
       },
+      { key: 'providers', label: 'Providers', path: 'providers', icon: Store },
       { key: 'team', label: 'Team', path: 'team', icon: Users, capability: 'manage_team' },
     ],
     secondary: [
@@ -93,20 +105,20 @@ export const NAVIGATION: { [R in Role]: RoleNavigation<R> } = {
   },
   member: {
     primary: [
-      { key: 'home', label: 'Home', path: 'home', icon: House },
+      { key: 'overview', label: 'Overview', path: 'overview', icon: LayoutDashboard },
       { key: 'budget', label: 'My budget', path: 'budget', icon: PieChart },
       { key: 'requests', label: 'Requests', path: 'requests', icon: Layers, badge: 'requests' },
-      { key: 'expenses', label: 'Expenses', path: 'expenses', icon: WalletCards },
+      { key: 'expenses', label: 'Expenses', path: 'expenses', icon: WalletCards, badge: 'receipts' },
       { key: 'payments', label: 'Payments', path: 'payments', icon: ArrowDownLeft },
     ],
     secondary: [
       { key: 'activity', label: 'Activity', path: 'activity', icon: Activity },
-      { key: 'profile', label: 'Profile', path: 'profile', icon: UserRound },
+      { key: 'settings', label: 'Settings', path: 'settings', icon: Settings },
     ],
     mobileTabs: [
-      { key: 'home', label: 'Home', path: 'home', icon: House },
+      { key: 'overview', label: 'Overview', path: 'overview', icon: LayoutDashboard },
       { key: 'request', label: 'Request', path: 'requests/new', icon: Send },
-      { key: 'expenses', label: 'Expenses', path: 'expenses', icon: WalletCards },
+      { key: 'expenses', label: 'Expenses', path: 'expenses', icon: WalletCards, badge: 'receipts' },
       { key: 'payments', label: 'Payments', path: 'payments', icon: ArrowDownLeft },
     ],
   },
@@ -118,12 +130,12 @@ export function basePath(role: Role, scopeId: string): string {
   return `/member/${scopeId}`
 }
 
-/** The first screen of a role: Portfolio overview, Agency overview or the Member home. */
+/** The first screen of a role: its Overview (Portfolio, Agency or the Member's own). */
 export function roleHome(membership: Membership): Route {
   if (membership.scope.kind === 'portfolio')
     return `/investor/${membership.scope.portfolioId}/overview` as Route
   if (membership.role === 'agency_admin') return `/agency/${membership.scope.agencyId}/overview` as Route
-  return `/member/${membership.scope.agencyId}/home` as Route
+  return `/member/${membership.scope.agencyId}/overview` as Route
 }
 
 /** A receipt's page. Receipts live outside the role workspaces so they print cleanly. */

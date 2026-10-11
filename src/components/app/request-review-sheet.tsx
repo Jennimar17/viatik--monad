@@ -7,26 +7,29 @@ import { ButtonLink } from '@/components/app/button-link'
 import { receiptHref } from '@/components/app/nav'
 import { AttachmentNames } from '@/components/app/open-file'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
+import { requestRecipientLabel, requestTypeCopy } from '@/components/app/request-parts'
 import { usePermissions } from '@/components/app/role-context'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
 import { KeyValueList } from '@/components/viatik/layout'
 import { PolicyVerdict } from '@/components/viatik/policy'
+import { Tag } from '@/components/viatik/status'
 import { useCommand, useViatikState } from '@/data/react'
-import { categoryLabel, requestTypeLabel } from '@/domain/labels'
+import { addDays, JUSTIFY_WITHIN_DAYS, paidAt } from '@/domain/accountability'
+import { categoryLabel } from '@/domain/labels'
 import { formatUsd, ZERO } from '@/domain/money'
 import {
+  aboveExceptionThreshold,
   governingAgreement,
   actorName,
   budgetName,
   isException,
   receiptFor,
-  recipientName,
   userName,
 } from '@/domain/queries'
 import type { PaymentRequest } from '@/domain/types'
-import { formatDateTime } from '@/lib/format'
+import { formatDate, formatDateTime } from '@/lib/format'
 
 /** What already happened to a request that no longer needs a decision. */
 function decidedCopy(request: PaymentRequest, approver: string | undefined): string {
@@ -74,7 +77,11 @@ export function RequestReviewSheet({
   const request = state.requests.find((r) => r.id === requestId)
   if (!request) return null
 
+  // Payment for work is always decided by an Agency Admin: it never goes to the Investor, and above
+  // the exception threshold it cannot be paid at all (the ledger's `pay` refuses it).
+  const work = request.type === 'work'
   const exception = isException(state, request)
+  const workAboveThreshold = work && aboveExceptionThreshold(state, request)
   const ownRequest = request.requester.kind === 'user' && request.requester.userId === userId
   const decidable = request.status === 'needs_approval'
   const allowed =
@@ -102,8 +109,12 @@ export function RequestReviewSheet({
   const payment = state.payments.find((p) => p.requestId === request.id)
   const receipt = receiptFor(state, payment?.receiptId)
   const requester = actorName(state, request.requester)
-  const destination = recipientName(state, request.destination)
+  const destination = requestRecipientLabel(state, request, userId)
+  // What this kind of request means once paid: receipts, a pay-back, work, or straight to the vendor.
+  const copy = requestTypeCopy(state, request, userId)
+  const justifies = request.type === 'funds' && request.destination.kind === 'member'
   const declining = mode === 'decline'
+  const thresholdText = formatUsd(agreement?.spendingPolicy.exceptionThreshold ?? ZERO, { withCode: true })
 
   return (
     <ApprovalSheet
@@ -121,7 +132,7 @@ export function RequestReviewSheet({
       summary={{
         what: declining
           ? 'The request is declined. No money moves and the requester is told why.'
-          : `${formatUsd(request.amount, { withCode: true })} is paid from ${budget?.name ?? 'the budget'} to ${destination} for “${request.purpose}”.`,
+          : copy.what,
         amount: request.amount,
         from: `${account?.name ?? 'Account'} · ${budget?.name ?? 'Budget'}`,
         to: destination,
@@ -129,12 +140,14 @@ export function RequestReviewSheet({
           ? 'The requester can send a new request.'
           : 'Cannot be undone once the payment completes. A refund would be a new payment.',
         policy: exception
-          ? `Above the ${formatUsd(agreement?.spendingPolicy.exceptionThreshold ?? ZERO, { withCode: true })} exception threshold of the funding agreement, so the Investor decides.`
-          : `${budget?.name ?? 'This budget'}: requests above ${formatUsd(budget?.approvalThreshold ?? ZERO, { withCode: true })} need an Agency Admin. Nobody approves their own request.`,
+          ? `Above the ${thresholdText} exception threshold of the funding agreement, so the Investor decides.`
+          : work
+            ? `Payment for work is always reviewed by an Agency Admin and paid from ${budget?.name ?? 'the budget'}. Nobody approves their own request.`
+            : `${budget?.name ?? 'This budget'}: requests above ${formatUsd(budget?.approvalThreshold ?? ZERO, { withCode: true })} need an Agency Admin. Nobody approves their own request.`,
       }}
       confirmLabel={declining ? 'Decline request' : 'Approve and pay'}
       confirmVariant={declining ? 'destructive' : 'default'}
-      disabled={!allowed || (declining && reason.trim().length < 3)}
+      disabled={!allowed || (declining ? reason.trim().length < 3 : workAboveThreshold)}
       phase={active.phase}
       error={active.error}
       onConfirm={() =>
@@ -159,7 +172,7 @@ export function RequestReviewSheet({
           ? { title: 'Request declined', body: `${requester} was notified with your reason.` }
           : {
               title: 'Payment completed',
-              body: `${formatUsd(request.amount, { withCode: true })} went to ${destination}. The receipt is in the verified record.`,
+              body: `${copy.paid} The receipt is in the verified record.`,
               actions: (
                 <>
                   {receipt ? (
@@ -186,7 +199,17 @@ export function RequestReviewSheet({
               ? `You created this request. Another Agency Admin has to approve it${otherAdmins.length ? `: ${otherAdmins.join(' or ')} can.` : '.'}`
               : exception
                 ? 'This request is above the exception threshold of the funding agreement. It is waiting for the Investor.'
-                : 'You do not have permission to decide this request.'}
+                : work
+                  ? 'Payment for work is always decided by an Agency Admin.'
+                  : 'You do not have permission to decide this request.'}
+          </p>
+        </div>
+      ) : null}
+      {decidable && allowed && workAboveThreshold && !declining ? (
+        <div className="flex gap-3 rounded-xl border border-warning/30 bg-warning-soft p-4 text-sm">
+          <Info className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+          <p className="text-pretty text-muted-foreground">
+            {`Payment for work above the ${thresholdText} exception threshold cannot be paid. Decline it.`}
           </p>
         </div>
       ) : null}
@@ -205,13 +228,29 @@ export function RequestReviewSheet({
         </div>
       ) : (
         <>
+          <div className="flex flex-col gap-2 rounded-xl border border-border bg-mist/5 p-4">
+            <Tag className="w-fit">{copy.label}</Tag>
+            <p className="text-sm text-pretty text-muted-foreground">{copy.reviewNote}</p>
+          </div>
           <KeyValueList
             dense
             items={[
               { label: 'Requested by', value: requester },
-              { label: 'Type', value: requestTypeLabel[request.type] },
+              { label: 'Pays', value: destination },
+              ...(justifies
+                ? [
+                    {
+                      label: 'Receipts due',
+                      value: payment
+                        ? formatDate(addDays(paidAt(payment), JUSTIFY_WITHIN_DAYS))
+                        : `${JUSTIFY_WITHIN_DAYS} days after payment`,
+                    },
+                  ]
+                : []),
               { label: 'Budget', value: budgetName(state, request.budgetId) },
               { label: 'Category', value: categoryLabel[request.category] },
+              ...(request.merchant ? [{ label: 'Merchant', value: request.merchant }] : []),
+              ...(request.spentAt ? [{ label: 'Date paid', value: formatDate(request.spentAt) }] : []),
               {
                 label: 'Attachments',
                 value: <AttachmentNames items={request.attachments} />,

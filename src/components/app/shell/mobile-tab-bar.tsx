@@ -9,14 +9,16 @@ import { cn } from '@/lib/utils'
 
 import { NAVIGATION } from '../nav'
 import { useHref, useRole } from '../role-context'
+import { useBadgeCounts } from './app-sidebar'
 
-/** Member navigation on phones: Home · Request · Expenses · Payments · More. */
+/** Member navigation on phones: Overview · Request · Expenses · Payments · More. */
 export function MobileTabBar() {
   const { base } = useRole()
   const href = useHref()
   const pathname = usePathname()
   const { setOpenMobile } = useSidebar()
   const tabs = NAVIGATION.member.mobileTabs ?? []
+  const counts = useBadgeCounts()
 
   return (
     <nav
@@ -28,6 +30,7 @@ export function MobileTabBar() {
           const target = `${base}/${tab.path}`
           const active = pathname === target || (tab.key !== 'request' && pathname.startsWith(`${target}/`))
           const Icon = tab.icon
+          const count = tab.badge ? counts[tab.badge] : 0
           if (tab.key === 'request') {
             return (
               <li key={tab.key} className="flex justify-center">
@@ -51,8 +54,16 @@ export function MobileTabBar() {
                   active ? 'text-foreground' : 'text-subtle',
                 )}
               >
-                <Icon className="size-5" />
+                <span className="relative">
+                  <Icon className="size-5" />
+                  {count > 0 ? (
+                    <span className="absolute -top-1.5 -right-2.5 flex min-w-4 items-center justify-center rounded-full bg-mist px-1 text-2xs leading-4 font-medium text-primary-foreground tabular-nums">
+                      {count}
+                    </span>
+                  ) : null}
+                </span>
                 {tab.label}
+                {count > 0 ? <span className="sr-only">({count} overdue)</span> : null}
               </Link>
             </li>
           )

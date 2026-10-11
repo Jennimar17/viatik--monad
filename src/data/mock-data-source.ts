@@ -8,7 +8,9 @@ import {
 import { createDemoState } from '@/domain/fixtures'
 import { invitationPreview, withVerifiedPerson } from '@/domain/identity'
 import { newId } from '@/domain/ids'
+import { upgradeState } from '@/domain/migrate'
 import { hasStoredCopy } from '@/domain/evidence'
+import { can, subjectFor } from '@/domain/permissions'
 import { findEvidence } from '@/domain/queries'
 import type { Evidence, ViatikState } from '@/domain/types'
 import { scopeStateForUser } from '@/domain/visibility'
@@ -24,6 +26,7 @@ import {
   type UploadedFile,
 } from './data-source'
 import { assertEvidenceFile, sha256Hex } from './evidence-files'
+import { runDueOnMock, type KeeperDone } from './keeper'
 import { applySettlement, planSettlement } from './settlement'
 
 const STORAGE_KEY = 'viatik:demo-state'
@@ -57,8 +60,8 @@ export class MockDataSource implements DataSource {
         if (raw) {
           const parsed = JSON.parse(raw) as ViatikState
           if (parsed.version === STATE_VERSION) {
-            this.state = parsed
-            return parsed
+            this.state = upgradeState(parsed)
+            return this.state
           }
         }
       } catch {
@@ -181,6 +184,25 @@ export class MockDataSource implements DataSource {
 
   canOpenEvidence(evidence: Evidence): boolean {
     return hasStoredCopy(evidence) && this.files.has(evidence.sha256)
+  }
+
+  /**
+   * "Run due payments" in the demo: the keeper's pass for one Agency, on the
+   * demo ledger (`runDueOnMock`), as an Agency Admin of it may ask on the server.
+   */
+  async runDuePayments(userId: string, agencyId: string): Promise<KeeperDone> {
+    await wait(jitter(500, 1100))
+    const state = this.read()
+    if (!can(subjectFor(state, userId), 'send_payment', { agencyId, agencies: state.agencies }))
+      throw new DataSourceError('You do not have permission to do this.', 'forbidden')
+    const { state: next, answer } = await runDueOnMock(state, {
+      now: new Date().toISOString(),
+      trigger: 'manual',
+      agencyId,
+      by: userId,
+    })
+    this.write(next)
+    return answer
   }
 
   async reset() {

@@ -45,6 +45,14 @@ export type LedgerErrorCode =
   | 'rule_drift'
   /** Someone the operation names has no account on the ledger yet. */
   | 'account_not_ready'
+  /** The person's account has not let the ledger move their TestUSD yet. */
+  | 'allowance_required'
+  /** The person's account holds less TestUSD than the deposit needs. */
+  | 'wallet_insufficient'
+  /** A scheduled payment is not due yet on the ledger (`NotDue`): the keeper tries again later. */
+  | 'not_due'
+  /** A scheduled payment is paused on the ledger (`SchedulePaused`). */
+  | 'schedule_paused'
   /** The transaction was sent and is not final yet: ask again before retrying. */
   | 'still_processing'
   /** The transaction did not go through (reverted, or its user operation failed): nothing moved. */
@@ -115,7 +123,7 @@ export type LedgerOp =
       paymentId: Id
       budgetId: Id
       destinationId: Id | null
-      /** A reimbursement: the requester is paid into their Viatik balance. */
+      /** funds, reimbursement: the requester is paid into their Viatik balance. */
       memberUserId: Id | null
       amount: Cents
       evidenceHash: Hash | null
@@ -135,8 +143,69 @@ export type LedgerOp =
       evidenceHash: Hash | null
     }
   | { call: 'returnToAgency'; opId: Id; agencyId: Id; amount: Cents }
+  /** An Investor takes money out of a Portfolio Vault to an address. */
+  | { call: 'withdraw'; opId: Id; portfolioId: Id; vaultId: Id; amount: Cents; to: Address }
+  /** A person takes their Viatik balance in an agency out to an address. */
+  | { call: 'withdrawMemberBalance'; opId: Id; agencyId: Id; amount: Cents; to: Address }
+  /** An Agency Admin pays outside Viatik, from an account or a budget, to an address. */
+  | {
+      call: 'payOutside'
+      paymentId: Id
+      /** An account or a budget. */
+      sourceId: Id
+      to: Address
+      amount: Cents
+      /** The invoice, when it comes with the payment. */
+      evidenceHash: Hash | null
+    }
+  /** An Agency Admin anchors the invoice of an outside payment, once. Records no receipt. */
+  | { call: 'recordEvidence'; agencyId: Id; paymentId: Id; evidenceHash: Hash }
+  /** An Agency Admin returns capital from an agency account to its Portfolio Vault. */
+  | {
+      call: 'returnCapital'
+      opId: Id
+      fromAccountId: Id
+      portfolioVaultId: Id
+      /** Null: no agreement named. */
+      agreementId: Id | null
+      amount: Cents
+      evidenceHash: Hash | null
+    }
+  /**
+   * An Agency Admin schedules a payment from an account or a budget to a vendor or a Member,
+   * once or every `intervalSeconds` (`createSchedule`). Records no receipt: `ScheduleCreated` proves it.
+   */
+  | {
+      call: 'createSchedule'
+      scheduleId: Id
+      /** An account or a budget. */
+      sourceId: Id
+      destinationId: Id | null
+      memberUserId: Id | null
+      amount: Cents
+      /** When the first run is due (whole seconds). */
+      firstRunAt: ISODate
+      /** Seconds between runs; 0 = a single run. */
+      intervalSeconds: number
+      runs: number
+    }
+  /**
+   * An Agency Admin or the portfolio's Investor pauses (`paused`), resumes (`active`) or cancels a
+   * schedule. Records no receipt: `ScheduleStatusChanged` with that status proves it.
+   */
+  | { call: 'setScheduleStatus'; scheduleId: Id; status: 'paused' | 'active' | 'cancelled' }
+  /** The keeper pays the due run of a schedule under `paymentId` (`runSchedule`); only the keeper signs it. */
+  | { call: 'runSchedule'; scheduleId: Id; paymentId: Id }
 
 export type LedgerCall = LedgerOp['call']
+
+/** Calls the ledger confirms with their own event and no receipt: their records never belong to a receipt. */
+export const RECEIPTLESS_CALLS: ReadonlySet<LedgerCall> = new Set<LedgerCall>([
+  'requestTranche',
+  'recordEvidence',
+  'createSchedule',
+  'setScheduleStatus',
+])
 
 /** `ReceiptKind` in the contract. */
 export type RecordKind =
@@ -149,9 +218,12 @@ export type RecordKind =
   | 'payment_rejected'
   | 'return'
   | 'allocation'
+  | 'withdrawal'
+  | 'outside_payment'
+  | 'capital_return'
 
-/** One side of a record: a ledger location or payment destination (by product id), a Member, or none. */
-export type RecordEnd = { id: Id } | { member: Id } | null
+/** One side of a record: a ledger location or payment destination (by product id), a Member, an address money left to, or none. */
+export type RecordEnd = { id: Id } | { member: Id } | { address: Address } | null
 
 /**
  * What the ledger records for a money operation (`Recorded(opId, actor,
@@ -179,6 +251,11 @@ export type SettlementPlan = {
   records: PlannedRecord[]
   /** Who signs the transaction; null for automations and the system, which have no account. */
   signerUserId: Id | null
+  /**
+   * Signed by Viatik's keeper instead of a person: a scheduled payment's due run
+   * (`runSchedule`), which only the ledger's `keeper()` may send. Absent otherwise.
+   */
+  signer?: 'keeper'
   /** Keep the engine's state even when the ledger refuses (a rejected request stays in history). */
   keepOnFailure: boolean
   /**
@@ -197,7 +274,10 @@ export type SettlementPlan = {
 
 /**
  * One operation the ledger confirmed: a money operation (`Recorded(opId, …)`
- * onchain), or a tranche request (`TrancheRequested`), which records no money.
+ * onchain), or one that records no money and proves itself with its own
+ * event: a tranche request (`TrancheRequested`), an invoice anchored for an
+ * outside payment (`EvidenceRecorded`), or a schedule created or changed
+ * (`ScheduleCreated`, `ScheduleStatusChanged`; `opId` is the schedule id).
  */
 export type LedgerRecord = {
   opId: Id

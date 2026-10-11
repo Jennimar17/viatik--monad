@@ -5,11 +5,13 @@ import Link from '@/components/viatik/link'
 import * as React from 'react'
 import { toast } from 'sonner'
 
+import { ButtonLink } from '@/components/app/button-link'
 import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
 import { AddDestinationSheet, destinationKindLabel } from '@/components/app/money-setup'
 import { PageTabs, type PageTab } from '@/components/app/page-tabs'
 import { LedgerPanel } from '@/components/app/ledger-panel'
 import { PasskeysPanel } from '@/components/app/passkeys-panel'
+import { providerStatus } from '@/components/app/provider-parts'
 import { SponsorshipCheck } from '@/components/app/sponsorship-check'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { Button } from '@/components/ui/button'
@@ -92,17 +94,7 @@ function usePreferences(userId: string) {
 }
 
 /** Profile, workspace, rules and device settings; the tabs depend on the role. */
-export function SettingsPage({
-  title = 'Settings',
-  leading,
-  children,
-}: {
-  title?: string
-  /** Panels a role puts before the tabs, e.g. the Member's payment destination. */
-  leading?: React.ReactNode
-  /** Sheets and dialogs the caller controls. */
-  children?: React.ReactNode
-}) {
+export function SettingsPage() {
   const { state, user, userId } = useViatikState()
   const { mode, account } = useSession()
   const { role, agencyId, portfolioId } = useRole()
@@ -373,11 +365,16 @@ export function SettingsPage({
             title="Payment destinations"
             description="Vendors, services and contractors the Agency can pay. Budgets can restrict payments to a subset."
             action={
-              can('send_payment') ? (
-                <Button size="pill-sm" onClick={() => setDestinationOpen(true)}>
-                  <Plus data-icon="inline-start" /> Add destination
-                </Button>
-              ) : null
+              <div className="flex flex-wrap justify-end gap-2">
+                <ButtonLink href={href('providers')} variant="outline" size="pill-sm">
+                  Open Providers
+                </ButtonLink>
+                {can('send_payment') ? (
+                  <Button size="pill-sm" onClick={() => setDestinationOpen(true)}>
+                    <Plus data-icon="inline-start" /> Add destination
+                  </Button>
+                ) : null}
+              </div>
             }
           >
             {destinations.length === 0 ? (
@@ -397,7 +394,12 @@ export function SettingsPage({
                     >
                       <OrgAvatar name={d.name} size="sm" />
                       <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate text-sm font-medium">{d.name}</span>
+                        <Link
+                          href={href(`providers/${d.id}`)}
+                          className="truncate text-sm font-medium hover:underline"
+                        >
+                          {d.name}
+                        </Link>
                         <span className="truncate text-xs text-subtle">
                           {destinationKindLabel[d.kind]} · {categoryLabel[d.category]} · {d.settlementLabel}
                         </span>
@@ -405,13 +407,7 @@ export function SettingsPage({
                       <span className="hidden text-xs text-subtle sm:block">
                         {listedIn ? `Listed in ${pluralize(listedIn, 'budget')}` : 'Open to all budgets'}
                       </span>
-                      <StatusBadge
-                        status={
-                          d.status === 'approved'
-                            ? { label: 'Approved', tone: 'success' }
-                            : { label: 'Pending review', tone: 'warning' }
-                        }
-                      />
+                      <StatusBadge status={providerStatus[d.status]} />
                     </li>
                   )
                 })}
@@ -613,15 +609,13 @@ export function SettingsPage({
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
-        title={title}
+        title="Settings"
         description="Your profile, your workspace, and how Viatik keeps you informed."
       />
-      {leading}
       <PageTabs tabs={tabs} />
       {role === 'agency_admin' && agency ? (
         <AddDestinationSheet open={destinationOpen} onOpenChange={setDestinationOpen} agencyId={agency.id} />
       ) : null}
-      {children}
     </div>
   )
 }

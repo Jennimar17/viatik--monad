@@ -1,7 +1,8 @@
 import { eq, sql } from 'drizzle-orm'
 
 import { createDemoState } from '@/domain/fixtures'
-import type { ViatikState } from '@/domain/types'
+import { upgradeState } from '@/domain/migrate'
+import type { KeeperStatus, ViatikState } from '@/domain/types'
 import type { Balances } from '@/ledger/types'
 
 import { getDb } from './db/client'
@@ -40,7 +41,7 @@ export async function readWorld(): Promise<World> {
     ;[row] = await db.select().from(worldState).where(eq(worldState.id, WORLD))
   }
   if (!row) throw new Error('The product state could not be created.')
-  return { state: row.state, version: row.version, ledger: row.ledger }
+  return { state: upgradeState(row.state), version: row.version, ledger: row.ledger }
 }
 
 /** Where the world settles (null on the demo ledger), without reading the state itself. */
@@ -68,7 +69,10 @@ export async function withWorld<R>(
       ;[row] = await tx.select().from(worldState).where(eq(worldState.id, WORLD)).for('update')
     }
     if (!row) throw new Error('The product state could not be created.')
-    const { state, result } = await work({ state: row.state, version: row.version, ledger: row.ledger }, tx)
+    const { state, result } = await work(
+      { state: upgradeState(row.state), version: row.version, ledger: row.ledger },
+      tx,
+    )
     if (state) {
       await tx
         .update(worldState)
@@ -98,6 +102,30 @@ export async function saveLedgerBalances(
     .where(
       sql`${worldState.id} = ${WORLD} and ${worldState.ledger}->>'namespace' = ${namespace} and coalesce((${worldState.ledger}->'balances'->>'block')::bigint, -1) <= ${balances.block ?? 0} and coalesce((${worldState.ledger}->'balances'->>'version')::int, -1) <= ${version}`,
     )
+}
+
+/**
+ * Inside `withWorld` (the row is locked): keeps the keeper's last pass in the
+ * stored state without a new version, so a pass that changed nothing does not
+ * make every open screen read the whole state again (they poll by version):
+ * the next read of the state, or the next change, carries it. Writes nothing
+ * and returns false when the state's last versioned save is older than
+ * `staleAfterMs`: the caller then saves it the normal way, so open screens
+ * still hear from the timer now and then.
+ */
+export async function saveKeeperQuietly(
+  tx: DbTx,
+  keeper: KeeperStatus,
+  staleAfterMs: number,
+): Promise<boolean> {
+  const rows = await tx
+    .update(worldState)
+    .set({ state: sql`jsonb_set(${worldState.state}, '{keeper}', ${JSON.stringify(keeper)}::jsonb)` })
+    .where(
+      sql`${worldState.id} = ${WORLD} and ${worldState.updatedAt} > now() - make_interval(secs => ${Math.floor(staleAfterMs / 1000)})`,
+    )
+    .returning({ id: worldState.id })
+  return rows.length > 0
 }
 
 /**

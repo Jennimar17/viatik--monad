@@ -208,14 +208,18 @@ export const commandSchemas = {
   revokeAllowance: z.object({ allowanceId: id }),
 
   // ─── Requests, payments, bills and expenses ───────────────────────────────
+  // Which fields each type needs (a destination for vendor payments, a merchant and its receipt for
+  // reimbursements) is checked by the engine, with its own messages.
   requestPayment: z.object({
     agencyId: id,
     budgetId: id,
-    type: z.enum(['funds', 'vendor_payment', 'reimbursement', 'automation']),
-    destinationId: id,
+    type: z.enum(['funds', 'vendor_payment', 'reimbursement', 'work', 'automation']),
+    destinationId: id.optional(),
     amount: cents,
     category,
     purpose: text(500),
+    merchant: text(80).optional(),
+    spentAt: isoDate.optional(),
     attachments: z.array(evidence).max(10).optional(),
     idempotencyKey: z.string().min(8).max(120).regex(noNul),
   }),
@@ -270,15 +274,15 @@ export const commandSchemas = {
     scheduledFor: isoDate.optional(),
   }),
   reconcile: z.object({ agencyId: id, paymentId: id, billId: id.optional(), expenseId: id.optional() }),
+  // The budget comes from the advance the expense justifies.
   addExpense: z.object({
     agencyId: id,
-    budgetId: id,
+    paymentId: id,
     merchant: text(160),
     amount: cents,
     category,
     spentAt: isoDate,
-    receipt: evidence.optional(),
-    paymentId: id.optional(),
+    receipt: evidence,
   }),
   attachReceipt: z.object({ expenseId: id, receipt: evidence }),
   addDestination: z.object({
@@ -289,7 +293,101 @@ export const commandSchemas = {
     settlementLabel: text(120),
     website: text(300).optional(),
   }),
-  returnUnusedFunds: z.object({ agencyId: id, amount: cents }),
+  returnUnusedFunds: z.object({ agencyId: id, amount: cents, paymentId: id.optional() }),
+  // The engine checks the address (a valid, non-zero account): the schema only bounds the text.
+  withdrawFunds: z.object({ portfolioId: id, amount: cents, to: text(64) }),
+  withdrawBalance: z.object({ agencyId: id, amount: cents, to: text(64) }),
+  addPayoutAddress: z.object({ label: text(40), address: text(64) }),
+  removePayoutAddress: z.object({ addressId: id }),
+  updateDestination: z.object({
+    destinationId: id,
+    name: text(120).optional(),
+    kind: z.enum(['vendor', 'service', 'contractor']).optional(),
+    category: category.optional(),
+    settlementLabel: text(120).optional(),
+    website: text(300).optional(),
+  }),
+  setDestinationStatus: z.object({
+    destinationId: id,
+    status: z.enum(['approved', 'paused', 'archived']),
+  }),
+
+  // ─── Outside payments, capital returns and reminders ──────────────────────
+  // The engine checks the address (a valid, non-zero account): the schema only bounds the text.
+  payOutside: z.object({
+    agencyId: id,
+    source: z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('account'), accountId: id }),
+      z.object({ kind: z.literal('budget'), budgetId: id }),
+    ]),
+    to: text(64),
+    payee: text(120),
+    amount: cents,
+    category,
+    memo: text(500),
+    proof: evidence.optional(),
+    reminderId: id.optional(),
+  }),
+  addPaymentProof: z.object({ paymentId: id, proof: evidence }),
+  returnToInvestor: z.object({
+    agencyId: id,
+    accountId: id,
+    amount: cents,
+    note: text(300).optional(),
+  }),
+  remindReceipts: z.object({ agencyId: id, userId: id.optional() }),
+  // The engine keeps the day between 1 and 28 (every month has it): the schema only bounds the shape.
+  createReminder: z.object({
+    agencyId: id,
+    title: text(120),
+    payee: text(120),
+    amount: cents.optional(),
+    category,
+    dayOfMonth: z.number().int().min(1).max(31),
+    sourceAccountId: id.optional(),
+  }),
+  setReminderStatus: z.object({
+    reminderId: id,
+    status: z.enum(['active', 'paused', 'archived']),
+  }),
+
+  // ─── Scheduled payments ───────────────────────────────────────────────────
+  // The engine checks the first run (a minute to a year ahead), the runs (1 to 12) and the interval
+  // (none for a single run, at least a minute otherwise): the schema only bounds the shape. A bill is
+  // linked by payBill only, never by a caller.
+  schedulePayment: z.object({
+    agencyId: id,
+    type: z.enum([
+      'team',
+      'contractor',
+      'reimbursement',
+      'vendor',
+      'tool',
+      'refund',
+      'capital_return',
+      'automation',
+    ]),
+    recipient,
+    accountId: id,
+    budgetId: id.optional(),
+    amount: cents,
+    category,
+    memo: text(500),
+    firstRunAt: isoDate,
+    intervalSeconds: z
+      .number()
+      .int()
+      .min(0)
+      .max(366 * 24 * 60 * 60)
+      .optional(),
+    runs: z.number().int().min(1).max(52).optional(),
+    // "Schedule again" on a payment saved as scheduled before schedules existed: dropped once this is created.
+    replacesPaymentId: id.optional(),
+  }),
+  pauseSchedule: z.object({ scheduleId: id }),
+  resumeSchedule: z.object({ scheduleId: id }),
+  cancelSchedule: z.object({ scheduleId: id }),
+  dismissUnscheduledPayment: z.object({ paymentId: id }),
 
   // ─── People and automations ───────────────────────────────────────────────
   invite: z.object({

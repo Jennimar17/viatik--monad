@@ -67,7 +67,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     >
       <body className="min-h-svh antialiased">
         {children}
-        {process.env.NODE_ENV === 'production' && <Analytics />}
+        {/* Vercel Analytics exists only on Vercel; elsewhere its script would 404. */}
+        {process.env.NODE_ENV === 'production' && process.env.VERCEL === '1' && <Analytics />}
       </body>
     </html>
   )
