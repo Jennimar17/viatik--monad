@@ -1,8 +1,8 @@
 'use client'
 
-import { Briefcase, Ticket } from 'lucide-react'
+import { ArrowLeft, ArrowRight } from 'lucide-react'
 import type { Route } from 'next'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import * as React from 'react'
 
 import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
@@ -10,8 +10,10 @@ import { inviteHref, roleHome } from '@/components/app/nav'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ErrorState } from '@/components/viatik/feedback'
+import { roleIcons } from '@/components/viatik/people'
 import { ViatikLogo } from '@/components/viatik/viatik-logo'
 import { useCommand, useViatik } from '@/data/react'
+import { roleDescription, roleLabel } from '@/domain/permissions'
 import { nameFromEmail } from '@/lib/format'
 import { useSession } from '@/lib/session'
 import { timeZoneOptions } from '@/lib/time-zones'
@@ -33,12 +35,44 @@ function invitationCode(input: string): string | null {
   return /^[\w-]{3,64}$/.test(code) ? code : null
 }
 
+type WelcomeRole = 'investor' | 'agency_admin' | 'member'
+
+const WELCOME_ROLES: { key: string; role: WelcomeRole }[] = [
+  { key: 'investor', role: 'investor' },
+  { key: 'admin', role: 'agency_admin' },
+  { key: 'member', role: 'member' },
+]
+
+const inviteCopy: Record<Exclude<WelcomeRole, 'investor'>, { title: string; body: string }> = {
+  agency_admin: {
+    title: 'Join your Agency as Admin',
+    body: 'Agency Admins are invited by the Investor funding their Agency. Paste the invitation you received.',
+  },
+  member: {
+    title: 'Join your team as Member',
+    body: 'Members are invited by their Agency Admin. Paste the invitation you received.',
+  },
+}
+
+const choiceClass =
+  'group flex items-start gap-4 rounded-2xl border border-border bg-card p-5 text-left transition-colors outline-none hover:border-foreground/30 hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring'
+
 /**
  * First stop for a signed-in person who belongs to no workspace yet: start a
  * portfolio (and become its Investor) or join the workspace that invited them.
  */
 export default function WelcomePage() {
+  return (
+    <React.Suspense>
+      <Welcome />
+    </React.Suspense>
+  )
+}
+
+function Welcome() {
   const router = useRouter()
+  const params = useSearchParams()
+  const picked = WELCOME_ROLES.find((r) => r.key === params.get('role'))?.role
   const { userId, account, signOut } = useSession()
   const { state, user, memberships, isError, refetch } = useViatik()
   const create = useCommand('createPortfolio', { silent: true })
@@ -46,7 +80,6 @@ export default function WelcomePage() {
   // null until edited: the field shows a suggestion from the email.
   const [ownerName, setOwnerName] = React.useState<string | null>(null)
   const [name, setName] = React.useState('')
-  const [organization, setOrganization] = React.useState('')
   const [timeZone, setTimeZone] = React.useState(browserTimeZone)
   const [touched, setTouched] = React.useState(false)
   const [invite, setInvite] = React.useState('')
@@ -83,8 +116,7 @@ export default function WelcomePage() {
 
   const errors = {
     ownerName: needsName && yourName.trim().length < 2 ? 'Enter your name.' : undefined,
-    name: name.trim().length < 2 ? 'Enter a name for the portfolio.' : undefined,
-    organization: organization.trim().length < 2 ? 'Enter your organization.' : undefined,
+    name: name.trim().length < 2 ? 'Enter a name for your portfolio.' : undefined,
   }
   const shown = (key: keyof typeof errors) => (touched ? errors[key] : undefined)
   const busy = create.isPending
@@ -93,10 +125,11 @@ export default function WelcomePage() {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     setTouched(true)
-    if (errors.ownerName || errors.name || errors.organization) return
+    if (errors.ownerName || errors.name) return
     const portfolio = await create.run({
       name: name.trim(),
-      organization: organization.trim(),
+      // One name is enough: the portfolio and its organization share it.
+      organization: name.trim(),
       timeZone,
       ownerName: needsName ? yourName.trim() : undefined,
     })
@@ -111,30 +144,79 @@ export default function WelcomePage() {
 
   const firstName = user?.name.trim().split(' ')[0] ?? ''
 
+  const back = (
+    <Button
+      variant="ghost"
+      size="pill-sm"
+      className="-ml-3 w-fit text-subtle"
+      onClick={() => router.push('/welcome')}
+    >
+      <ArrowLeft data-icon="inline-start" /> Change role
+    </Button>
+  )
+
+  const footer = (
+    <p className="flex flex-wrap items-center gap-x-2 text-sm text-subtle">
+      {email ? <span>Signed in as {email}</span> : null}
+      <Button
+        variant="link"
+        size="sm"
+        className="h-auto px-0 text-subtle"
+        onClick={async () => {
+          await signOut()
+          router.replace('/sign-in')
+        }}
+      >
+        Sign out
+      </Button>
+    </p>
+  )
+
   return (
     <main id="main" className="mx-auto flex min-h-svh max-w-3xl flex-col justify-center gap-8 px-4 py-12">
       <ViatikLogo className="-ml-1" />
-      <div className="flex flex-col gap-2">
-        <p className="text-sm text-subtle">{firstName ? `Welcome, ${firstName}` : 'Welcome'}</p>
-        <h1 className="font-display text-3xl font-medium tracking-tight">Set up your workspace</h1>
-        <p className="max-w-xl text-base text-pretty text-muted-foreground">
-          Start a portfolio to fund teams, or join the workspace that invited you.
-        </p>
-      </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <section className="surface flex flex-col gap-5 rounded-2xl p-6" aria-labelledby="create-title">
-          <div className="flex items-start gap-3">
-            <Briefcase className="mt-0.5 size-5 shrink-0 text-subtle" aria-hidden="true" />
-            <div className="flex flex-col gap-1">
-              <h2 id="create-title" className="text-base font-medium">
-                Create a portfolio
-              </h2>
-              <p className="text-sm text-pretty text-muted-foreground">
-                For investors. Fund Agencies through Funding Agreements and release capital as milestones are
-                met.
-              </p>
-            </div>
+      {!picked ? (
+        <>
+          <div className="flex flex-col gap-2">
+            <p className="text-sm text-subtle">{firstName ? `Welcome, ${firstName}` : 'Welcome'}</p>
+            <h1 className="font-display text-3xl font-medium tracking-tight">How will you use Viatik?</h1>
+            <p className="max-w-xl text-base text-pretty text-muted-foreground">
+              Choose your role. You can always be invited to other workspaces later.
+            </p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3" role="group" aria-label="Choose your role">
+            {WELCOME_ROLES.map(({ key, role }) => {
+              const Icon = roleIcons[role]
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => router.push(`/welcome?role=${key}` as Route)}
+                  className={choiceClass}
+                >
+                  <span className="flex min-w-0 flex-1 flex-col gap-3">
+                    <Icon className="size-5 text-subtle" aria-hidden="true" />
+                    <span className="text-base font-medium">{roleLabel[role]}</span>
+                    <span className="text-sm text-pretty text-muted-foreground">{roleDescription[role]}</span>
+                  </span>
+                  <ArrowRight
+                    className="mt-0.5 size-4 shrink-0 text-subtle transition-transform group-hover:translate-x-0.5"
+                    aria-hidden="true"
+                  />
+                </button>
+              )
+            })}
+          </div>
+        </>
+      ) : picked === 'investor' ? (
+        <div className="flex max-w-md flex-col gap-6">
+          {back}
+          <div className="flex flex-col gap-2">
+            <h1 className="font-display text-3xl font-medium tracking-tight">Create your portfolio</h1>
+            <p className="text-base text-pretty text-muted-foreground">
+              Fund Agencies through Funding Agreements and release capital as milestones are met.
+            </p>
           </div>
           <form className="flex flex-col gap-4" onSubmit={(event) => void submit(event)} noValidate>
             {needsName ? (
@@ -154,26 +236,15 @@ export default function WelcomePage() {
                 />
               </FormField>
             ) : null}
-            <FormField label="Portfolio name" htmlFor="portfolio-name" error={shown('name')}>
+            <FormField label="Portfolio or organization name" htmlFor="portfolio-name" error={shown('name')}>
               <PillInput
                 id="portfolio-name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="Northstar Ventures"
-                autoComplete="off"
-                maxLength={80}
-                aria-invalid={Boolean(shown('name')) || undefined}
-              />
-            </FormField>
-            <FormField label="Organization" htmlFor="portfolio-organization" error={shown('organization')}>
-              <PillInput
-                id="portfolio-organization"
-                value={organization}
-                onChange={(event) => setOrganization(event.target.value)}
                 placeholder="Northstar Capital"
                 autoComplete="organization"
                 maxLength={80}
-                aria-invalid={Boolean(shown('organization')) || undefined}
+                aria-invalid={Boolean(shown('name')) || undefined}
               />
             </FormField>
             <FormField label="Time zone" htmlFor="portfolio-tz">
@@ -193,19 +264,15 @@ export default function WelcomePage() {
               {busy ? 'Creating…' : 'Create portfolio'}
             </Button>
           </form>
-        </section>
-
-        <section className="surface flex flex-col gap-5 rounded-2xl p-6" aria-labelledby="join-title">
-          <div className="flex items-start gap-3">
-            <Ticket className="mt-0.5 size-5 shrink-0 text-subtle" aria-hidden="true" />
-            <div className="flex flex-col gap-1">
-              <h2 id="join-title" className="text-base font-medium">
-                Join with an invitation
-              </h2>
-              <p className="text-sm text-pretty text-muted-foreground">
-                Agency Admins and Members join through the link their team sent to {email ?? 'their email'}.
-              </p>
-            </div>
+        </div>
+      ) : (
+        <div className="flex max-w-md flex-col gap-6">
+          {back}
+          <div className="flex flex-col gap-2">
+            <h1 className="font-display text-3xl font-medium tracking-tight">{inviteCopy[picked].title}</h1>
+            <p className="text-base text-pretty text-muted-foreground">
+              {inviteCopy[picked].body} It only works when you sign in with the email it was created for.
+            </p>
           </div>
           <form className="flex flex-col gap-4" onSubmit={join} noValidate>
             <FormField
@@ -223,27 +290,14 @@ export default function WelcomePage() {
                 aria-invalid={(inviteTouched && !code) || undefined}
               />
             </FormField>
-            <Button type="submit" size="pill" variant="outline">
+            <Button type="submit" size="pill">
               Continue
             </Button>
           </form>
-        </section>
-      </div>
+        </div>
+      )}
 
-      <p className="flex flex-wrap items-center gap-x-2 text-sm text-subtle">
-        {email ? <span>Signed in as {email}</span> : null}
-        <Button
-          variant="link"
-          size="sm"
-          className="h-auto px-0 text-subtle"
-          onClick={async () => {
-            await signOut()
-            router.replace('/sign-in')
-          }}
-        >
-          Sign out
-        </Button>
-      </p>
+      {footer}
     </main>
   )
 }

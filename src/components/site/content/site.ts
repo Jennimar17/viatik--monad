@@ -14,10 +14,10 @@ export const siteConfig = {
     'Viatik connects funding agreements, capital releases, budgets, payments, and evidence in one verifiable flow.',
   statement: 'Programmable funding infrastructure for modern teams.',
   routes: {
-    demo: '/sign-in',
+    demo: '/sign-in/demo',
     signIn: '/sign-in',
     /** Opens the product signed in as the matching person of the demo story. */
-    demoRole: (role: DemoRole) => `/sign-in?as=${role}` as const,
+    demoRole: (role: DemoRole) => `/sign-in/demo?as=${role}` as const,
   },
 } as const
 
@@ -49,44 +49,23 @@ export const footerNav: { heading: string; items: FooterItem[] }[] = [
     heading: 'Product',
     items: [
       { label: 'How it works', href: '#how-it-works' },
-      { label: 'Roles', href: '#product' },
-      { label: 'Controls', href: '#controls' },
-      { label: 'Security', href: '#security' },
-      { label: 'Funding agreements', planned: '/product/funding-agreements' },
-      { label: 'Budgets & policies', planned: '/product/budgets' },
-      { label: 'AI Agents', planned: '/product/ai-agents' },
-      { label: 'Open the demo', href: '/sign-in' },
-    ],
-  },
-  {
-    heading: 'Use cases',
-    items: [
-      { label: 'Venture studios', planned: '/use-cases/venture-studios' },
-      { label: 'Grant programs', planned: '/use-cases/grant-programs' },
-      { label: 'Ecosystem funds', planned: '/use-cases/ecosystem-funds' },
-      { label: 'Agencies & studios', planned: '/use-cases/agencies' },
-      { label: 'Distributed teams', planned: '/use-cases/distributed-teams' },
+      { label: 'Controls & security', href: '#controls' },
+      { label: 'Open the demo', href: '/sign-in/demo' },
     ],
   },
   {
     heading: 'Learn',
     items: [
-      { label: 'About Monad', planned: '/monad' },
       { label: 'Why Monad', href: '#monad' },
-      { label: 'Settlement', planned: '/learn/settlement' },
-      { label: 'Verified receipts', planned: '/learn/verification' },
-      { label: 'Documentation', planned: '/docs' },
-      { label: 'Glossary', planned: '/glossary' },
+      { label: 'Documentation', href: '/docs' },
       { label: 'FAQ', href: '#faq' },
     ],
   },
   {
     heading: 'Company',
     items: [
-      { label: 'About Viatik', planned: '/about' },
-      { label: 'Roadmap', planned: '/roadmap' },
-      { label: 'Brand kit', planned: '/brand' },
-      { label: 'Contact', planned: '/contact' },
+      { label: 'About', href: '/about' },
+      { label: 'Roadmap', href: '/roadmap' },
     ],
   },
   {

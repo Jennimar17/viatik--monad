@@ -344,13 +344,19 @@ export const SHARED_SCREENS = [
   {
     path: '/sign-in',
     title: 'Sign in',
-    summary: 'Email, Google or passkey; demo personas and deep links.',
+    summary: 'Email, Google or passkey.',
+    status: 'ready',
+  },
+  {
+    path: '/sign-in/demo',
+    title: 'Explore the demo',
+    summary: 'Demo personas and deep links, apart from real sign-in.',
     status: 'ready',
   },
   {
     path: '/welcome',
     title: 'Welcome',
-    summary: 'New account: create a portfolio or join with an invitation.',
+    summary: 'New account: choose Investor, Admin or Member, then create a portfolio or join with an invitation.',
     status: 'ready',
   },
   {

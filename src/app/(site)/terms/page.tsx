@@ -11,15 +11,15 @@ export default function TermsPage() {
   return (
     <LegalPage
       title="Terms"
-      updated="September 23, 2026"
-      intro="Viatik is an early product built for the Monad Metropolis hackathon. By using the site or the demo you accept these terms."
+      updated="October 8, 2026"
+      intro="Viatik is an early product. By using the site, the demo or your account you accept these terms."
       sections={[
         {
           heading: 'An early product',
           body: (
             <p>
-              Viatik is provided as is, for evaluation. Features, availability and these terms may change as
-              the product develops.
+              Viatik is provided as is. Features, availability and these terms may change as the product
+              develops, including when it moves from testnet to mainnet.
             </p>
           ),
         },
@@ -28,7 +28,7 @@ export default function TermsPage() {
           body: (
             <p>
               The demo uses fictional data and, where it touches the network, test funds on the Monad testnet.
-              Nothing shown in the demo represents real money or a real organization.
+              Nothing shown in the demo or on testnet represents real money or a real organization.
             </p>
           ),
         },

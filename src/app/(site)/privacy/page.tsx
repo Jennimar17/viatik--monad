@@ -11,16 +11,18 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Privacy"
-      updated="September 23, 2026"
-      intro="Viatik is an early product built for the Monad Metropolis hackathon. This page explains what we collect and why, in plain language."
+      updated="October 8, 2026"
+      intro="Viatik is programmable funding software. This page explains what we collect and why, in plain language."
       sections={[
         {
           heading: 'What we collect',
           body: (
             <>
               <p>
-                When you join the early-access list we collect your work email, your organization and the role
-                that describes you. We do not ask for anything else.
+                When you sign in we receive the email or Google account you use, and we create your Viatik
+                account. Inside the product you may add your name, your organization or portfolio name, the
+                details of agreements, budgets and payments you create, and the wallet addresses you save to
+                withdraw to.
               </p>
               <p>
                 The product demo uses fictional people, organizations and amounts. Its state is kept in your
@@ -33,8 +35,8 @@ export default function PrivacyPage() {
           heading: 'How we use it',
           body: (
             <p>
-              We use early-access details only to contact you about Viatik. We do not sell them or share them
-              for advertising.
+              We use your details to run your account and your workspace, and to contact you about Viatik. We
+              do not sell them or share them for advertising.
             </p>
           ),
         },
@@ -52,8 +54,8 @@ export default function PrivacyPage() {
           heading: 'Your choices',
           body: (
             <p>
-              You can ask us to remove your early-access details at any time through the early-access form on
-              viatik.xyz.
+              You can ask us to remove your account details and saved addresses at any time. Records already
+              written to Monad cannot be erased, but they do not contain your private documents.
             </p>
           ),
         },
