@@ -200,6 +200,7 @@ export default function ReceiptPage() {
         amount={receipt.amount}
         issuedAt={receipt.issuedAt}
         rows={rows}
+        recorded={receipt.verified.imported ? 'example' : receipt.verified.simulated ? 'simulated' : 'monad'}
         evidence={evidenceFor(state, receipt, reconciliation).map((e) => ({
           id: e.id,
           name: e.kind === 'file' ? <OpenFileButton evidence={e} /> : e.name,

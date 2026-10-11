@@ -175,12 +175,14 @@ function reasonText(reason: NonNullable<VerifiedDetails['reason']>) {
   return name
 }
 
-/** What the record says happened, in one line above the table. */
+/** What the record says happened, in one line above the table. Simulated details never name Monad. */
 function summary(details: VerifiedDetails) {
-  if (details.outcome === 'rejected') return 'Recorded on Monad and rejected under the budget rules.'
-  if (details.outcome === 'pending') return 'Recorded on Monad when it was sent for approval.'
-  if (!details.receiptHash) return 'Recorded on Monad.'
-  return 'This operation was settled and recorded on Monad.'
+  if (details.imported) return 'An example record from the demo story.'
+  const ledger = details.simulated ? 'the demo ledger' : 'Monad'
+  if (details.outcome === 'rejected') return `Recorded on ${ledger} and rejected under the budget rules.`
+  if (details.outcome === 'pending') return `Recorded on ${ledger} when it was sent for approval.`
+  if (!details.receiptHash) return `Recorded on ${ledger}.`
+  return `This operation was settled and recorded on ${ledger}.`
 }
 
 /** The verified details table, shown in a drawer on demand ("View verified details"). */
@@ -237,7 +239,9 @@ export function VerifiedDetailsList({
       ) : null}
       {details.simulated ? (
         <p className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-xs text-subtle">
-          Simulated details: this operation is not published on Monad yet.
+          {details.imported
+            ? 'Imported when the demo story was set up: it is not a Monad transaction of its own.'
+            : 'Simulated details: nothing was sent to Monad.'}
         </p>
       ) : null}
       {details.simulated ? (

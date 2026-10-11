@@ -9,6 +9,18 @@ import { ViatikLogo } from './viatik-logo'
 
 export type ReceiptRow = { label: string; value: string; mono?: boolean }
 
+/** Where the operation was recorded: on Monad, on the demo ledger, or imported with the demo story. */
+export type ReceiptRecorded = 'monad' | 'simulated' | 'example'
+
+const FOOTNOTE: Record<ReceiptRecorded, string> = {
+  monad:
+    'This operation was settled and recorded on Monad. Documents stay private; only their fingerprints are recorded. Open verified details to check the transaction.',
+  simulated:
+    'This operation was settled on the demo ledger; nothing was sent to Monad. Documents stay private; only their fingerprints are recorded.',
+  example:
+    'An example record, imported when the demo story was set up: it is not a Monad transaction of its own. Documents stay private.',
+}
+
 /**
  * Verifiable receipt on the paper surface (`theme-light`), printable. The
  * page around it owns the actions (print, verified details).
@@ -21,6 +33,7 @@ export function ReceiptView({
   issuedAt,
   rows,
   evidence = [],
+  recorded = 'simulated',
   className,
 }: {
   /** e.g. "Payment receipt". */
@@ -34,6 +47,8 @@ export function ReceiptView({
   /** Supporting documents; only their fingerprints are recorded onchain. */
   /** `name` may be a control that opens the document; `label` is its plain name. */
   evidence?: { id: string; name: React.ReactNode; label: string; fingerprint: string }[]
+  /** Where it was recorded; only 'monad' (read from Monad) says it settled there. */
+  recorded?: ReceiptRecorded
   className?: string
 }) {
   return (
@@ -86,8 +101,7 @@ export function ReceiptView({
       ) : null}
 
       <footer className="border-t border-border p-6 text-xs text-pretty text-muted-foreground sm:p-8">
-        This operation was settled and recorded on Monad. Documents stay private; only their fingerprints are
-        recorded. Open verified details to check the transaction.
+        {FOOTNOTE[recorded]}
       </footer>
     </article>
   )
