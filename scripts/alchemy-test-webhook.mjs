@@ -6,7 +6,7 @@
 //
 //   <account>          the person's Viatik account address (users.wallet_address)
 //   [amount]           USD, up to 6 decimals (default 25)
-//   --from 0x…         the sender (default: a random address; never 0x0 or the ledger, which are skipped)
+//   --from 0x…         the sender (default: a random address; 0x0 is told as a mint, the ledger is skipped)
 //   --tx 0x…           the transaction hash (default: random). Send the same --tx and --log-index
 //                      again to check that a delivery received twice is told once.
 //   --log-index N      the log's index in the transaction (default 0)

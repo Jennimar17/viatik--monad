@@ -48,6 +48,8 @@ export type FundsArrivedInput = {
   /** The person whose Viatik account received the money. */
   userId: Id
   amount: Cents
+  /** Minted TestUSD (from 0x0, as "Get test funds" does): told as "Test funds arrived". */
+  mint?: boolean
 }
 
 export type FundsArrivedOutcome =
@@ -101,8 +103,8 @@ export function noteFundsArrived(tx: Tx, input: FundsArrivedInput): FundsArrived
 
   tx.notify(
     [input.userId],
-    'Funds arrived',
-    `${usdText(input.amount)} arrived in your Viatik account.`,
+    input.mint ? 'Test funds arrived' : 'Funds arrived',
+    `${usdText(input.amount)}${input.mint ? ' of test funds' : ''} arrived in your Viatik account.`,
     fundsArrivedHref(tx.state, input.userId),
     'funds_arrived',
   )
