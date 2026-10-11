@@ -13,6 +13,8 @@ import type { Notification } from '@/domain/types'
 import { dayGroup, formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
+import { useRole } from '../role-context'
+
 /** Notifications, grouped into today and earlier, with unread markers. */
 export function NotificationsSheet({
   open,
@@ -22,6 +24,7 @@ export function NotificationsSheet({
   onOpenChange: (open: boolean) => void
 }) {
   const { state, userId, now } = useViatikState()
+  const { role } = useRole()
   const router = useRouter()
   const markRead = useCommand('markNotificationsRead', { silent: true })
   const notifications = state.notifications.filter((n) => n.userId === userId)
@@ -81,7 +84,11 @@ export function NotificationsSheet({
             <EmptyState
               icon={<BellOff />}
               title="Nothing needs your attention"
-              description="Requests that require your decision will appear here."
+              description={
+                role === 'member'
+                  ? 'Payments, receipt reminders and decisions on your requests will appear here.'
+                  : 'Requests that require your decision will appear here.'
+              }
               compact
             />
           ) : (
