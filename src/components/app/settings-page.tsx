@@ -522,10 +522,9 @@ export function SettingsPage() {
                 <Tag className="ml-auto">Current</Tag>
               </li>
             </ul>
-            <p className="mt-3 text-xs text-subtle">Sessions on other devices appear here.</p>
-            <Button variant="ghost" size="pill-sm" className="mt-4 w-fit" disabled>
-              Sign out other sessions
-            </Button>
+            <p className="mt-3 text-xs text-subtle">
+              Only this browser is listed. To end a session on another device, use Sign out on that device.
+            </p>
           </Panel>
         </div>
       ),
