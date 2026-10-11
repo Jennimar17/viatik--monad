@@ -23,7 +23,7 @@ import { publicEnv } from '@/lib/env'
  * funds, the Member's Payments ▸ Addresses and the Admin's Settings ▸ Viatik
  * account. Source the account from
  * `useOwnAccount()` for every role, so the demo shows the same placeholder
- * address everywhere (and never a QR code for it).
+ * address everywhere (and never a QR code or copy button for it).
  */
 
 /** One "what this account holds" line, in whichever state its read is. */
@@ -134,7 +134,10 @@ export function AccountAddressCard({
               <span className="text-sm text-muted-foreground">{addressLabel}</span>
               <span className="flex items-start gap-1">
                 <span className="min-w-0 font-mono text-sm break-all text-foreground">{address}</span>
-                <CopyButton value={address} label="Copy your Viatik account address" className="-mt-0.5" />
+                {/* Like the QR code, no copy button for the demo's placeholder: nothing should be sent to it. */}
+                {own.settlement !== 'simulated' ? (
+                  <CopyButton value={address} label="Copy your Viatik account address" className="-mt-0.5" />
+                ) : null}
               </span>
             </div>
 
