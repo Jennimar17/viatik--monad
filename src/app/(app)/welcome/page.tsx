@@ -9,6 +9,8 @@ import * as React from 'react'
 import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
 import { inviteHref, roleHome } from '@/components/app/nav'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ErrorState } from '@/components/viatik/feedback'
 import { roleIcons } from '@/components/viatik/people'
@@ -103,6 +105,8 @@ function Welcome() {
   const [name, setName] = React.useState('')
   const [timeZone, setTimeZone] = React.useState(browserTimeZone)
   const [touched, setTouched] = React.useState(false)
+  // A portfolio cannot be deleted yet, so creating one needs an explicit yes.
+  const [acknowledged, setAcknowledged] = React.useState(false)
   const [invite, setInvite] = React.useState('')
   const [inviteTouched, setInviteTouched] = React.useState(false)
 
@@ -146,7 +150,7 @@ function Welcome() {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     setTouched(true)
-    if (errors.ownerName || errors.name) return
+    if (errors.ownerName || errors.name || !acknowledged) return
     const portfolio = await create.run({
       name: name.trim(),
       // One name is enough: the portfolio and its organization share it.
@@ -277,6 +281,33 @@ function Welcome() {
                 options={timeZoneOptions(timeZone)}
               />
             </FormField>
+            <div className="flex flex-col gap-3 rounded-xl border border-warning/30 bg-warning-soft p-4">
+              <p className="text-sm text-pretty text-foreground">
+                A portfolio cannot be deleted yet. Agency Admins and Members do not create one: they join
+                through an invitation. If that is you, use Change role.
+              </p>
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="portfolio-confirm"
+                  checked={acknowledged}
+                  disabled={busy}
+                  onCheckedChange={(value) => setAcknowledged(Boolean(value))}
+                  aria-invalid={(touched && !acknowledged) || undefined}
+                  className="mt-0.5"
+                />
+                <Label
+                  htmlFor="portfolio-confirm"
+                  className="text-sm leading-snug font-medium text-pretty text-foreground"
+                >
+                  I am an Investor and want to create this portfolio
+                </Label>
+              </div>
+              {touched && !acknowledged ? (
+                <p className="text-sm text-danger" role="alert">
+                  Confirm before creating your portfolio.
+                </p>
+              ) : null}
+            </div>
             {create.error ? (
               <p className="text-sm text-danger" role="alert">
                 {create.error}
