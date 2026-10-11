@@ -30,7 +30,8 @@ import { runDueOnMock, type KeeperDone } from './keeper'
 import { applySettlement, planSettlement } from './settlement'
 
 const STORAGE_KEY = 'viatik:demo-state'
-const STATE_VERSION = 1
+/** Bump when the demo story or the state's shape changes: browsers holding an older copy start over. */
+const STATE_VERSION = 2
 
 /** Simulated settlement time; Monad finalizes in under a second, the demo stays close. */
 const LEDGER_LATENCY_MS = 1400
