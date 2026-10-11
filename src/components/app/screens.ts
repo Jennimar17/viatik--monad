@@ -283,7 +283,8 @@ export const SCREENS = {
     {
       path: 'settings',
       title: 'Settings',
-      summary: 'Profile, approval rules, destinations, notifications, security, developer.',
+      summary:
+        'Profile, Viatik account (address, QR, TestUSD held), agency, approval rules, destinations, notifications, security, developer.',
       status: 'ready',
     },
   ],
@@ -356,7 +357,8 @@ export const SHARED_SCREENS = [
   {
     path: '/welcome',
     title: 'Welcome',
-    summary: 'New account: choose Investor, Admin or Member, then create a portfolio or join with an invitation.',
+    summary:
+      'New account: choose Investor, Admin or Member, then create a portfolio or join with an invitation.',
     status: 'ready',
   },
   {

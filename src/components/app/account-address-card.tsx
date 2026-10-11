@@ -20,7 +20,8 @@ import { publicEnv } from '@/lib/env'
  * The signed-in person's own Viatik account (their embedded account): its
  * address in full with a copy button, a QR code of the plain address, an
  * explorer link and, optionally, what it holds. Used by the Investor's Add
- * funds and the Member's Payments ▸ Addresses. Source the account from
+ * funds, the Member's Payments ▸ Addresses and the Admin's Settings ▸ Viatik
+ * account. Source the account from
  * `useOwnAccount()` for every role, so the demo shows the same placeholder
  * address everywhere (and never a QR code for it).
  */

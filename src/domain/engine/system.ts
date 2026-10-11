@@ -18,8 +18,9 @@ import { scheduleRecipientName } from './schedules'
 
 /**
  * Where a person sees their Viatik account: an Investor on Add funds, a Member
- * on Payments, an Admin on their agency's overview (in that order when they
- * have several roles), and the home page for someone without a workspace yet.
+ * on Payments ▸ Addresses, an Admin on Settings ▸ Viatik account (in that order
+ * when they have several roles), and the home page for someone without a
+ * workspace yet.
  */
 export function fundsArrivedHref(state: ViatikState, userId: Id): string {
   const active = state.memberships.filter((m) => m.userId === userId && m.status === 'active')
@@ -28,10 +29,10 @@ export function fundsArrivedHref(state: ViatikState, userId: Id): string {
       return `/investor/${membership.scope.portfolioId}/vaults/add-funds`
   for (const membership of active)
     if (membership.role === 'member' && membership.scope.kind === 'agency')
-      return `/member/${membership.scope.agencyId}/payments`
+      return `/member/${membership.scope.agencyId}/payments?tab=addresses`
   for (const membership of active)
     if (membership.role === 'agency_admin' && membership.scope.kind === 'agency')
-      return `/agency/${membership.scope.agencyId}/overview`
+      return `/agency/${membership.scope.agencyId}/settings?tab=account`
   return '/'
 }
 

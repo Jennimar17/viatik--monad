@@ -270,8 +270,8 @@ function notes(t: Checker) {
     [investor!, member!, admin!].map((userId) => fundsArrivedHref(state, userId)),
     [
       `/investor/${investorScope?.kind === 'portfolio' ? investorScope.portfolioId : '?'}/vaults/add-funds`,
-      `/member/${memberScope?.kind === 'agency' ? memberScope.agencyId : '?'}/payments`,
-      `/agency/${adminScope?.kind === 'agency' ? adminScope.agencyId : '?'}/overview`,
+      `/member/${memberScope?.kind === 'agency' ? memberScope.agencyId : '?'}/payments?tab=addresses`,
+      `/agency/${adminScope?.kind === 'agency' ? adminScope.agencyId : '?'}/settings?tab=account`,
     ],
   )
   const newcomer = { ...state.users[0]!, id: 'u_newcomer', email: 'newcomer@example.com', name: 'New' }
