@@ -2,6 +2,7 @@
 
 import { ArrowLeft, ArrowRight } from 'lucide-react'
 import type { Route } from 'next'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import * as React from 'react'
 
@@ -56,6 +57,26 @@ const inviteCopy: Record<Exclude<WelcomeRole, 'investor'>, { title: string; body
 
 const choiceClass =
   'group flex items-start gap-4 rounded-2xl border border-border bg-card p-5 text-left transition-colors outline-none hover:border-foreground/30 hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring'
+
+/** A demo person whose access was removed has no workspace left: the way back to the other people. */
+function DemoNote() {
+  const { mode, user } = useViatik()
+  if (mode !== 'demo') return null
+  return (
+    <div className="flex max-w-xl flex-col gap-2 rounded-2xl border border-border bg-muted/40 p-4 text-sm">
+      <p className="text-pretty text-muted-foreground">
+        {user?.name || 'This person'} no longer belongs to a workspace in this demo. Choose another person to
+        keep exploring, then use Reset demo to restore the sample data.
+      </p>
+      <Link
+        href="/sign-in/demo"
+        className="inline-flex w-fit items-center gap-1.5 font-medium text-foreground hover:underline"
+      >
+        <ArrowLeft className="size-3.5" aria-hidden="true" /> Back to the demo
+      </Link>
+    </div>
+  )
+}
 
 /**
  * First stop for a signed-in person who belongs to no workspace yet: start a
@@ -175,6 +196,7 @@ function Welcome() {
   return (
     <main id="main" className="mx-auto flex min-h-svh max-w-3xl flex-col justify-center gap-8 px-4 py-12">
       <ViatikLogo className="-ml-1" />
+      <DemoNote />
 
       {!picked ? (
         <>
