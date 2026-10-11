@@ -1,10 +1,13 @@
 'use client'
 
+import { TriangleAlert } from 'lucide-react'
 import * as React from 'react'
 
 import { FormField, SimpleSelect, type Option } from '@/components/app/form-controls'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
 import { advanceDueText, advanceTitle } from '@/components/app/request-parts'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
 import { MoneyInput } from '@/components/viatik/forms'
 import { useCommand, useViatikState } from '@/data/react'
@@ -22,7 +25,9 @@ const OTHER = 'other'
  * Agency's Operations account. With money for purchases still open, they say
  * what they are returning: one of those (the oldest by default), which the
  * return settles, or "Other money", which is only what their Viatik balance
- * holds beyond what those still have pending. Ends with the receipt.
+ * holds beyond what those still have pending. Returning money that is not for
+ * purchases (money already paid to them, such as their pay) needs an explicit
+ * "I understand" first. Ends with the receipt.
  */
 export function MemberReturnSheet({
   open,
@@ -43,6 +48,8 @@ export function MemberReturnSheet({
   const [amount, setAmount] = React.useState<Cents | null>(null)
   const [choice, setChoice] = React.useState<string | null>(null)
   const [receiptId, setReceiptId] = React.useState<string | null>(null)
+  // The explicit "I understand" that returning money already paid to the person needs.
+  const [understood, setUnderstood] = React.useState(false)
 
   const operations = state.accounts.find((a) => a.agencyId === agencyId && a.template === 'operations')
   const operationsName = operations?.name ?? 'Operations'
@@ -64,6 +71,9 @@ export function MemberReturnSheet({
   const cap = advance ? returnableFor(state, advance) : otherCap
   const overCap = Boolean(amount && amount > cap)
   const capText = formatUsd(cap, { withCode: true })
+  // Without money for purchases to settle ("Other money"), the return gives back money already paid to
+  // the person, such as their pay: it needs an explicit confirmation before it can be sent.
+  const otherMoney = !advance
 
   const options: Option[] = [
     ...openAdvances.map((s) => ({
@@ -100,6 +110,7 @@ export function MemberReturnSheet({
         setAmount(null)
         setChoice(null)
         setReceiptId(null)
+        setUnderstood(false)
       }}
       title="Return unused funds"
       summary={{
@@ -115,7 +126,7 @@ export function MemberReturnSheet({
             : `You can return up to ${capText}, what you received from this Agency. The return gets a receipt in the verified record.`,
       }}
       confirmLabel="Return funds"
-      disabled={!amount || overCap}
+      disabled={!amount || overCap || (otherMoney && !understood)}
       phase={giveBack.phase}
       error={giveBack.error}
       onConfirm={async () => {
@@ -140,7 +151,10 @@ export function MemberReturnSheet({
             <SimpleSelect
               id="return-choice"
               value={advance?.payment.id ?? OTHER}
-              onValueChange={setChoice}
+              onValueChange={(value) => {
+                setChoice(value)
+                setUnderstood(false)
+              }}
               options={options}
               disabled={giveBack.isPending}
             />
@@ -159,6 +173,33 @@ export function MemberReturnSheet({
             invalid={overCap}
           />
         </FormField>
+
+        {otherMoney ? (
+          <div className="flex flex-col gap-3 rounded-xl border border-warning/30 bg-warning-soft p-4">
+            <p className="flex gap-2 text-sm text-pretty text-foreground">
+              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+              <span>
+                This gives back money {agencyName} already paid you, such as your pay, not money for
+                purchases. It cannot be undone.
+              </span>
+            </p>
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="return-confirm-other"
+                checked={understood}
+                disabled={giveBack.isPending}
+                onCheckedChange={(value) => setUnderstood(Boolean(value))}
+                className="mt-0.5"
+              />
+              <Label
+                htmlFor="return-confirm-other"
+                className="text-sm leading-snug font-medium text-pretty text-foreground"
+              >
+                I understand I am giving back money already paid to me
+              </Label>
+            </div>
+          </div>
+        ) : null}
       </div>
     </ApprovalSheet>
   )

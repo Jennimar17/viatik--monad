@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, FlaskConical, RotateCcw } from 'lucide-react'
+import { Check, FlaskConical, LogOut, RotateCcw } from 'lucide-react'
 import type { Route } from 'next'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -22,16 +22,17 @@ import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
 import { useRole } from '../role-context'
+import { resetWelcomeCards } from '../welcome-card'
 import { useShellUi } from './app-shell'
 
 /**
  * Hackathon demo mode: a floating glass pill to view the product as any of
- * the three people in the demo story, and to reset the data.
+ * the three people in the demo story, to reset the data, or to leave the demo.
  */
 export function DemoPill() {
   const { userId, user } = useViatikState()
   const { role } = useRole()
-  const { enterDemo } = useSession()
+  const { enterDemo, signOut } = useSession()
   const router = useRouter()
   const resetDemo = useResetDemo()
   const { bottomBar } = useShellUi()
@@ -106,11 +107,27 @@ export function DemoPill() {
           <DropdownMenuItem
             className="gap-2 rounded-lg"
             onClick={async () => {
+              // Go home first: records created since are gone after the reset.
+              // An invited demo person is gone too, so they choose a persona again.
+              const persona = DEMO_PERSONAS.find((p) => p.userId === userId)
+              router.push((persona?.href ?? '/sign-in/demo') as Route)
+              resetWelcomeCards(DEMO_PERSONAS.map((p) => p.userId))
               await resetDemo()
               toast.success('Demo data was reset.')
             }}
           >
             <RotateCcw className="size-4" /> Reset demo
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="gap-2 rounded-lg"
+            onClick={async () => {
+              // Only the demo person leaves; a real account on this device stays signed in.
+              // Awaited, so this destination replaces the shell's own redirect to sign-in.
+              await signOut()
+              router.replace('/sign-in/demo')
+            }}
+          >
+            <LogOut className="size-4" /> Exit demo
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

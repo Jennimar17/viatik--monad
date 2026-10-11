@@ -2,14 +2,19 @@
 
 import { ArrowLeft, ArrowRight } from 'lucide-react'
 import type { Route } from 'next'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import * as React from 'react'
 
 import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
 import { inviteHref, roleHome } from '@/components/app/nav'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ErrorState } from '@/components/viatik/feedback'
+import { PendingOperation } from '@/components/viatik/operation'
 import { roleIcons } from '@/components/viatik/people'
 import { ViatikLogo } from '@/components/viatik/viatik-logo'
 import { useCommand, useViatik } from '@/data/react'
@@ -57,6 +62,26 @@ const inviteCopy: Record<Exclude<WelcomeRole, 'investor'>, { title: string; body
 const choiceClass =
   'group flex items-start gap-4 rounded-2xl border border-border bg-card p-5 text-left transition-colors outline-none hover:border-foreground/30 hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring'
 
+/** A demo person whose access was removed has no workspace left: the way back to the other people. */
+function DemoNote() {
+  const { mode, user } = useViatik()
+  if (mode !== 'demo') return null
+  return (
+    <div className="flex max-w-xl flex-col gap-2 rounded-2xl border border-border bg-muted/40 p-4 text-sm">
+      <p className="text-pretty text-muted-foreground">
+        {user?.name || 'This person'} no longer belongs to a workspace in this demo. Choose another person to
+        keep exploring, then use Reset demo to restore the sample data.
+      </p>
+      <Link
+        href="/sign-in/demo"
+        className="inline-flex w-fit items-center gap-1.5 font-medium text-foreground hover:underline"
+      >
+        <ArrowLeft className="size-3.5" aria-hidden="true" /> Back to the demo
+      </Link>
+    </div>
+  )
+}
+
 /**
  * First stop for a signed-in person who belongs to no workspace yet: start a
  * portfolio (and become its Investor) or join the workspace that invited them.
@@ -76,12 +101,19 @@ function Welcome() {
   const { userId, account, signOut } = useSession()
   const { state, user, memberships, isError, refetch } = useViatik()
   const create = useCommand('createPortfolio', { silent: true })
+  // On Monad, opening a portfolio takes a signature and a confirmation: shown as steps while it runs.
+  const steps = useSigningSteps(create.phase, {
+    prepared: 'Viatik prepares your portfolio and its Portfolio Vault.',
+    done: { label: 'Created', detail: 'Recorded on Monad, with you as its Investor.' },
+  })
 
   // null until edited: the field shows a suggestion from the email.
   const [ownerName, setOwnerName] = React.useState<string | null>(null)
   const [name, setName] = React.useState('')
   const [timeZone, setTimeZone] = React.useState(browserTimeZone)
   const [touched, setTouched] = React.useState(false)
+  // A portfolio cannot be deleted yet, so creating one needs an explicit yes.
+  const [acknowledged, setAcknowledged] = React.useState(false)
   const [invite, setInvite] = React.useState('')
   const [inviteTouched, setInviteTouched] = React.useState(false)
 
@@ -125,7 +157,7 @@ function Welcome() {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     setTouched(true)
-    if (errors.ownerName || errors.name) return
+    if (errors.ownerName || errors.name || !acknowledged) return
     const portfolio = await create.run({
       name: name.trim(),
       // One name is enough: the portfolio and its organization share it.
@@ -175,6 +207,7 @@ function Welcome() {
   return (
     <main id="main" className="mx-auto flex min-h-svh max-w-3xl flex-col justify-center gap-8 px-4 py-12">
       <ViatikLogo className="-ml-1" />
+      <DemoNote />
 
       {!picked ? (
         <>
@@ -255,6 +288,33 @@ function Welcome() {
                 options={timeZoneOptions(timeZone)}
               />
             </FormField>
+            <div className="flex flex-col gap-3 rounded-xl border border-warning/30 bg-warning-soft p-4">
+              <p className="text-sm text-pretty text-foreground">
+                A portfolio cannot be deleted yet. Agency Admins and Members do not create one: they join
+                through an invitation. If that is you, use Change role.
+              </p>
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="portfolio-confirm"
+                  checked={acknowledged}
+                  disabled={busy}
+                  onCheckedChange={(value) => setAcknowledged(Boolean(value))}
+                  aria-invalid={(touched && !acknowledged) || undefined}
+                  className="mt-0.5"
+                />
+                <Label
+                  htmlFor="portfolio-confirm"
+                  className="text-sm leading-snug font-medium text-pretty text-foreground"
+                >
+                  I am an Investor and want to create this portfolio
+                </Label>
+              </div>
+              {touched && !acknowledged ? (
+                <p className="text-sm text-danger" role="alert">
+                  Confirm before creating your portfolio.
+                </p>
+              ) : null}
+            </div>
             {create.error ? (
               <p className="text-sm text-danger" role="alert">
                 {create.error}
@@ -263,6 +323,7 @@ function Welcome() {
             <Button type="submit" size="pill" disabled={busy}>
               {busy ? 'Creating…' : 'Create portfolio'}
             </Button>
+            {busy && steps ? <PendingOperation phase={create.phase} steps={steps} /> : null}
           </form>
         </div>
       ) : (

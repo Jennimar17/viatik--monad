@@ -132,6 +132,7 @@ function filtering(t: Checker) {
       activity({ usd: 25, tx: txHash(1), logIndex: 3 }),
       // The same log twice in one delivery.
       activity({ usd: 25, tx: txHash(1), logIndex: 3 }),
+      // A mint, as "Get test funds" does.
       activity({ from: zeroAddress, tx: txHash(2) }),
       activity({ from: LEDGER, tx: txHash(3) }),
       activity({ removed: true, tx: txHash(4) }),
@@ -147,14 +148,22 @@ function filtering(t: Checker) {
   if (parsed.status !== 'ok') return
   checkSame(
     t,
-    'A2: only real transfers in are kept (no mint, no ledger withdrawal, no reorg, no other token, no dust, once each)',
-    parsed.arrivals.map((a) => ({ to: a.to, from: a.from, amount: a.amount, tx: a.txHash, i: a.logIndex })),
+    'A2: transfers in and mints (marked) are kept (no ledger withdrawal, no reorg, no other token, no dust, once each)',
+    parsed.arrivals.map((a) => ({
+      to: a.to,
+      from: a.from,
+      amount: a.amount,
+      tx: a.txHash,
+      i: a.logIndex,
+      mint: a.mint,
+    })),
     [
-      { to: PERSON, from: SENDER, amount: 2500, tx: txHash(1), i: 3 },
-      { to: PERSON, from: SENDER, amount: 750, tx: txHash(7), i: 1 },
+      { to: PERSON, from: SENDER, amount: 2500, tx: txHash(1), i: 3, mint: false },
+      { to: PERSON, from: zeroAddress, amount: 2500, tx: txHash(2), i: 0, mint: true },
+      { to: PERSON, from: SENDER, amount: 750, tx: txHash(7), i: 1, mint: false },
     ],
   )
-  t.check('A2: the others are counted as skipped', parsed.skipped === 7, `skipped ${parsed.skipped}`)
+  t.check('A2: the others are counted as skipped', parsed.skipped === 6, `skipped ${parsed.skipped}`)
   t.check(
     'A2: units keep the 6 decimals',
     parsed.arrivals[0]?.units === 25_000_000n,
@@ -261,8 +270,8 @@ function notes(t: Checker) {
     [investor!, member!, admin!].map((userId) => fundsArrivedHref(state, userId)),
     [
       `/investor/${investorScope?.kind === 'portfolio' ? investorScope.portfolioId : '?'}/vaults/add-funds`,
-      `/member/${memberScope?.kind === 'agency' ? memberScope.agencyId : '?'}/payments`,
-      `/agency/${adminScope?.kind === 'agency' ? adminScope.agencyId : '?'}/overview`,
+      `/member/${memberScope?.kind === 'agency' ? memberScope.agencyId : '?'}/payments?tab=addresses`,
+      `/agency/${adminScope?.kind === 'agency' ? adminScope.agencyId : '?'}/settings?tab=account`,
     ],
   )
   const newcomer = { ...state.users[0]!, id: 'u_newcomer', email: 'newcomer@example.com', name: 'New' }
@@ -296,6 +305,19 @@ function notes(t: Checker) {
   t.check(
     'A3: the state given in is not changed',
     state.notifications.length === first.state.notifications.length - 1,
+  )
+  const minted = execute(state, system(`alchemy:${txHash(2)}:0`), (tx) =>
+    noteFundsArrived(tx, { userId: member!, amount: cents(2500), mint: true }),
+  )
+  const mintNote = minted.result.status === 'notified' ? minted.result.notification : null
+  t.check(
+    'A3: a mint is told as test funds, with the same kind',
+    mintNote !== null &&
+      mintNote.kind === 'funds_arrived' &&
+      mintNote.title === 'Test funds arrived' &&
+      mintNote.body.includes('25.00') &&
+      mintNote.body.endsWith('of test funds arrived in your Viatik account.'),
+    JSON.stringify(mintNote),
   )
 
   let again: unknown = null
@@ -407,6 +429,18 @@ function quiet(t: Checker) {
   t.check(
     'A4: the skipped arrival delivered again is skipped again, still nothing written',
     secondAgain.result.status === 'recent' && count(secondAgain.state) === count(first.state),
+  )
+  const mint = (from: ViatikState, seed: string, usd: number) =>
+    execute(from, { actor: { kind: 'system' as const }, now: at(60_000), idSeed: seed }, (tx) =>
+      noteFundsArrived(tx, { userId, amount: cents(Math.round(usd * 100)), mint: true }),
+    ).result.status
+  t.check(
+    'A4: a mint under 1.00 USD is ignored too',
+    mint(state, `alchemy:${txHash(27)}:0`, 0.99) === 'small',
+  )
+  t.check(
+    'A4: a mint while the first is still unread is skipped too',
+    mint(first.state, `alchemy:${txHash(28)}:0`, 1_000_000) === 'recent',
   )
 
   const later = run(first.state, `alchemy:${txHash(24)}:0`, 40, at(FUNDS_ARRIVED_QUIET_MS))

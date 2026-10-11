@@ -64,8 +64,12 @@ export const LEDGER_ACCOUNT_KEY = ['ledger-account'] as const
 
 const DEMO_LEDGER: LedgerView = { settlement: 'demo' }
 
-/** Screens that show the person's Viatik account balance: an Investor's Add funds, a Member's Payments. */
-const WATCHING_ACCOUNT = /^\/(investor\/[^/]+\/vaults\/add-funds|member\/[^/]+\/payments)\/?$/
+/**
+ * Screens that show the person's Viatik account balance: an Investor's Add funds, a Member's
+ * Payments, an Admin's Settings.
+ */
+const WATCHING_ACCOUNT =
+  /^\/(investor\/[^/]+\/vaults\/add-funds|member\/[^/]+\/payments|agency\/[^/]+\/settings)\/?$/
 
 /** Whether this deployment hears from Alchemy (`GET /v1/webhooks/alchemy/status`, no sign-in). */
 const ALCHEMY_WEBHOOK_KEY = ['alchemy-webhook'] as const
@@ -151,6 +155,13 @@ export function ViatikProvider({
     shownState.current = state
     void queryClient.invalidateQueries({ queryKey: LEDGER_KEY })
   }, [state, queryClient])
+
+  // Another tab on this device changed the demo data (an operation, or a reset): show it here too.
+  React.useEffect(() => {
+    if (!mode) return
+    const refresh = () => void queryClient.invalidateQueries({ queryKey: STATE_KEY })
+    return getDataSource(mode).subscribe?.(refresh)
+  }, [mode, queryClient])
 
   // Money sent to the person's Viatik account from outside Viatik (Alchemy tells the server, which
   // leaves a "Funds arrived" notification): read the account again and say so. Arrivals already

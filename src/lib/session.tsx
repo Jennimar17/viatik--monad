@@ -53,6 +53,7 @@ type SessionContextValue = {
   enterDemo: (userId: string) => void
   /** Opens Privy's sign-in, or switches back to the real account if it is already signed in. */
   signIn: (method?: SignInMethod, options?: SignInOptions) => void
+  /** In the demo, only leaves the demo person: a real account on this device stays signed in. */
   signOut: () => Promise<void>
   /** Tokens for API requests; empty in the demo. */
   credentials: () => Promise<ApiCredentials>
@@ -286,12 +287,17 @@ function AccountSessionProvider({ children }: { children: React.ReactNode }) {
   )
 
   const signOut = React.useCallback(async () => {
-    // Privy first: while it signs out the demo person (if any) keeps priority,
-    // so the session never passes through the real account on the way out.
+    // In the demo only the demo person leaves: a real account signed in on
+    // this device stays signed in, and the session switches back to it.
+    if (demoUserId) {
+      writeDemoUser(null)
+      return
+    }
+    // A real account: Privy first, then forget the server's answer, so it is not asked again on the way out.
     if (authenticated) await logout()
     writeDemoUser(null)
     queryClient.removeQueries({ queryKey: SESSION_KEY })
-  }, [authenticated, logout, queryClient])
+  }, [demoUserId, authenticated, logout, queryClient])
 
   const credentials = React.useCallback(
     async (): Promise<ApiCredentials> =>

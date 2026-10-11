@@ -497,6 +497,8 @@ export type VerifiedDetails = {
   explorerUrl: string
   /** True while the ledger runs on the mock adapter. */
   simulated: boolean
+  /** An example imported with the seeded story: not a Monad transaction of its own. */
+  imported?: boolean
   /** The ledger contract that recorded it (real ledger only). */
   contract?: string
   /** The operation's id in the ledger, as recorded (real ledger only). */

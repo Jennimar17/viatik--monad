@@ -265,9 +265,11 @@ export function InvestorAccountFunding({
           own={shownOwn}
           title="Add funds"
           description={
-            settlement === 'test'
-              ? 'Your Viatik account, for reference: this test environment does not take funds from it yet.'
-              : `Send TestUSD on ${network.name} from any account to your Viatik account, then transfer it to your Portfolio Vault below.`
+            settlement === 'simulated'
+              ? 'Simulated in this demo: there is no real Viatik account, so do not send funds to this address.'
+              : settlement === 'test'
+                ? 'Your Viatik account, for reference: this test environment does not take funds from it yet.'
+                : `Send TestUSD on ${network.name} from any account to your Viatik account, then transfer it to your Portfolio Vault below.`
           }
           qr={settlement === 'monad' ? 'shown' : 'none'}
           qrLabel="Your Viatik account address as a QR code"

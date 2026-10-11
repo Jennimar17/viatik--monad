@@ -58,8 +58,11 @@ export function invite(
 export function acceptInvitation(tx: Tx, input: { code: string }) {
   const invitation = tx.state.invitations.find((i) => i.code === input.code)
   if (!invitation) throw new DomainError('not_found', 'This invitation link is not valid.')
-  if (invitation.status !== 'pending')
-    throw new DomainError('invalid_state', 'This invitation was already used.')
+  if (invitation.status !== 'pending') {
+    // A cancelled invitation is `expired`: invitations never lapse on their own.
+    const reason = invitation.status === 'expired' ? 'was cancelled' : 'was already used'
+    throw new DomainError('invalid_state', `This invitation ${reason}.`)
+  }
   const userId = tx.userId
   // Invitations belong to an email address. Someone already known must have
   // signed in with that exact email; an account without an email (a passkey

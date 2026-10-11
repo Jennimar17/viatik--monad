@@ -192,12 +192,16 @@ export class SeedBuilder {
       operationId: input.operationId,
       evidenceIds: input.evidenceIds ?? [],
       issuedAt: input.at,
-      verified: simulatedVerification({
-        operationId: input.operationId,
-        account: input.account,
-        timestamp: input.at,
-        contractPolicy: input.policyLabel,
-      }),
+      // Imported when the story is set up: an example, not a Monad transaction of its own.
+      verified: {
+        ...simulatedVerification({
+          operationId: input.operationId,
+          account: input.account,
+          timestamp: input.at,
+          contractPolicy: input.policyLabel,
+        }),
+        imported: true,
+      },
     }
     this.state.receipts.push(receipt)
     return receipt

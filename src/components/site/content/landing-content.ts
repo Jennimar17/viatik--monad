@@ -7,7 +7,7 @@ import type { StageId } from '@/components/site/illustrations/scenes'
  *   Promise   Fund the work without losing control of how capital moves.
  *   Mechanism Agreements, budgets and spending rules travel with the capital
  *             and are enforced at the account layer, on Monad.
- *   Proof     A live demo of all three roles; USDC settlement on Monad.
+ *   Proof     A live demo of all three roles; settlement on Monad Testnet (TestUSD, a USDC stand-in).
  *             No customer names, counts or testimonials until they are real.
  *   Action    Open the demo (or a role inside it).
  */
@@ -26,7 +26,11 @@ export const hero = {
   supportingLine: 'Built on Monad. Designed like modern financial software.',
   proofStrip: {
     lead: 'For the people backing what comes next.',
-    items: ['Settles in USDC on Monad', 'No wallets or gas for users', 'Every payment keeps its receipt'],
+    items: [
+      'Settles on Monad Testnet in TestUSD, a USDC stand-in',
+      'No wallets or gas for users',
+      'Every payment keeps its receipt',
+    ],
   },
 }
 

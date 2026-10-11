@@ -956,6 +956,7 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
   allowance(BUD.arcTravel, U.sofia, usd(800), b.ago(165, 11), U.maya, A.arc)
   allowance(BUD.arcTravel, U.daniel, usd(500), b.ago(165, 11), U.maya, A.arc)
   allowance(BUD.arcTravel, U.maya, usd(1_000), b.ago(165, 11), U.jordan, A.arc)
+  allowance(BUD.arcTravel, U.jordan, usd(1_000), b.ago(165, 11), U.maya, A.arc)
 
   // Research Assistant — a programmatic resource with its own limits.
   const agent: AiAgent = {
@@ -1784,10 +1785,11 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     at: b.ago(1, 9, 20),
     leavePending: true,
   })
+  // Jordan's is Maya's to decide: nobody approves their own request.
   request({
     agencyId: A.arc,
     budgetId: BUD.arcTravel,
-    requester: user(U.maya),
+    requester: user(U.jordan),
     type: 'vendor_payment',
     destinationId: DST.northwind,
     amount: usd(450),
@@ -2724,9 +2726,9 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     true,
   )
   b.notify(
-    U.jordan,
+    U.maya,
     'Request needs approval',
-    'Maya Chen requested 450.00 USD for Product Design Summit ticket.',
+    'Jordan Lee requested 450.00 USD for Product Design Summit ticket.',
     agencyHref('approvals'),
     b.ago(1, 16, 10),
   )

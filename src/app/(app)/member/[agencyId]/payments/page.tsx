@@ -70,6 +70,8 @@ function MemberPayments() {
   // Scheduled payments to me (their next run), soonest first: Viatik pays each when it is due.
   const upcoming = upcomingPayments(state, { agencyId, recipientUserId: userId })
   const next = upcoming[0]
+  // Received lists what is scheduled to me above what I got; its count covers both.
+  const receivedRows = [...upcoming, ...received]
   // Money for purchases gets its own tab (and KPI) once the person has received some.
   const hasAdvances = acc.all.length > 0
   // In Received, money for purchases shows how far it is justified instead of "Completed".
@@ -97,10 +99,10 @@ function MemberPayments() {
     {
       value: 'received',
       label: 'Received',
-      count: received.length,
+      count: receivedRows.length,
       content: (
         <PaymentsTable
-          payments={[...upcoming, ...received]}
+          payments={receivedRows}
           direction="in"
           showBudget={false}
           statusFor={receivedStatus}

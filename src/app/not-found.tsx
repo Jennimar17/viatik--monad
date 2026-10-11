@@ -25,7 +25,7 @@ export default function NotFound() {
             Go to my workspace
           </ButtonLink>
           <ButtonLink href="/" variant="outline" size="pill">
-            Back to viatik.xyz
+            Back to Viatik
           </ButtonLink>
         </div>
       </main>

@@ -9,6 +9,7 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { roleLabel } from '@/domain/permissions'
 import type { Invitation } from '@/domain/types'
 import { publicEnv } from '@/lib/env'
+import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
 type InvitationDetails = Pick<Invitation, 'code' | 'name' | 'email' | 'role'>
@@ -86,6 +87,7 @@ function CopyLinkButton({ url, label = 'Copy link' }: { url: string; label?: str
 /**
  * How an invitation reaches the invited person: a link to copy and a
  * prefilled email. The link only works for the invited email address.
+ * In the demo it only works in this browser, so it says so and offers no email.
  * `actions` is the compact form for lists of pending invitations.
  */
 export function InvitationLink({
@@ -101,31 +103,42 @@ export function InvitationLink({
   variant?: 'full' | 'actions'
   className?: string
 }) {
+  // Demo data lives in this browser only: opened anywhere else, the link is not valid.
+  const demo = useSession().mode === 'demo'
   const url = invitationUrl(invitation.code)
   const mailto = mailtoHref(invitation, url, workspace, inviter)
 
   if (variant === 'actions') {
     return (
       <span className={cn('flex flex-wrap items-center gap-2', className)}>
-        <CopyLinkButton url={url} />
-        <a
-          href={mailto}
-          className={buttonVariants({ variant: 'ghost', size: 'pill-sm' })}
-          aria-label={`Email the invitation to ${invitation.email}`}
-        >
-          <Mail data-icon="inline-start" /> Email
-        </a>
+        <CopyLinkButton url={url} label={demo ? 'Copy demo link' : 'Copy link'} />
+        {demo ? null : (
+          <a
+            href={mailto}
+            className={buttonVariants({ variant: 'ghost', size: 'pill-sm' })}
+            aria-label={`Email the invitation to ${invitation.email}`}
+          >
+            <Mail data-icon="inline-start" /> Email
+          </a>
+        )}
       </span>
     )
   }
 
   return (
     <div className={cn('flex w-full flex-col gap-3', className)}>
-      <p className="text-sm text-pretty text-muted-foreground">
-        Send this link to {invitation.name}. It only works for{' '}
-        <span className="text-foreground">{invitation.email}</span>: they sign in with that email and accept
-        in one step.
-      </p>
+      {demo ? (
+        <p className="text-sm text-pretty text-muted-foreground">
+          This is a demo link: it only works in this browser. Open it in a new tab to accept as{' '}
+          {invitation.name}. Invitations from a real account work on any device.
+        </p>
+      ) : (
+        <p className="text-sm text-pretty text-muted-foreground">
+          Send this link to {invitation.name}. It only works for{' '}
+          <span className="text-foreground">{invitation.email}</span>: they sign in with that email and accept
+          in one step.
+        </p>
+      )}
       <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 py-1.5 pr-1.5 pl-3">
         <input
           readOnly
@@ -136,9 +149,11 @@ export function InvitationLink({
         />
         <CopyLinkButton url={url} label="Copy" />
       </div>
-      <a href={mailto} className={cn(buttonVariants({ variant: 'outline', size: 'pill-sm' }), 'w-fit')}>
-        <Mail data-icon="inline-start" /> Send by email
-      </a>
+      {demo ? null : (
+        <a href={mailto} className={cn(buttonVariants({ variant: 'outline', size: 'pill-sm' }), 'w-fit')}>
+          <Mail data-icon="inline-start" /> Send by email
+        </a>
+      )}
     </div>
   )
 }

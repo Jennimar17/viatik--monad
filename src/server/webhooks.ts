@@ -66,6 +66,8 @@ export type FundsArrival = {
   amount: Cents
   txHash: Hex
   logIndex: number
+  /** Minted (from 0x0), as "Get test funds" does: told as test funds. */
+  mint: boolean
 }
 
 export type AlchemyDelivery =
@@ -170,9 +172,8 @@ function arrivalOf(log: RawLog, token: Address, ledger: Address | undefined): Fu
   const transfer = transferOf(topics, data)
   if (!transfer) return null
   const { from, to, value } = transfer
-  // Test funds minted by the person's own "Get test funds", and withdrawals from the ledger: the
-  // app already follows both until they show.
-  if (isAddressEqual(from, zeroAddress)) return null
+  // Withdrawals from the ledger: the app already follows them until they show. Mints (from 0x0, as
+  // "Get test funds" does) are kept and told as test funds.
   if (ledger && isAddressEqual(from, ledger)) return null
   if (isAddressEqual(to, zeroAddress) || value <= 0n) return null
   let amount: Cents
@@ -189,6 +190,7 @@ function arrivalOf(log: RawLog, token: Address, ledger: Address | undefined): Fu
     amount,
     txHash: log.txHash.toLowerCase() as Hex,
     logIndex,
+    mint: isAddressEqual(from, zeroAddress),
   }
 }
 
@@ -196,8 +198,8 @@ function arrivalOf(log: RawLog, token: Address, ledger: Address | undefined): Fu
  * The TestUSD transfers into accounts in a verified Alchemy delivery: an
  * Address Activity webhook, or a Custom (GraphQL) one on the token's logs.
  * Deliveries from another webhook (when `webhookId` is set) or a mainnet are
- * ignored. Transfers dropped by a reorg, mints from 0x0, withdrawals from the
- * ledger, sub-cent amounts and the same log twice are left out.
+ * ignored. Transfers dropped by a reorg, withdrawals from the ledger, sub-cent
+ * amounts and the same log twice are left out; mints from 0x0 are kept (`mint`).
  */
 export function arrivalsOf(
   payload: unknown,
@@ -253,8 +255,8 @@ async function holdersOf(addresses: Address[]): Promise<Map<string, Id>> {
 
 /**
  * `POST /v1/webhooks/alchemy`: Alchemy reports TestUSD arriving in a person's
- * Viatik account, and they get a "Funds arrived" notification (their screens
- * then read the balance again). Without ALCHEMY_WEBHOOK_SIGNING_KEY the route
+ * Viatik account, and they get a "Funds arrived" notification ("Test funds
+ * arrived" for a mint; their screens then read the balance again). Without ALCHEMY_WEBHOOK_SIGNING_KEY the route
  * does not exist. No sign-in: the body must carry Alchemy's signature. The
  * notification is written before answering 200; a failure answers 5xx so
  * Alchemy delivers it again, and a transfer delivered twice is told once.
@@ -330,7 +332,7 @@ export const webhooks = new Hono<AppEnv>()
               const outcome = execute(
                 state,
                 { actor: { kind: 'system' }, now, idSeed: arrivalSeed(arrival) },
-                (tx) => noteFundsArrived(tx, { userId, amount: arrival.amount }),
+                (tx) => noteFundsArrived(tx, { userId, amount: arrival.amount, mint: arrival.mint }),
               )
               const { status } = outcome.result
               if (status === 'notified') {

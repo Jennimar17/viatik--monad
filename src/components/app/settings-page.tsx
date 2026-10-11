@@ -5,8 +5,10 @@ import Link from '@/components/viatik/link'
 import * as React from 'react'
 import { toast } from 'sonner'
 
+import { AccountAddressCard, useAccountBalanceLine } from '@/components/app/account-address-card'
 import { ButtonLink } from '@/components/app/button-link'
 import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
+import { useOwnAccount } from '@/components/app/member-own-account'
 import { AddDestinationSheet, destinationKindLabel } from '@/components/app/money-setup'
 import { PageTabs, type PageTab } from '@/components/app/page-tabs'
 import { LedgerPanel } from '@/components/app/ledger-panel'
@@ -14,6 +16,7 @@ import { PasskeysPanel } from '@/components/app/passkeys-panel'
 import { providerStatus } from '@/components/app/provider-parts'
 import { SponsorshipCheck } from '@/components/app/sponsorship-check'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
+import { useTabParam } from '@/components/app/use-tab-param'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { EmptyState } from '@/components/viatik/feedback'
@@ -93,8 +96,17 @@ function usePreferences(userId: string) {
   return [preferences, update] as const
 }
 
-/** Profile, workspace, rules and device settings; the tabs depend on the role. */
+/** Profile, workspace, rules and device settings; the tabs depend on the role. `?tab=` opens one. */
 export function SettingsPage() {
+  // The open tab follows `?tab=` (useSearchParams), which needs a boundary for the static prerender.
+  return (
+    <React.Suspense>
+      <Settings />
+    </React.Suspense>
+  )
+}
+
+function Settings() {
   const { state, user, userId } = useViatikState()
   const { mode, account } = useSession()
   const { role, agencyId, portfolioId } = useRole()
@@ -199,6 +211,12 @@ export function SettingsPage() {
       ),
     },
   ]
+
+  // An Admin's own Viatik account, where "Funds arrived" links them. Members have it in Payments,
+  // Investors in Add funds.
+  if (role === 'agency_admin') {
+    tabs.push({ value: 'account', label: 'Viatik account', content: <OwnAccountPanel /> })
+  }
 
   if (agency) {
     const agreement = activeAgreement(state, agency.id)
@@ -438,6 +456,9 @@ export function SettingsPage() {
           title="Notifications"
           description="What Viatik tells you about. In-app notifications are always on."
         >
+          <p className="text-xs text-pretty text-subtle">
+            Email notifications are not available yet. When they are, you can choose them here.
+          </p>
           <ul className="flex flex-col">
             {notificationRows.map(({ key, label }) => (
               <li
@@ -447,14 +468,8 @@ export function SettingsPage() {
                 <label htmlFor={`notify-${key}`} className="text-sm">
                   {label}
                 </label>
-                <Switch
-                  id={`notify-${key}`}
-                  checked={preferences[key]}
-                  onCheckedChange={(checked) => {
-                    updatePreferences({ [key]: Boolean(checked) })
-                    toast.success('Preference saved.')
-                  }}
-                />
+                {/* Nothing sends email yet, so these stay off rather than pretend to save a choice. */}
+                <Switch id={`notify-${key}`} checked={false} disabled />
               </li>
             ))}
           </ul>
@@ -522,10 +537,9 @@ export function SettingsPage() {
                 <Tag className="ml-auto">Current</Tag>
               </li>
             </ul>
-            <p className="mt-3 text-xs text-subtle">Sessions on other devices appear here.</p>
-            <Button variant="ghost" size="pill-sm" className="mt-4 w-fit" disabled>
-              Sign out other sessions
-            </Button>
+            <p className="mt-3 text-xs text-subtle">
+              Only this browser is listed. To end a session on another device, use Sign out on that device.
+            </p>
           </Panel>
         </div>
       ),
@@ -553,7 +567,7 @@ export function SettingsPage() {
                   {
                     label: 'Settlement asset',
                     value:
-                      ledger.view?.settlement === 'monad'
+                      publicEnv.NEXT_PUBLIC_MONAD_NETWORK === 'testnet'
                         ? 'TestUSD (6 decimals), standing in for USDC on testnet'
                         : 'USDC (6 decimals)',
                   },
@@ -606,16 +620,41 @@ export function SettingsPage() {
     },
   )
 
+  // `?tab=` links open a tab, e.g. an Admin's "Funds arrived" opens Viatik account.
+  const tab = useTabParam(
+    tabs.map((t) => t.value),
+    'profile',
+  )
+
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
         title="Settings"
         description="Your profile, your workspace, and how Viatik keeps you informed."
       />
-      <PageTabs tabs={tabs} />
+      <PageTabs tabs={tabs} {...tab} />
       {role === 'agency_admin' && agency ? (
         <AddDestinationSheet open={destinationOpen} onOpenChange={setDestinationOpen} agencyId={agency.id} />
       ) : null}
     </div>
+  )
+}
+
+/**
+ * The Admin's own Viatik account, apart from the Agency's accounts: the full
+ * address, the TestUSD it holds on Monad and its QR code behind "Show QR code".
+ * Rendered only while its tab is open, so its live read runs only then.
+ */
+function OwnAccountPanel() {
+  const own = useOwnAccount()
+  const balance = useAccountBalanceLine(own)
+  return (
+    <AccountAddressCard
+      own={own}
+      description="Your own account, apart from the Agency’s. Money sent to you from outside Viatik arrives here."
+      qr="collapsed"
+      balance={balance}
+      note="It stays with you: it does not add to any Agency account or budget."
+    />
   )
 }

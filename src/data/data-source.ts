@@ -96,6 +96,8 @@ export interface DataSource {
   /** Whether a file has a copy that can be opened here (example files and, in the demo, files from other tabs do not). */
   canOpenEvidence(evidence: Evidence): boolean
   reset?(): Promise<void>
+  /** Calls `listener` when another tab on this device changed the data; returns the unsubscribe. */
+  subscribe?(listener: () => void): () => void
   /** Operations of this person left open on this device (a reload or a closed tab after signing). */
   openOperations?(userId: string): OpenOperation[]
   /** Confirms one of them. */
