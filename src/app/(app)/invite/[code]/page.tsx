@@ -85,6 +85,7 @@ export default function InvitePage() {
     )
   }
 
+  // No invitation has this code: cancelled and accepted ones are still found and shown below.
   if (!invitation) {
     return (
       <main id="main" className="mx-auto flex min-h-svh max-w-md flex-col justify-center gap-6 px-4">
@@ -92,7 +93,7 @@ export default function InvitePage() {
         <EmptyState
           titleAs="h1"
           title="This invitation link is not valid"
-          description="It may have expired or been used already. Ask the person who invited you for a new link."
+          description="Check that you have the whole link, exactly as it was sent. If it still does not work, ask the person who invited you for a new one."
           action={
             <ButtonLink href="/sign-in" size="pill">
               Sign in
@@ -163,9 +164,10 @@ export default function InvitePage() {
 
   let action: React.ReactNode
   if (!pending) {
+    // A cancelled invitation is `expired` in the engine; invitations never lapse on their own.
     action = (
       <Button size="pill" disabled>
-        Invitation already used
+        {invitation.status === 'expired' ? 'Invitation cancelled' : 'Invitation already used'}
       </Button>
     )
   } else if (checking) {
