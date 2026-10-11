@@ -8,11 +8,13 @@ import * as React from 'react'
 
 import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
 import { inviteHref, roleHome } from '@/components/app/nav'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ErrorState } from '@/components/viatik/feedback'
+import { PendingOperation } from '@/components/viatik/operation'
 import { roleIcons } from '@/components/viatik/people'
 import { ViatikLogo } from '@/components/viatik/viatik-logo'
 import { useCommand, useViatik } from '@/data/react'
@@ -99,6 +101,11 @@ function Welcome() {
   const { userId, account, signOut } = useSession()
   const { state, user, memberships, isError, refetch } = useViatik()
   const create = useCommand('createPortfolio', { silent: true })
+  // On Monad, opening a portfolio takes a signature and a confirmation: shown as steps while it runs.
+  const steps = useSigningSteps(create.phase, {
+    prepared: 'Viatik prepares your portfolio and its Portfolio Vault.',
+    done: { label: 'Created', detail: 'Recorded on Monad, with you as its Investor.' },
+  })
 
   // null until edited: the field shows a suggestion from the email.
   const [ownerName, setOwnerName] = React.useState<string | null>(null)
@@ -316,6 +323,7 @@ function Welcome() {
             <Button type="submit" size="pill" disabled={busy}>
               {busy ? 'Creating…' : 'Create portfolio'}
             </Button>
+            {busy && steps ? <PendingOperation phase={create.phase} steps={steps} /> : null}
           </form>
         </div>
       ) : (
