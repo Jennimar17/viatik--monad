@@ -550,6 +550,9 @@ function PayOutside() {
             agencyId={agencyId}
             purpose="invoice"
             onUse={applyReading}
+            // The demo's sample is a new vendor's invoice; none when paying for a monthly payment.
+            sample="loomwise-invoice"
+            onSampleFile={linkedReminder ? undefined : (sample) => setFiles([sample])}
             extra={(proposal) => (
               <>
                 {proposal.match ? (

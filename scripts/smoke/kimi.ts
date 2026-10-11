@@ -1,3 +1,18 @@
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { openCandidates } from '@/data/evidence-reading'
+import { KIMI_RECORDINGS } from '@/data/kimi-recordings'
+import {
+  recordedReading,
+  recordingOf,
+  sampleUsed,
+  type DemoSampleId,
+  type KimiRecording,
+} from '@/data/kimi-samples'
+import type { EvidenceDraft } from '@/domain/engine'
 import { createDemoState } from '@/domain/fixtures'
 import { DEMO } from '@/domain/fixtures/ids'
 import { cents } from '@/domain/money'
@@ -20,12 +35,16 @@ import {
   type ReaderCandidate,
 } from '@/server/receipt-reader'
 
-import { NOW, type Checker } from './harness'
+import { checkSame, must, NOW, World, type Checker } from './harness'
+
+/** The repo, for the demo's sample files in public/. */
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 /**
  * The Kimi receipt reader's pure parts (src/server/receipt-reader.ts): how
  * Kimi's answer is parsed and checked, which open items each role offers it,
- * and the per-person limit. Nothing here calls Kimi.
+ * and the per-person limit; and the demo's replay of Kimi's recorded readings
+ * of its sample files (src/data/kimi-samples.ts). Nothing here calls Kimi.
  */
 export default async function kimi(t: Checker) {
   const state = createDemoState(NOW)
@@ -484,5 +503,199 @@ export default async function kimi(t: Checker) {
     t.check('one read at a time per person', errorCode(() => startRead(other, start + 1)) === 'reader_busy')
     end()
     t.check('the next one starts once it ended', errorCode(() => startRead(other, start + 2)()) === null)
+  })
+
+  await t.scenario('Recorded readings in the demo', async () => {
+    // Who reads each sample in the demo: Alex his receipt, Maya the Agency's invoices.
+    const readerOf = (rec: KimiRecording) => (rec.purpose === 'receipt' ? alex : maya)
+    const replay = (rec: KimiRecording, view: ViatikState, now: ISODate, sha256 = rec.file.sha256) =>
+      recordedReading({
+        state: view,
+        userId: readerOf(rec),
+        now,
+        request: { sha256, agencyId, purpose: rec.purpose },
+      })
+    const recording = (id: DemoSampleId) => must(recordingOf(id), `the ${id} recording`)
+    const kestrel = recording('kestrel-receipt')
+    const figma = recording('figma-invoice')
+    const loomwise = recording('loomwise-invoice')
+    const daysAfter = (iso: ISODate, days: number) =>
+      new Date(Date.parse(iso) + days * 86_400_000).toISOString()
+    // The sample as the demo stores it: what the upload of its bytes returns.
+    const sampleFile = (rec: KimiRecording): EvidenceDraft => ({
+      kind: 'file',
+      name: rec.file.name,
+      mimeType: rec.file.mimeType,
+      sizeBytes: rec.file.sizeBytes,
+      sha256: rec.file.sha256,
+    })
+    // By name, as errorCode does: the loader may give this file its own copy of the module.
+    const refusal = (run: () => unknown) => {
+      try {
+        run()
+        return null
+      } catch (error) {
+        const { name, code } = (error ?? {}) as { name?: unknown; code?: unknown }
+        return name === 'DataSourceError' && typeof code === 'string' ? code : 'not a DataSourceError'
+      }
+    }
+
+    for (const rec of KIMI_RECORDINGS) {
+      const bytes = readFileSync(path.join(ROOT, 'public', rec.file.path))
+      t.check(
+        `${rec.id}: public${rec.file.path} is the file Kimi read (sha256 and size)`,
+        createHash('sha256').update(bytes).digest('hex') === rec.file.sha256 &&
+          bytes.byteLength === rec.file.sizeBytes,
+      )
+    }
+
+    // Replayed on the demo Kimi read it against, it must say what the server said then.
+    for (const rec of KIMI_RECORDINGS) {
+      const view = scopeStateForUser(createDemoState(rec.recordedAt), readerOf(rec))
+      const replayed = replay(rec, view, rec.recordedAt)
+      checkSame(
+        t,
+        `${rec.id}: replayed on the demo it was recorded in, it is the server’s proposal`,
+        replayed.proposal,
+        rec.proposal,
+      )
+      t.check(
+        `${rec.id}: labelled with its model and day, and its date not moved`,
+        replayed.model === rec.model &&
+          replayed.recorded.recordedAt === rec.recordedAt &&
+          replayed.recorded.sample === rec.id &&
+          replayed.recorded.movedFrom === null,
+      )
+    }
+
+    // A visitor the day after the recording sees the printed date; a month later it moves with the story.
+    const seeds = [
+      { seed: daysAfter(kestrel.recordedAt, 1), moved: false },
+      { seed: daysAfter(kestrel.recordedAt, 30), moved: true },
+    ]
+    for (const { seed, moved } of seeds) {
+      const when = `seeded ${seed.slice(0, 10)}`
+      const today = seed.slice(0, 10)
+      const state = createDemoState(seed)
+      const alexView = scopeStateForUser(state, alex)
+      const advance = openCandidates(alexView, {
+        userId: alex,
+        agencyId,
+        purpose: 'receipt',
+        now: seed,
+      }).find((c) => c.label === 'Field kit for the pilot visit')
+      const receipt = replay(kestrel, alexView, seed)
+      const read = receipt.proposal
+      t.check(
+        `${when}: the receipt matches “Field kit for the pilot visit”, USD 71.86, with no notes`,
+        advance !== undefined &&
+          read.match?.id === advance.id &&
+          read.match.label === 'Field kit for the pilot visit' &&
+          read.amount === 7_186 &&
+          read.notes.length === 0,
+        JSON.stringify(read),
+      )
+      t.check(
+        `${when}: its date falls between the request and today`,
+        Boolean(read.date && advance?.earliest && advance.earliest <= read.date && read.date <= today),
+        `${advance?.earliest} ≤ ${read.date} ≤ ${today}`,
+      )
+      t.check(
+        moved
+          ? `${when}: the printed date is moved, and the reading says from which`
+          : `${when}: the printed date is kept`,
+        moved
+          ? receipt.recorded.movedFrom === kestrel.answer.date && read.date !== kestrel.answer.date
+          : receipt.recorded.movedFrom === null && read.date === kestrel.answer.date,
+        `movedFrom ${receipt.recorded.movedFrom}, date ${read.date}`,
+      )
+
+      const mayaView = scopeStateForUser(state, maya)
+      const invoice = replay(figma, mayaView, seed).proposal
+      t.check(
+        `${when}: the Figma invoice matches the Figma payment, USD 45.00`,
+        Boolean(invoice.match?.label.startsWith('Figma')) &&
+          invoice.amount === 4_500 &&
+          invoice.notes.length === 0,
+        JSON.stringify(invoice),
+      )
+      const vendor = replay(loomwise, mayaView, seed).proposal
+      t.check(
+        `${when}: the Loomwise invoice matches nothing and proposes a monthly payment of USD 36.00 on day 10`,
+        vendor.match === null && vendor.reminder?.amount === 3_600 && vendor.reminder.dayOfMonth === 10,
+        JSON.stringify(vendor),
+      )
+    }
+
+    // The visitor acts on the readings: the replay says what a live reading would say then.
+    const w = new World(t, 'kimi-demo', daysAfter(kestrel.recordedAt, 1))
+    t.check(
+      'no sample is used in a new demo',
+      KIMI_RECORDINGS.every((rec) => !sampleUsed(w.state, agencyId, rec.file.sha256)),
+    )
+    const read = replay(kestrel, w.view(alex), w.now).proposal
+    const advance = must(
+      w.state.payments.find((p) => p.id === read.match?.id),
+      'the advance the receipt matches',
+    )
+    await w.run(
+      alex,
+      'addExpense',
+      {
+        agencyId,
+        paymentId: advance.id,
+        merchant: must(read.merchant, 'the merchant'),
+        amount: cents(must(read.amount, 'the amount')),
+        category: advance.category,
+        spentAt: `${must(read.date, 'the date')}T00:00:00.000Z`,
+        receipt: sampleFile(kestrel),
+      },
+      'Alex adds the sample receipt with Kimi’s details',
+    )
+    t.check(
+      'the sample receipt is used once an expense has it',
+      sampleUsed(w.state, agencyId, kestrel.file.sha256),
+    )
+    const again = replay(kestrel, w.view(alex), w.now).proposal
+    t.check(
+      'read again, it is more than the 13.24 USD still to justify: no match',
+      again.match === null && again.notes.some((n) => n.includes('more than the 13.24 USD still to justify')),
+      JSON.stringify(again.notes),
+    )
+
+    const figmaMatch = must(replay(figma, w.view(maya), w.now).proposal.match, 'the Figma match')
+    await w.run(
+      maya,
+      'addPaymentProof',
+      { paymentId: figmaMatch.id, proof: sampleFile(figma) },
+      'Maya attaches the sample invoice to the Figma payment',
+    )
+    t.check(
+      'the sample invoice is used once a payment has it',
+      sampleUsed(w.state, agencyId, figma.file.sha256),
+    )
+    const closed = replay(figma, w.view(maya), w.now).proposal
+    t.check(
+      'read again, the Figma payment is no longer open: no match',
+      closed.match === null && closed.notes.some((n) => n.includes('no longer open')),
+      JSON.stringify(closed.notes),
+    )
+    t.check('the Loomwise sample is still unused', !sampleUsed(w.state, agencyId, loomwise.file.sha256))
+
+    t.check(
+      'any other file is refused: the demo only replays its samples',
+      refusal(() => replay(kestrel, w.view(alex), w.now, 'a'.repeat(64))) === 'demo_sample_only',
+    )
+    t.check(
+      'a sample read for the other purpose is refused',
+      refusal(() =>
+        recordedReading({
+          state: w.view(maya),
+          userId: maya,
+          now: w.now,
+          request: { sha256: kestrel.file.sha256, agencyId, purpose: 'invoice' },
+        }),
+      ) === 'demo_sample_only',
+    )
   })
 }

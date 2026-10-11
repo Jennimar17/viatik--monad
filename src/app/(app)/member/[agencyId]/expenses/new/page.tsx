@@ -238,6 +238,7 @@ function NewExpense() {
           agencyId={agencyId}
           purpose="receipt"
           onUse={applyReading}
+          onSampleFile={(sample) => setFiles([sample])}
         />
       </Panel>
 
