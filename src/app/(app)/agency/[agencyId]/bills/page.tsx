@@ -11,7 +11,7 @@ import { KimiReader } from '@/components/app/kimi-reader'
 import { PageTabs } from '@/components/app/page-tabs'
 import { isDueNow, MonthlyPayments, NewReminderSheet } from '@/components/app/reminders'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
-import { billSchedule, useClock, usePayTiming } from '@/components/app/schedules'
+import { billSchedule, RunDuePaymentsButton, useClock, usePayTiming } from '@/components/app/schedules'
 import { useOpenParam, useTabParam } from '@/components/app/use-tab-param'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/viatik/feedback'
@@ -157,19 +157,22 @@ function Bills() {
             count: scheduled.length,
             content: (
               <div className="flex flex-col gap-3">
-                <p className="text-sm text-pretty text-muted-foreground">
-                  {timing === 'automatic'
-                    ? 'Viatik pays each one within about 10 minutes of its time and marks it paid.'
-                    : 'Once each one is due, it is paid when an Agency Admin presses Run due payments, and marked paid.'}{' '}
-                  Pause, resume or cancel them on the bill or in{' '}
-                  <Link
-                    href={href('payments?tab=scheduled')}
-                    className="text-foreground underline-offset-4 hover:underline"
-                  >
-                    Payments ▸ Scheduled
-                  </Link>
-                  .
-                </p>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <p className="text-sm text-pretty text-muted-foreground">
+                    {timing === 'automatic'
+                      ? 'Viatik pays each one within about 10 minutes of its time and marks it paid.'
+                      : 'Once each one is due, it is paid when an Agency Admin presses Run due payments, and marked paid.'}{' '}
+                    Pause, resume or cancel them on the bill or in{' '}
+                    <Link
+                      href={href('payments?tab=scheduled')}
+                      className="text-foreground underline-offset-4 hover:underline"
+                    >
+                      Payments ▸ Scheduled
+                    </Link>
+                    .
+                  </p>
+                  <RunDuePaymentsButton agencyId={agencyId} className="shrink-0" />
+                </div>
                 <BillsTable bills={scheduled} emptyTitle="No scheduled bills" scheduled now={clock} />
               </div>
             ),
