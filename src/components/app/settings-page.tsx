@@ -567,7 +567,7 @@ function Settings() {
                   {
                     label: 'Settlement asset',
                     value:
-                      ledger.view?.settlement === 'monad'
+                      publicEnv.NEXT_PUBLIC_MONAD_NETWORK === 'testnet'
                         ? 'TestUSD (6 decimals), standing in for USDC on testnet'
                         : 'USDC (6 decimals)',
                   },
