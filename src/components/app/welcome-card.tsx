@@ -37,6 +37,7 @@ const copy = {
 } as const
 
 // Dismissals live in localStorage; the in-memory set covers blocked storage.
+const KEY_PREFIX = 'viatik:welcome:'
 const listeners = new Set<() => void>()
 const dismissedInMemory = new Set<string>()
 
@@ -64,11 +65,25 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener)
 }
 
+/** Shows the welcome cards again for these people on this device, e.g. after "Reset demo". */
+export function resetWelcomeCards(userIds: string[]) {
+  const prefixes = userIds.map((userId) => `${KEY_PREFIX}${userId}:`)
+  const matches = (key: string) => prefixes.some((prefix) => key.startsWith(prefix))
+  for (const key of dismissedInMemory) if (matches(key)) dismissedInMemory.delete(key)
+  try {
+    const storage = window.localStorage
+    for (const key of Object.keys(storage)) if (matches(key)) storage.removeItem(key)
+  } catch {
+    // Storage unavailable: only this visit's dismissals existed.
+  }
+  for (const listener of listeners) listener()
+}
+
 /** First-visit explanation of the current role. Dismissed per person and role on this device. */
 export function WelcomeCard() {
   const { userId } = useViatikState()
   const { role } = useRole()
-  const key = `viatik:welcome:${userId}:${role}`
+  const key = `${KEY_PREFIX}${userId}:${role}`
   // Hidden during server rendering so it never flashes for people who dismissed it.
   const dismissed = React.useSyncExternalStore(
     subscribe,

@@ -22,6 +22,7 @@ import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
 import { useRole } from '../role-context'
+import { resetWelcomeCards } from '../welcome-card'
 import { useShellUi } from './app-shell'
 
 /**
@@ -106,6 +107,11 @@ export function DemoPill() {
           <DropdownMenuItem
             className="gap-2 rounded-lg"
             onClick={async () => {
+              // Go home first: records created since are gone after the reset.
+              // An invited demo person is gone too, so they choose a persona again.
+              const persona = DEMO_PERSONAS.find((p) => p.userId === userId)
+              router.push((persona?.href ?? '/sign-in/demo') as Route)
+              resetWelcomeCards(DEMO_PERSONAS.map((p) => p.userId))
               await resetDemo()
               toast.success('Demo data was reset.')
             }}
