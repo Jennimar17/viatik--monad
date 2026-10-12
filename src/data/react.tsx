@@ -19,6 +19,7 @@ import type { Evidence, Membership, User, ViatikState } from '@/domain/types'
 import { apiFetch } from './api'
 import { canonical } from './canonical'
 import { ledgerChecks } from './ledger-check'
+import { LEDGER_ACCOUNT_KEY, LEDGER_KEY, refreshAfterCommand, STATE_KEY } from './query-keys'
 import {
   DataSourceError,
   getDataSource,
@@ -53,14 +54,7 @@ type ViatikContextValue = {
 
 const ViatikContext = React.createContext<ViatikContextValue | null>(null)
 
-/** Prefix of every Viatik state query; invalidate it to reload what screens show. */
-export const STATE_KEY = ['viatik', 'state'] as const
-
-/** Prefix of the ledger view queries. Under `STATE_KEY`, so whatever reloads the state reloads them too. */
-export const LEDGER_KEY = [...STATE_KEY, 'ledger'] as const
-
-/** Prefix of the signed-in person's Viatik account reads (`useLedgerAccount`); not under `STATE_KEY`. */
-export const LEDGER_ACCOUNT_KEY = ['ledger-account'] as const
+export { LEDGER_ACCOUNT_KEY, LEDGER_KEY, STATE_KEY }
 
 const DEMO_LEDGER: LedgerView = { settlement: 'demo' }
 
@@ -297,11 +291,8 @@ export function useCommand<N extends CommandName>(
       if (error instanceof DataSourceError && UNSETTLED_CODES.has(error.code)) toast(message)
       else toast.error(message)
     },
-    onSettled: () =>
-      Promise.all([
-        queryClient.invalidateQueries({ queryKey: STATE_KEY }),
-        queryClient.invalidateQueries({ queryKey: LEDGER_ACCOUNT_KEY }),
-      ]),
+    // `run` returns once the state is read again, never after a live Monad read.
+    onSettled: () => refreshAfterCommand(queryClient),
   })
 
   const { mutateAsync, reset: resetMutation } = mutation

@@ -1,6 +1,9 @@
+import { focusManager, MutationObserver, QueryClient, QueryObserver } from '@tanstack/react-query'
+
 import { ApiDataSource } from '@/data/api-data-source'
 import { DataSourceError, type OpenOperation, type SendCall } from '@/data/data-source'
 import { MockDataSource } from '@/data/mock-data-source'
+import { LEDGER_ACCOUNT_KEY, LEDGER_KEY, refreshAfterCommand, STATE_KEY } from '@/data/query-keys'
 import { planSettlement } from '@/data/settlement'
 import { runCommand } from '@/domain/engine'
 import { createDemoState } from '@/domain/fixtures'
@@ -83,6 +86,8 @@ export default async function client(t: Checker) {
   } finally {
     env.restore()
   }
+  // With the real timers: it measures how long a command waits for its refresh.
+  await refresh(t)
 }
 
 async function answers(t: Checker, env: ReturnType<typeof browser>) {
@@ -248,5 +253,68 @@ async function demo(t: Checker, env: ReturnType<typeof browser>) {
     await tab.dispatch('u_maya', 'markNotificationsRead', {})
     await tab.reset()
     t.check('reset is kept after a reload', unread(await new MockDataSource().load('u_maya')) === seeded)
+  })
+}
+
+/** A command's `run` resolves once the Viatik state is read again, never after a live Monad read. */
+async function refresh(t: Checker) {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  await t.scenario('H3. A command does not wait for the live account read', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } })
+    let stateReads = 0
+    let accountReads = 0
+    const stop = [
+      new QueryObserver(queryClient, {
+        queryKey: [...STATE_KEY, 'account', 'u_elena'],
+        queryFn: async () => {
+          stateReads += 1
+          await sleep(30)
+          return { read: stateReads }
+        },
+      }),
+      new QueryObserver(queryClient, {
+        queryKey: [...LEDGER_KEY, 'account', 'u_elena'],
+        queryFn: async () => {
+          await sleep(300)
+          return { settlement: 'monad' }
+        },
+      }),
+      // The live Monad read: slow, then failing, and its retry pauses while the tab is hidden.
+      new QueryObserver(queryClient, {
+        queryKey: [...LEDGER_ACCOUNT_KEY, 'account', 'u_elena'],
+        queryFn: async () => {
+          accountReads += 1
+          await sleep(500)
+          if (accountReads > 1) throw new Error('503')
+          return { available: true }
+        },
+      }),
+    ].map((observer) => observer.subscribe(() => {}))
+    try {
+      await sleep(600)
+      focusManager.setFocused(false)
+      const readsBefore = stateReads
+      const mutation = new MutationObserver(queryClient, {
+        mutationFn: async () => ({ id: 'rcpt_smoke' }),
+        onSettled: () => refreshAfterCommand(queryClient),
+        networkMode: 'always',
+      })
+      const started = Date.now()
+      const outcome = await Promise.race([
+        mutation.mutate(undefined).then((result) => result.id),
+        sleep(2_000).then(() => 'still waiting'),
+      ])
+      const took = Date.now() - started
+      t.check(
+        'run resolves once the state is read again, with the tab hidden',
+        outcome === 'rcpt_smoke' && took < 250 && stateReads > readsBefore,
+        `${outcome} after ${took} ms, state reads ${readsBefore} → ${stateReads}`,
+      )
+    } finally {
+      focusManager.setFocused(undefined)
+      stop.forEach((unsubscribe) => unsubscribe())
+      queryClient.clear()
+    }
   })
 }
