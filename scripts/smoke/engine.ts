@@ -33,7 +33,7 @@ import { attachmentsHash } from '@/domain/evidence'
 import { DEMO } from '@/domain/fixtures'
 import { cents, clampToZero, formatUsd, sum, usd, type Cents } from '@/domain/money'
 import { paymentTypeLabel, receiptKindLabel, requestTypeLabel } from '@/domain/labels'
-import { describeBudgetPolicy, paysRequester } from '@/domain/policy'
+import { describeBudgetPolicy, paysRequester, perPaymentCap } from '@/domain/policy'
 import {
   adminApprovals,
   agencyAgreementSummary,
@@ -2967,6 +2967,78 @@ async function labelsAndSeed(t: Checker) {
     "J: a budget's vendor list reads as limiting vendor payments only",
     lines.includes('Vendor payments can only go to Vertex Cloud and Canvasly.'),
     lines.join(' | '),
+  )
+
+  // A Member's own limits: one payment is capped by their allowance's per-payment limit when it is
+  // lower than the budget's, and the rules they read say so.
+  const alexOn = (budgetId: Id) =>
+    must(
+      w.state.allowances.find(
+        (a) =>
+          a.budgetId === budgetId &&
+          a.status === 'active' &&
+          a.holder.kind === 'member' &&
+          a.holder.userId === U.alex,
+      ),
+      `Alex's allowance on ${budgetId}`,
+    )
+  const team = budgetOf(w.state, B.arcTeam)
+  const alexTeam = alexOn(B.arcTeam)
+  t.check(
+    "J: Alex's cap on Team payments is his allowance's, below the budget's",
+    alexTeam.perOperationLimit !== undefined &&
+      alexTeam.perOperationLimit < team.perOperationLimit &&
+      perPaymentCap(team, alexTeam) === alexTeam.perOperationLimit,
+    `${perPaymentCap(team, alexTeam)}`,
+  )
+  t.check(
+    'J: an allowance with no cap of its own follows the budget’s',
+    perPaymentCap(tools, alexOn(B.arcTools)) === tools.perOperationLimit &&
+      perPaymentCap(tools) === tools.perOperationLimit,
+  )
+  const teamLines = describeBudgetPolicy(team, { allowance: alexTeam })
+  t.check(
+    'J: Alex reads his own per-payment cap, and that every payment is reviewed',
+    teamLines.includes(`A single payment cannot exceed ${usdText(perPaymentCap(team, alexTeam))}.`) &&
+      teamLines.includes('Every payment needs an Agency Admin approval.'),
+    teamLines.join(' | '),
+  )
+  const lowCap = describeBudgetPolicy(tools, { allowance: { perOperationLimit: usd(100) } })
+  t.check(
+    'J: with a cap at or below the automatic limit, everything within the limits approves itself',
+    lowCap.includes(`A single payment cannot exceed ${usdText(usd(100))}.`) &&
+      lowCap.includes('Payments within these limits are approved automatically.'),
+    lowCap.join(' | '),
+  )
+  const toolsLines = describeBudgetPolicy(tools, { allowance: alexOn(B.arcTools) })
+  t.check(
+    'J: with a cap above the automatic limit, the limit is named',
+    toolsLines.includes(
+      `Payments up to ${usdText(tools.approvalThreshold)} are approved automatically. Anything above needs an Agency Admin.`,
+    ),
+    toolsLines.join(' | '),
+  )
+  t.check(
+    'J: without an allowance (an Admin reading the budget) the automatic limit is always named',
+    describeBudgetPolicy(tools).includes(
+      `Payments up to ${usdText(tools.approvalThreshold)} are approved automatically. Anything above needs an Agency Admin.`,
+    ),
+  )
+  const overCap = preview(w, U.alex, {
+    agencyId: ARC,
+    budgetId: B.arcTeam,
+    type: 'work',
+    amount: cents(perPaymentCap(team, alexTeam) + usd(1)),
+    category: 'team',
+    purpose: 'Design sprint',
+    idempotencyKey: 'smoke-j-over-cap',
+  })
+  t.check(
+    "J: the engine refuses Alex's request above his cap, naming the same number",
+    overCap.outcome === 'rejected' &&
+      overCap.reason?.rule === 'per_operation_limit' &&
+      Boolean(overCap.reason.message.includes(usdText(perPaymentCap(team, alexTeam)))),
+    `${overCap.outcome}: ${overCap.reason?.message}`,
   )
 
   // The seed is built the way the engine would have built it.

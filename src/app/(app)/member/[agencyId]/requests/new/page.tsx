@@ -44,6 +44,7 @@ import { execute, previewPolicy } from '@/domain/engine'
 import { newId } from '@/domain/ids'
 import { categoryLabel, requestTypeLabel } from '@/domain/labels'
 import { formatUsd, min, type Cents } from '@/domain/money'
+import { perPaymentCap } from '@/domain/policy'
 import { memberBudgets, receiptFor, userName } from '@/domain/queries'
 import type { PaymentRequest, RequestType, SpendingCategory } from '@/domain/types'
 import { fromDateInput } from '@/lib/format'
@@ -485,7 +486,14 @@ function NewRequest() {
               value={amount}
               onChange={setAmount}
               invalid={touched && Boolean(errors.amount)}
-              available={selected ? min(selected.remaining, selected.usage.available) : undefined}
+              available={
+                selected
+                  ? min(
+                      perPaymentCap(selected.budget, selected.allowance),
+                      min(selected.remaining, selected.usage.available),
+                    )
+                  : undefined
+              }
             />
           </FormField>
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">

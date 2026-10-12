@@ -114,7 +114,7 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
       : 'This category is not an approved use of this budget.',
   })
 
-  const perOperationLimit = minDefined(budget.perOperationLimit, allowance?.perOperationLimit)
+  const perOperationLimit = perPaymentCap(budget, allowance)
   const withinPerOperation = request.amount <= perOperationLimit
   push({
     rule: 'per_operation_limit',
@@ -269,6 +269,17 @@ function minDefined(a: Cents, b: Cents | undefined): Cents {
   return !b ? a : (Math.min(a, b) as Cents)
 }
 
+/**
+ * The most a single payment can be for a holder: the budget's per-operation limit, or their
+ * allowance's own when it is lower (as the engine and the ledger apply it).
+ */
+export function perPaymentCap(
+  budget: Pick<Budget, 'perOperationLimit'>,
+  allowance?: Pick<SpendingAllowance, 'perOperationLimit'> | null,
+): Cents {
+  return minDefined(budget.perOperationLimit, allowance?.perOperationLimit)
+}
+
 export function periodNoun(period: Budget['period']): string {
   switch (period) {
     case 'monthly':
@@ -298,13 +309,15 @@ export function describeBudgetPolicy(
   const periodWord =
     budget.period === 'one_time' ? 'in total' : `per ${budget.period === 'monthly' ? 'month' : 'quarter'}`
   lines.push(`Up to ${fmt(budget.periodLimit)} can be spent ${periodWord}.`)
+  const cap = perPaymentCap(budget, options.allowance)
+  lines.push(`A single payment cannot exceed ${fmt(cap)}.`)
+  // For a holder whose own cap is at or below the automatic limit, nothing they can pay goes above it.
   lines.push(
-    `A single payment cannot exceed ${fmt(minDefined(budget.perOperationLimit, options.allowance?.perOperationLimit))}.`,
-  )
-  lines.push(
-    budget.approvalThreshold > 0
-      ? `Payments up to ${fmt(budget.approvalThreshold)} are approved automatically. Anything above needs an Agency Admin.`
-      : 'Every payment needs an Agency Admin approval.',
+    budget.approvalThreshold <= 0
+      ? 'Every payment needs an Agency Admin approval.'
+      : options.allowance && budget.approvalThreshold >= cap
+        ? 'Payments within these limits are approved automatically.'
+        : `Payments up to ${fmt(budget.approvalThreshold)} are approved automatically. Anything above needs an Agency Admin.`,
   )
   // The vendor list limits vendor payments only: money a person requests goes to their own Viatik balance.
   if (options.destinationNames && options.destinationNames.length > 0) {

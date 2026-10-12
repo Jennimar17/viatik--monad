@@ -13,6 +13,7 @@ import { Tag } from '@/components/viatik/status'
 import { useViatikState } from '@/data/react'
 import { budgetPeriodLabel } from '@/domain/labels'
 import { formatUsd } from '@/domain/money'
+import { perPaymentCap } from '@/domain/policy'
 import { memberBudgets } from '@/domain/queries'
 import { formatDate, pluralize } from '@/lib/format'
 
@@ -71,7 +72,7 @@ export default function MyBudgetPage() {
                 {b.budget.period === 'one_time'
                   ? 'One-time budget, no reset'
                   : `Resets on ${formatDate(b.usage.window.end)}`}{' '}
-                · max {formatUsd(b.budget.perOperationLimit, { withCode: true })} per payment
+                · a single payment up to {formatUsd(perPaymentCap(b.budget, b.allowance), { withCode: true })}
               </p>
             </Link>
           ))}
