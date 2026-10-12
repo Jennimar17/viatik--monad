@@ -3,6 +3,7 @@
 import { Check, FlaskConical, LogOut, RotateCcw } from 'lucide-react'
 import type { Route } from 'next'
 import { useRouter } from 'next/navigation'
+import * as React from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -37,9 +38,33 @@ export function DemoPill() {
   const resetDemo = useResetDemo()
   const { bottomBar } = useShellUi()
   const RoleIcon = roleIcons[role]
+  const ref = React.useRef<HTMLDivElement>(null)
+
+  // Toasts share the bottom-right corner: tell them how far up the pill reaches, so they stack
+  // above it (the toaster reads `--toast-clearance`). Hidden on phones while an action bar shows.
+  React.useLayoutEffect(() => {
+    const pill = ref.current
+    if (!pill) return
+    const root = document.documentElement
+    const update = () => {
+      const rect = pill.getBoundingClientRect()
+      if (rect.height === 0) root.style.removeProperty('--toast-clearance')
+      else root.style.setProperty('--toast-clearance', `${Math.ceil(window.innerHeight - rect.top + 12)}px`)
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(pill)
+    window.addEventListener('resize', update)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', update)
+      root.style.removeProperty('--toast-clearance')
+    }
+  }, [bottomBar, role])
 
   return (
     <div
+      ref={ref}
       className={cn(
         'no-print fixed right-4 z-40 sm:right-6',
         role === 'member' ? 'bottom-24 md:bottom-6' : 'bottom-4 sm:bottom-6',
