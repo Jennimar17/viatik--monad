@@ -597,55 +597,31 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
       status: 'approved',
       addedAt: at,
     })
-  destination(DST.vertex, A.arc, 'Vertex Cloud', 'vendor', 'cloud', 'USDC account •• 4821', b.ago(183))
-  destination(DST.canvasly, A.arc, 'Canvasly', 'service', 'software', 'Card on file •• 1107', b.ago(183))
-  destination(DST.tasklane, A.arc, 'Tasklane', 'service', 'software', 'Card on file •• 1107', b.ago(183))
-  destination(DST.pagecraft, A.arc, 'Pagecraft', 'service', 'software', 'Card on file •• 1107', b.ago(183))
-  destination(
-    DST.pulse,
-    A.arc,
-    'Pulse Data API',
-    'service',
-    'ai_services',
-    'USDC account •• 9f3a',
-    b.ago(160),
-  )
-  destination(
-    DST.northwind,
-    A.arc,
-    'Northwind Travel',
-    'vendor',
-    'travel',
-    'USDC account •• 7730',
-    b.ago(165),
-  )
-  destination(DST.atlas, A.arc, 'Atlas Legal', 'vendor', 'legal', 'USDC account •• 2204', b.ago(150))
+  destination(DST.vertex, A.arc, 'Vertex Cloud', 'vendor', 'cloud', 'Customer no. 4821', b.ago(183))
+  destination(DST.canvasly, A.arc, 'Canvasly', 'service', 'software', 'Customer no. 1107', b.ago(183))
+  destination(DST.tasklane, A.arc, 'Tasklane', 'service', 'software', 'Customer no. 1107', b.ago(183))
+  destination(DST.pagecraft, A.arc, 'Pagecraft', 'service', 'software', 'Customer no. 1107', b.ago(183))
+  destination(DST.pulse, A.arc, 'Pulse Data API', 'service', 'ai_services', 'Customer no. 9f3a', b.ago(160))
+  destination(DST.northwind, A.arc, 'Northwind Travel', 'vendor', 'travel', 'Customer no. 7730', b.ago(165))
+  destination(DST.atlas, A.arc, 'Atlas Legal', 'vendor', 'legal', 'Customer no. 2204', b.ago(150))
   destination(
     DST.harbor,
     A.arc,
     'Harbor Contractors',
     'contractor',
     'contractors',
-    'USDC account •• 5518',
+    'Customer no. 5518',
     b.ago(40),
   )
-  destination(DST.stratus, A.lumen, 'Stratus Hosting', 'vendor', 'cloud', 'USDC account •• 3190', b.ago(127))
-  destination(
-    DST.codepath,
-    A.lumen,
-    'Codepath Tools',
-    'service',
-    'software',
-    'Card on file •• 6612',
-    b.ago(127),
-  )
+  destination(DST.stratus, A.lumen, 'Stratus Hosting', 'vendor', 'cloud', 'Customer no. 3190', b.ago(127))
+  destination(DST.codepath, A.lumen, 'Codepath Tools', 'service', 'software', 'Customer no. 6612', b.ago(127))
   destination(
     DST.sentinel,
     A.lumen,
     'Sentinel Security Audits',
     'vendor',
     'legal',
-    'USDC account •• 8045',
+    'Customer no. 8045',
     b.ago(12),
   )
 

@@ -39,6 +39,7 @@ import {
   releaseModelLabel,
   requestTypeLabel,
 } from '@/domain/labels'
+import { upgradeState } from '@/domain/migrate'
 import { describeBudgetPolicy, paysRequester, perPaymentCap } from '@/domain/policy'
 import {
   adminApprovals,
@@ -3314,6 +3315,79 @@ async function labelsAndSeed(t: Checker) {
     },
     'validation',
     'J a merchant longer than 80 characters (receipt)',
+  )
+  seededReferences(t)
+}
+
+/**
+ * The seeded providers' payment references read as references, and a world saved with the
+ * labels the seed used before (a card, an account) is relabelled on read: exact seeded values
+ * only, once.
+ */
+function seededReferences(t: Checker) {
+  const seed = new World(t, 'engine-j-references').state
+  const references = seed.destinations.map((d) => d.settlementLabel)
+  t.check(
+    'J: every seeded provider has a customer number as its payment reference',
+    references.length === 11 && references.every((r) => /^Customer no\. \w{4}$/.test(r)),
+    references.join(', '),
+  )
+  t.check(
+    'J: the upgrade leaves the seeded references as they are',
+    JSON.stringify(upgradeState(structuredClone(seed)).destinations) === JSON.stringify(seed.destinations),
+  )
+
+  const relabel = (labels: Partial<Record<keyof typeof D, string>>) => {
+    const world = structuredClone(seed)
+    for (const [key, label] of Object.entries(labels) as [keyof typeof D, string][]) {
+      const id = D[key]
+      must(
+        world.destinations.find((d) => d.id === id),
+        id,
+      ).settlementLabel = label
+    }
+    return world
+  }
+  // The labels every seeded provider had before.
+  const legacy = relabel({
+    vertex: 'USDC account •• 4821',
+    canvasly: 'Card on file •• 1107',
+    tasklane: 'Card on file •• 1107',
+    pagecraft: 'Card on file •• 1107',
+    pulse: 'USDC account •• 9f3a',
+    northwind: 'USDC account •• 7730',
+    atlas: 'USDC account •• 2204',
+    harbor: 'USDC account •• 5518',
+    stratus: 'USDC account •• 3190',
+    codepath: 'Card on file •• 6612',
+    sentinel: 'USDC account •• 8045',
+  })
+  const upgraded = upgradeState(structuredClone(legacy))
+  t.check(
+    'J: a world saved with the old seeded labels reads with the new references',
+    JSON.stringify(upgraded.destinations) === JSON.stringify(seed.destinations),
+    upgraded.destinations.map((d) => d.settlementLabel).join(', '),
+  )
+  const twice = upgradeState(structuredClone(upgraded))
+  t.check(
+    'J: upgrading the references again changes nothing',
+    JSON.stringify(twice) === JSON.stringify(upgraded),
+  )
+
+  // What an Admin typed, even close to a seeded label, is not a seeded value.
+  const typed = relabel({
+    vertex: 'Card on file •• 9999',
+    canvasly: 'card on file •• 1107',
+    tasklane: 'Card on file •• 1107 (team card)',
+    pagecraft: 'USDC account 4821',
+    pulse: 'constructor',
+    northwind: '',
+  })
+  const kept = upgradeState(structuredClone(typed))
+  t.check(
+    'J: only exact seeded values are relabelled; anything else an Admin typed stays',
+    JSON.stringify(kept.destinations) === JSON.stringify(typed.destinations),
+    kept.destinations.map((d) => d.settlementLabel).join(', '),
   )
 }
 

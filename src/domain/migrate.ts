@@ -11,7 +11,37 @@ export function upgradeState(state: ViatikState): ViatikState {
   state.schedules ??= []
   if (state.keeper) state.keeper.agencies ??= {}
   forgetPhantomSchedules(state)
+  relabelSeededReferences(state)
   return state
+}
+
+/**
+ * The payment references the seed gave its providers before they read as references: labels
+ * that looked like a payment method (a card, an account), though no provider has one. Each
+ * maps to the seed's reference now, with the same digits.
+ */
+const SEEDED_REFERENCES = new Map([
+  ['Card on file •• 1107', 'Customer no. 1107'],
+  ['Card on file •• 6612', 'Customer no. 6612'],
+  ['USDC account •• 4821', 'Customer no. 4821'],
+  ['USDC account •• 9f3a', 'Customer no. 9f3a'],
+  ['USDC account •• 7730', 'Customer no. 7730'],
+  ['USDC account •• 2204', 'Customer no. 2204'],
+  ['USDC account •• 5518', 'Customer no. 5518'],
+  ['USDC account •• 3190', 'Customer no. 3190'],
+  ['USDC account •• 8045', 'Customer no. 8045'],
+])
+
+/**
+ * Worlds seeded before (production, saved demo data) keep those labels: only the exact seeded
+ * values are relabelled, so whatever an Admin typed stays as it is. Providers are not on the
+ * ledger, so nothing else changes. Runs on every read and changes nothing once applied.
+ */
+function relabelSeededReferences(state: ViatikState) {
+  for (const destination of state.destinations) {
+    const reference = SEEDED_REFERENCES.get(destination.settlementLabel)
+    if (reference) destination.settlementLabel = reference
+  }
 }
 
 /**
