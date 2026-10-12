@@ -1,7 +1,7 @@
 import { parseAddress, shortAddress } from '../address'
 import { evidenceSetHash } from '../evidence'
 import { newId } from '../ids'
-import { cents, sum, type Cents } from '../money'
+import { cents, min, sum, type Cents } from '../money'
 import { activeOperationsAccount } from '../queries'
 import { agreementCapital, isFullyReleased, vaultBalance } from '../selectors'
 import { assertTransition, canTransitionMilestone, canTransitionTranche } from '../status'
@@ -453,9 +453,15 @@ export function fundAgreement(tx: Tx, input: { agreementId: Id; amount: Cents })
   }
   const capital = agreementCapital(tx.state, agreement.id)
   if (capital.funded + input.amount > agreement.committed) {
+    // What can still be added: within the commitment and what the tranches left can release.
+    const addable = min(capital.unfunded, capital.fundable)
     throw new DomainError(
       'limit_exceeded',
-      `Funded capital cannot exceed the ${usdText(agreement.committed)} commitment. You can add up to ${usdText(capital.unfunded)}.`,
+      `Funded capital cannot exceed the ${usdText(agreement.committed)} commitment. ${
+        addable > 0
+          ? `You can add up to ${usdText(addable)}.`
+          : 'Nothing more can be funded under this agreement.'
+      }`,
     )
   }
   // Only a release moves money out of a Funding Vault: capital beyond what the tranches still to
@@ -465,8 +471,8 @@ export function fundAgreement(tx: Tx, input: { agreementId: Id; amount: Cents })
     throw new DomainError(
       'limit_exceeded',
       capital.fundable <= 0
-        ? 'Every tranche left is already funded. Nothing more can be released under this agreement.'
-        : `Only ${usdText(capital.fundable)} more can still be released under this agreement.`,
+        ? 'Every tranche left is already funded. Nothing more can be funded under this agreement.'
+        : `Only ${usdText(capital.fundable)} more can be funded: that is what the tranches left still need.`,
     )
   }
   const portfolioVault = tx.state.vaults.find(

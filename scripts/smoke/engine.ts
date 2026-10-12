@@ -5872,9 +5872,22 @@ async function fundingCap(t: Checker) {
     'N2 funding the whole commitment left',
   )
   t.check(
-    'N2: it says how much can still be released',
-    message === `Only ${usdText(usd(25_000))} more can still be released under this agreement.`,
+    'N2: it says how much can still be funded',
+    message === `Only ${usdText(usd(25_000))} more can be funded: that is what the tranches left still need.`,
     message,
+  )
+  const beyond = w.refuse(
+    U.elena,
+    'fundAgreement',
+    { agreementId: ARC_AGREEMENT, amount: usd(60_000) },
+    'limit_exceeded',
+    'N2 funding beyond the commitment',
+  )
+  t.check(
+    'N2: …and beyond the commitment, it offers only what can be funded',
+    beyond ===
+      `Funded capital cannot exceed the ${usdText(usd(100_000))} commitment. You can add up to ${usdText(usd(25_000))}.`,
+    beyond,
   )
   await w.run(
     U.elena,
@@ -5892,7 +5905,7 @@ async function fundingCap(t: Checker) {
   )
   t.check(
     'N2: …because every tranche left is funded',
-    full === 'Every tranche left is already funded. Nothing more can be released under this agreement.',
+    full === 'Every tranche left is already funded. Nothing more can be funded under this agreement.',
     full,
   )
 

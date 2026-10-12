@@ -149,9 +149,16 @@ const cadenceLabel: Record<FundingAgreement['spendingPolicy']['reportingCadence'
 export function AgreementTerms({ state, agreement }: { state: ViatikState; agreement: FundingAgreement }) {
   const policy = agreement.spendingPolicy
   const prose = (text: string) => <span className="max-w-xs text-pretty">{text}</span>
-  // The first agreement in force governs the Agency's payments, on the engine and on the ledger.
+  // The first agreement in force governs the Agency's payments, on the engine and on the ledger,
+  // and nothing ends an agreement: one created after it never governs. Only one created before it
+  // and still waiting for acceptance would take over, once accepted.
   const governing = governingAgreement(state, agreement.agencyId)
   const otherGoverning = governing && governing.id !== agreement.id ? governing : undefined
+  const created = (id: string) => state.agreements.findIndex((a) => a.id === id)
+  const takesOver =
+    otherGoverning !== undefined &&
+    agreement.status === 'pending_acceptance' &&
+    created(agreement.id) < created(otherGoverning.id)
   return (
     <KeyValueList
       items={[
@@ -162,7 +169,9 @@ export function AgreementTerms({ state, agreement }: { state: ViatikState; agree
           label: 'Exception threshold',
           value: formatUsd(policy.exceptionThreshold, { withCode: true }),
           hint: otherGoverning
-            ? `Applies while this agreement governs the Agency. Today ${otherGoverning.title} does.`
+            ? takesOver
+              ? `Applies once this agreement is accepted: it was created before ${otherGoverning.title}, which governs the Agency today.`
+              : `Does not apply: ${otherGoverning.title} governs the Agency for as long as it exists.`
             : 'Operations above this need Investor review',
         },
         { label: 'Reporting', value: cadenceLabel[policy.reportingCadence] },

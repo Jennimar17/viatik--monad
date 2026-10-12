@@ -38,8 +38,10 @@ export function FundAgreementSheet({
   const vaultAvailable = portfolioVault ? vaultBalance(state, portfolioVault.id) : ZERO
   // Never more than the tranches still to release need: more could never leave the Funding Vault.
   const max = min(capital.fundable, vaultAvailable)
+  // When the Portfolio Vault holds less than is left to fund, `max` is what it holds.
+  const fillLabel = `${max === capital.fundable ? 'Fund everything left' : 'Fund all the Portfolio Vault holds'} (${formatUsd(max, { withCode: true })})`
   // undefined = untouched: the suggested amount if there is one, else empty. Real money moves on
-  // confirm, so the Investor types the amount or picks "Fund everything left" on purpose.
+  // confirm, so the Investor types the amount or picks the button that fills in `max` on purpose.
   const [draft, setDraft] = React.useState<Cents | null | undefined>(undefined)
   const amount = draft === undefined ? (suggested ? min(suggested, max) : null) : draft
   // What was confirmed: after the state refreshes, `max` (and so the suggested amount) drops to what is left.
@@ -89,7 +91,7 @@ export function FundAgreementSheet({
         ) : null}
         {max > 0 ? (
           <Button variant="link" size="sm" className="h-auto w-fit px-0" onClick={() => setDraft(max)}>
-            Fund everything left ({formatUsd(max, { withCode: true })})
+            {fillLabel}
           </Button>
         ) : null}
         {max > 0 && suggested !== undefined && vaultAvailable < suggested ? (

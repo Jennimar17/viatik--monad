@@ -526,7 +526,7 @@ function NewAgreement() {
                 error={errors.exception}
                 hint={
                   governing
-                    ? `${agency?.name ?? 'This Agency'} already has an agreement in force (${governing.title}). Its threshold (${formatUsd(governing.spendingPolicy.exceptionThreshold, { withCode: true })}) governs all of the Agency’s payments, also after its tranches are released, because the first agreement in force governs. The threshold you set here only applies if that agreement stops governing. Releasing a tranche is always your decision.`
+                    ? `${governing.title} governs ${agency?.name ?? 'the Agency'}’s payments for as long as it exists, also after its tranches are released: its threshold (${formatUsd(governing.spendingPolicy.exceptionThreshold, { withCode: true })}) applies. The threshold you set here will not apply. Releasing a tranche is always your decision.`
                     : 'Single payments above this come to you for approval. Releasing a tranche is always your decision, whatever its size.'
                 }
               >
