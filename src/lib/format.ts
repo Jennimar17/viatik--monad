@@ -1,4 +1,4 @@
-import { dayIn } from '@/domain/days'
+import { calendarDaysUntil, dayIn } from '@/domain/days'
 
 import { formatLocalDateTime, localTimeZone, type LocalDateTimeOptions } from './local-time'
 
@@ -83,13 +83,18 @@ export function dayGroup(
   )
 }
 
-export function daysUntil(iso: string, now: string) {
-  return Math.ceil((new Date(iso).getTime() - new Date(now).getTime()) / DAY)
+/**
+ * Calendar days from today on the viewer's clock to a due date's day (its UTC
+ * date, as printed): 0 on the due day, −1 the day after. `timeZone` replaces the
+ * viewer's (tests).
+ */
+export function daysUntil(iso: string, now: string, { timeZone }: { timeZone?: string } = {}) {
+  return calendarDaysUntil(iso, now, timeZone)
 }
 
-/** "Due in 3 days", "Due today", "2 days overdue". */
-export function dueLabel(iso: string, now: string) {
-  const days = daysUntil(iso, now)
+/** "Due in 3 days", "Due today", "2 days overdue", counted in calendar days (`daysUntil`). */
+export function dueLabel(iso: string, now: string, options: { timeZone?: string } = {}) {
+  const days = daysUntil(iso, now, options)
   if (days < 0) return `${Math.abs(days)} ${Math.abs(days) === 1 ? 'day' : 'days'} overdue`
   if (days === 0) return 'Due today'
   if (days === 1) return 'Due tomorrow'

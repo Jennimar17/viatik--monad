@@ -1,4 +1,7 @@
-import { dayGroup, formatDate, formatDateTime, formatShortDate } from '@/lib/format'
+import { calendarDaysUntil } from '@/domain/days'
+import { billState } from '@/domain/queries'
+import type { Bill } from '@/domain/types'
+import { dayGroup, daysUntil, dueLabel, formatDate, formatDateTime, formatShortDate } from '@/lib/format'
 import { formatLocalDate, formatLocalDateTime, formatLocalTime } from '@/lib/local-time'
 
 import { checkSame, type Checker } from './harness'
@@ -16,9 +19,24 @@ const BA = 'America/Argentina/Buenos_Aires'
 /** Some ICU versions put a narrow no-break space before AM/PM: every space reads as a plain one. */
 const plain = (text: string) => text.replace(/\s/g, ' ')
 
+/**
+ * Runs `run` with this process in `zone`, for what reads the device's clock when no zone is
+ * named (Node reads TZ again when it is set), then puts the zone back.
+ */
+function withTimeZone(zone: string, run: () => void) {
+  const before = process.env.TZ ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+  process.env.TZ = zone
+  try {
+    run()
+  } finally {
+    process.env.TZ = before
+  }
+}
+
 export default async function format(t: Checker) {
   await t.scenario('T1. Times of day on the viewer’s clock', () => times(t))
   await t.scenario('T2. Today and the day groups on the viewer’s clock; calendar dates in UTC', () => days(t))
+  await t.scenario('T3. Days to a due date are calendar days', () => dueDays(t))
 }
 
 // ─── T1. Times of day ────────────────────────────────────────────────────────
@@ -98,4 +116,101 @@ function days(t: Checker) {
   // A due date is stored as midnight UTC: it must not move a day back west of UTC.
   checkSame(t, 'T2 a calendar date keeps its day', formatDate('2026-10-15T00:00:00.000Z'), 'Oct 15, 2026')
   checkSame(t, 'T2 … also without the year', formatShortDate('2026-10-15T00:00:00.000Z'), 'Oct 15')
+}
+
+// ─── T3. Days to a due date ──────────────────────────────────────────────────
+
+function dueDays(t: Checker) {
+  const UTC = { timeZone: 'UTC' }
+  const BOGOTA = { timeZone: 'America/Bogota' } // UTC-5
+  // The seed's bills are due at noon UTC; looked at on the morning of the 12th.
+  const morning = '2026-10-12T09:00:00Z'
+  checkSame(
+    t,
+    'T3 due the 15th at noon, the morning of the 12th: 3 days (not 4)',
+    daysUntil('2026-10-15T12:00:00Z', morning, UTC),
+    3,
+  )
+  checkSame(t, 'T3 due the 21st: 9 days', daysUntil('2026-10-21T12:00:00Z', morning, UTC), 9)
+  checkSame(t, 'T3 due the 8th: 4 days overdue (not 3)', daysUntil('2026-10-08T12:00:00Z', morning, UTC), -4)
+  checkSame(t, 'T3 due the 9th at 16:00: 3 days overdue', daysUntil('2026-10-09T16:00:00Z', morning, UTC), -3)
+  checkSame(
+    t,
+    'T3 a monthly payment due the 26th: 14 days',
+    daysUntil('2026-10-26T00:00:00Z', morning, UTC),
+    14,
+  )
+  checkSame(
+    t,
+    'T3 the labels',
+    [
+      dueLabel('2026-10-15T12:00:00Z', morning, UTC),
+      dueLabel('2026-10-13T00:00:00Z', morning, UTC),
+      dueLabel('2026-10-12T23:00:00Z', morning, UTC),
+      dueLabel('2026-10-11T00:00:00Z', morning, UTC),
+      dueLabel('2026-10-08T12:00:00Z', morning, UTC),
+    ],
+    ['Due in 3 days', 'Due tomorrow', 'Due today', '1 day overdue', '4 days overdue'],
+  )
+
+  // 9 PM on the 12th in Bogota is already the 13th in UTC.
+  const evening = '2026-10-13T02:00:00Z'
+  checkSame(
+    t,
+    'T3 west of UTC it is still the 12th: due the 13th reads "Due tomorrow"',
+    dueLabel('2026-10-13T00:00:00Z', evening, BOGOTA),
+    'Due tomorrow',
+  )
+  checkSame(t, 'T3 … and the 26th is 14 days away', daysUntil('2026-10-26T00:00:00Z', evening, BOGOTA), 14)
+  checkSame(
+    t,
+    'T3 east of UTC the 13th comes first: due the 13th reads "Due today" at 4 AM in Singapore',
+    calendarDaysUntil('2026-10-13T00:00:00Z', '2026-10-12T20:00:00Z', 'Asia/Singapore'),
+    0,
+  )
+
+  const bill = { status: 'to_pay', dueDate: '2026-10-12T00:00:00.000Z' } as Bill
+  checkSame(
+    t,
+    'T3 a bill is not overdue on its due day',
+    billState(bill, '2026-10-12T15:00:00Z', UTC),
+    'to_pay',
+  )
+  checkSame(t, 'T3 … it is the day after', billState(bill, '2026-10-13T01:00:00Z', UTC), 'overdue')
+  checkSame(
+    t,
+    'T3 … but not while the due day lasts west of UTC',
+    billState(bill, '2026-10-13T01:00:00Z', BOGOTA),
+    'to_pay',
+  )
+  checkSame(
+    t,
+    'T3 a scheduled bill is overdue the day after too',
+    billState({ ...bill, status: 'scheduled' }, '2026-10-13T01:00:00Z', UTC),
+    'overdue',
+  )
+  checkSame(
+    t,
+    'T3 a paid bill is never overdue',
+    billState({ ...bill, status: 'paid' }, '2026-11-01T00:00:00Z', UTC),
+    'paid',
+  )
+
+  // Screens name no zone: today is then this device's day.
+  withTimeZone('America/Bogota', () =>
+    checkSame(
+      t,
+      'T3 with no zone named, the device’s day counts (Bogota)',
+      [daysUntil('2026-10-13T00:00:00Z', evening), billState(bill, '2026-10-13T01:00:00Z')],
+      [1, 'to_pay'],
+    ),
+  )
+  withTimeZone('UTC', () =>
+    checkSame(
+      t,
+      'T3 with no zone named, the device’s day counts (UTC)',
+      [daysUntil('2026-10-13T00:00:00Z', evening), billState(bill, '2026-10-13T01:00:00Z')],
+      [0, 'overdue'],
+    ),
+  )
 }

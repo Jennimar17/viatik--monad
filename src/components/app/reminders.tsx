@@ -52,9 +52,11 @@ const CATEGORIES: Option[] = (Object.keys(categoryLabel) as SpendingCategory[]).
 
 const NO_ACCOUNT = 'none'
 
-/** A monthly payment that is due now (overdue, or due today) and not paid yet. */
-export const isDueNow = (due: { dueAt: string; overdue: boolean }, now: string) =>
-  due.overdue || daysUntil(due.dueAt, now) <= 0
+/**
+ * A monthly payment that is due now (due today or overdue, on the viewer's clock) and not paid
+ * yet. Not `overdue`: that flips at midnight UTC, the evening before for viewers west of UTC.
+ */
+export const isDueNow = (due: { dueAt: string }, now: string) => daysUntil(due.dueAt, now) <= 0
 
 /**
  * An Agency's monthly payments with the Admin's actions: "Pay now" opens Pay

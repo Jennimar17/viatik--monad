@@ -1,3 +1,4 @@
+import { calendarDaysUntil } from './days'
 import { cents, clampToZero, sum, type Cents } from './money'
 import { accountBalance, agreementDisplayStatus, budgetUsage, committedAt } from './selectors'
 import type {
@@ -245,8 +246,18 @@ export function defaultBillAccount(state: ViatikState, agencyId: Id): Account | 
   )
 }
 
-export function billState(bill: Bill, now: string): Bill['status'] | 'overdue' {
-  if ((bill.status === 'to_pay' || bill.status === 'scheduled') && bill.dueDate < now) return 'overdue'
+/**
+ * A bill to pay or scheduled is overdue once its due day has passed on the viewer's clock (this
+ * device's time zone), not during the day itself: it says "Due today" then. `timeZone` replaces
+ * the device's (tests).
+ */
+export function billState(
+  bill: Bill,
+  now: string,
+  { timeZone }: { timeZone?: string } = {},
+): Bill['status'] | 'overdue' {
+  const open = bill.status === 'to_pay' || bill.status === 'scheduled'
+  if (open && calendarDaysUntil(bill.dueDate, now, timeZone) < 0) return 'overdue'
   return bill.status
 }
 

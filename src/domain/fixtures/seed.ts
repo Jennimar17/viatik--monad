@@ -2716,8 +2716,24 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     agencyHref('approvals'),
     b.ago(1, 9, 25),
   )
-  b.notify(U.maya, 'Bill due soon', 'Vertex Cloud bill is due in 3 days.', agencyHref('bills'), b.ago(1, 7))
-  b.notify(U.maya, 'Bill overdue', 'Pagecraft bill was due 4 days ago.', agencyHref('bills'), b.ago(3, 12))
+  // The due dates of this month's Vertex Cloud and Pagecraft bills (Vendor bills above), as dates:
+  // "in 3 days" would be wrong on any later day the notification is read.
+  const dueDay = (at: ISODate) =>
+    new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(at))
+  b.notify(
+    U.maya,
+    'Bill due soon',
+    `Vertex Cloud bill is due ${dueDay(b.ahead(3, 12))}.`,
+    agencyHref('bills'),
+    b.ago(1, 7),
+  )
+  b.notify(
+    U.maya,
+    'Bill overdue',
+    `Pagecraft bill was due ${dueDay(b.ago(4, 12))}.`,
+    agencyHref('bills'),
+    b.ago(3, 12),
+  )
   b.notify(
     U.maya,
     'Evidence submitted',
