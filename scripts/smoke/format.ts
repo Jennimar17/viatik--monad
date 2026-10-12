@@ -1,4 +1,5 @@
 import { calendarDaysUntil } from '@/domain/days'
+import { cents, parseUsdInput, toInputString, usdInputHint } from '@/domain/money'
 import { billState } from '@/domain/queries'
 import type { Bill } from '@/domain/types'
 import { dayGroup, daysUntil, dueLabel, formatDate, formatDateTime, formatShortDate } from '@/lib/format'
@@ -7,10 +8,11 @@ import { formatLocalDate, formatLocalDateTime, formatLocalTime } from '@/lib/loc
 import { checkSame, type Checker } from './harness'
 
 /**
- * Format: how dates and times read on screen. Times of day, today's date and
- * the days a feed is grouped by are on the viewer's clock; calendar dates (due,
- * issue, agreement dates) stay UTC so everyone sees the same day. Every check
- * names its time zone, so nothing depends on the machine's. Pure.
+ * Format: how dates, times and amounts read on screen. Times of day, today's
+ * date and the days a feed is grouped by are on the viewer's clock; calendar
+ * dates (due, issue, agreement dates) stay UTC so everyone sees the same day.
+ * Every check names its time zone, so nothing depends on the machine's. The
+ * amount input reads a dot for cents and commas for thousands only. Pure.
  */
 
 /** Buenos Aires: GMT-3 all year (no daylight saving time). */
@@ -37,6 +39,7 @@ export default async function format(t: Checker) {
   await t.scenario('T1. Times of day on the viewer’s clock', () => times(t))
   await t.scenario('T2. Today and the day groups on the viewer’s clock; calendar dates in UTC', () => days(t))
   await t.scenario('T3. Days to a due date are calendar days', () => dueDays(t))
+  await t.scenario('T4. The amount input refuses a comma for cents', () => amounts(t))
 }
 
 // ─── T1. Times of day ────────────────────────────────────────────────────────
@@ -212,5 +215,45 @@ function dueDays(t: Checker) {
       [daysUntil('2026-10-13T00:00:00Z', evening), billState(bill, '2026-10-13T01:00:00Z')],
       [0, 'overdue'],
     ),
+  )
+}
+
+// ─── T4. Amount input ────────────────────────────────────────────────────────
+
+function amounts(t: Checker) {
+  checkSame(
+    t,
+    'T4 a comma for cents is refused, not read as hundreds',
+    ['12,50', '1 250,50', '1.234,56', '1,25'].map(parseUsdInput),
+    [null, null, null, null],
+  )
+  checkSame(
+    t,
+    'T4 a dot for cents, commas for thousands',
+    ['1,250.50', '1250', '12.5', '1,234,567.89', '$1,250 USD', '1 250.50'].map(parseUsdInput),
+    [125050, 125000, 1250, 123456789, 125000, 125050],
+  )
+  checkSame(t, 'T4 commas only in groups of three', ['1,2500', ',500', '12,5,00'].map(parseUsdInput), [
+    null,
+    null,
+    null,
+  ])
+  checkSame(
+    t,
+    'T4 the field’s own text reads back the same amount',
+    parseUsdInput(toInputString(cents(125050))),
+    125050,
+  )
+  checkSame(
+    t,
+    'T4 a comma for cents says to use a dot',
+    ['12,50', '1.234,56', '1250,5'].map(usdInputHint),
+    Array(3).fill('Use a dot for cents, as in 12.50.'),
+  )
+  checkSame(
+    t,
+    'T4 nothing to say otherwise',
+    ['1,250.50', '1,250', '12.50', '', '1,2345'].map(usdInputHint),
+    [null, null, null, null, null],
   )
 }

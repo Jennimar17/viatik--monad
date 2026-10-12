@@ -3,7 +3,7 @@
 import { Check, CircleAlert, FileText, Link2, Loader2, Paperclip, Upload, X } from 'lucide-react'
 import * as React from 'react'
 
-import { formatUsd, parseUsdInput, toInputString, type Cents } from '@/domain/money'
+import { formatUsd, parseUsdInput, toInputString, usdInputHint, type Cents } from '@/domain/money'
 import { formatBytes } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -33,12 +33,17 @@ export function MoneyInput({
   'aria-describedby'?: string
 }) {
   const [text, setText] = React.useState(value !== null ? toInputString(value) : '')
+  // Why the text left in the field is not an amount ("12,50"), shown once the person leaves it.
+  const [hint, setHint] = React.useState<string | null>(null)
   // When the parent changes the value (e.g. "Use maximum"), show it, unless
   // the typed text already means the same amount.
   const [synced, setSynced] = React.useState(value)
   if (value !== synced) {
     setSynced(value)
-    if (parseUsdInput(text) !== value) setText(value !== null ? toInputString(value) : '')
+    if (parseUsdInput(text) !== value) {
+      setText(value !== null ? toInputString(value) : '')
+      setHint(null)
+    }
   }
 
   return (
@@ -46,7 +51,7 @@ export function MoneyInput({
       <div
         className={cn(
           'flex h-12 items-center gap-2 rounded-full border border-input bg-input/30 px-5 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/40',
-          invalid && 'border-destructive ring-3 ring-destructive/20',
+          (invalid || hint) && 'border-destructive ring-3 ring-destructive/20',
           disabled && 'opacity-50',
         )}
       >
@@ -59,13 +64,14 @@ export function MoneyInput({
           autoComplete="off"
           autoFocus={autoFocus}
           disabled={disabled}
-          aria-invalid={invalid || undefined}
+          aria-invalid={invalid || Boolean(hint) || undefined}
           aria-describedby={describedBy}
           placeholder={placeholder}
           value={text}
           onChange={(event) => {
             const next = event.target.value.replace(/[^\d.,]/g, '')
             setText(next)
+            setHint(null)
             const parsed = next === '' ? null : parseUsdInput(next)
             setSynced(parsed)
             onChange(parsed)
@@ -73,11 +79,17 @@ export function MoneyInput({
           onBlur={() => {
             const parsed = parseUsdInput(text)
             if (parsed !== null) setText(toInputString(parsed))
+            else setHint(usdInputHint(text))
           }}
           className="min-w-0 flex-1 bg-transparent font-display text-xl tracking-tight num outline-none placeholder:text-subtle/60"
         />
         <span className="text-sm text-subtle">USD</span>
       </div>
+      {hint ? (
+        <p className="px-5 text-xs text-danger" role="alert">
+          {hint}
+        </p>
+      ) : null}
       {available !== undefined ? (
         <p className="px-5 text-xs text-subtle">
           <span className="text-foreground num">{formatUsd(available, { withCode: true })}</span> available

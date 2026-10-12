@@ -34,16 +34,9 @@ import { agreementStatus } from '@/domain/status'
 import { networkInfo } from '@/domain/verification'
 import { publicEnv } from '@/lib/env'
 import { formatDate, pluralize, shortHash } from '@/lib/format'
+import { localTimeZone } from '@/lib/local-time'
 import { useSession } from '@/lib/session'
 import { timeZoneOptions } from '@/lib/time-zones'
-
-const LOCALES = [
-  { value: 'en-US', label: 'English (United States) · 1,234.56' },
-  { value: 'en-GB', label: 'English (United Kingdom) · 1,234.56' },
-  { value: 'de-DE', label: 'German formatting · 1.234,56' },
-  { value: 'fr-FR', label: 'French formatting · 1 234,56' },
-  { value: 'es-ES', label: 'Spanish formatting · 1.234,56' },
-]
 
 /** Per-device choices that have no server side yet: notification switches, passkey, developer mode. */
 type Preferences = {
@@ -118,8 +111,12 @@ function Settings() {
   const [name, setName] = React.useState(user?.name ?? '')
   const [jobTitle, setJobTitle] = React.useState(user?.title ?? '')
   const [timeZone, setTimeZone] = React.useState(user?.timeZone ?? 'UTC')
-  const [locale, setLocale] = React.useState(user?.locale ?? 'en-US')
   const [destinationOpen, setDestinationOpen] = React.useState(false)
+  // Times in Viatik follow this device's clock; the profile's zone is what the team sees. Accounts
+  // created by signing in or by an invitation start in UTC: offer this device's zone instead.
+  const deviceZone = localTimeZone()
+  const deviceZoneLabel = deviceZone.replace(/_/g, ' ')
+  const suggestDeviceZone = user?.timeZone === 'UTC' && timeZone === 'UTC' && deviceZone !== 'UTC'
 
   const agency = agencyId ? state.agencies.find((a) => a.id === agencyId) : undefined
   const portfolio = state.portfolios.find((p) => p.id === portfolioId)
@@ -132,14 +129,12 @@ function Settings() {
   const dirty =
     name.trim() !== (user?.name ?? '') ||
     jobTitle.trim() !== (user?.title ?? '') ||
-    timeZone !== user?.timeZone ||
-    locale !== user?.locale
+    timeZone !== user?.timeZone
 
   const discard = () => {
     setName(user?.name ?? '')
     setJobTitle(user?.title ?? '')
     setTimeZone(user?.timeZone ?? 'UTC')
-    setLocale(user?.locale ?? 'en-US')
   }
 
   const tabs: PageTab[] = [
@@ -147,10 +142,7 @@ function Settings() {
       value: 'profile',
       label: 'Profile',
       content: (
-        <Panel
-          title="Your profile"
-          description="Dates and amounts follow your locale. Amounts are always shown in USD."
-        >
+        <Panel title="Your profile" description="Amounts are shown in US dollars.">
           <div className="flex flex-col gap-5">
             <div className="flex items-center gap-4">
               <PersonAvatar name={name.trim() || user?.name || 'You'} size="lg" />
@@ -173,7 +165,28 @@ function Settings() {
                   onChange={(e) => setJobTitle(e.target.value)}
                 />
               </FormField>
-              <FormField label="Time zone" htmlFor="profile-tz">
+              <FormField
+                label="Time zone"
+                htmlFor="profile-tz"
+                hint={
+                  <>
+                    Shown to your team. Times in Viatik follow this device’s clock ({deviceZoneLabel}).
+                    {suggestDeviceZone ? (
+                      <>
+                        {' '}
+                        <Button
+                          variant="link"
+                          size="sm"
+                          className="h-auto p-0 text-xs"
+                          onClick={() => setTimeZone(deviceZone)}
+                        >
+                          Use {deviceZoneLabel}
+                        </Button>
+                      </>
+                    ) : null}
+                  </>
+                }
+              >
                 <SimpleSelect
                   id="profile-tz"
                   value={timeZone}
@@ -181,22 +194,12 @@ function Settings() {
                   options={timeZoneOptions(timeZone)}
                 />
               </FormField>
-              <FormField label="Number and date format" htmlFor="profile-locale">
-                <SimpleSelect
-                  id="profile-locale"
-                  value={locale}
-                  onValueChange={setLocale}
-                  options={LOCALES}
-                />
-              </FormField>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 size="pill-sm"
                 disabled={!dirty || name.trim().length < 2 || profile.isPending}
-                onClick={() =>
-                  void profile.run({ name: name.trim(), title: jobTitle.trim(), timeZone, locale })
-                }
+                onClick={() => void profile.run({ name: name.trim(), title: jobTitle.trim(), timeZone })}
               >
                 {profile.isPending ? 'Saving…' : 'Save changes'}
               </Button>

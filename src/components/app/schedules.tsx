@@ -327,7 +327,8 @@ export function WhenToPayField({
           <p className="flex gap-2 text-xs text-pretty text-subtle">
             <Info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
             <span>
-              Times are in your time zone ({zone}). {paidAtText(timing)}, if the money is still there.
+              Times are on this device’s clock ({zone.replace(/_/g, ' ')}). {paidAtText(timing)}, if the money
+              is still there.
               {timing === 'demo' ? ' In this demo nothing runs on a timer.' : ''} You can pause or cancel it
               until then.
             </span>
