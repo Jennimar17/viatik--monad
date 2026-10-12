@@ -25,7 +25,7 @@ export function FundAgreementSheet({
   agreement: FundingAgreement
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** The amount to start from (for example, what a release is short of); everything fundable otherwise. */
+  /** The amount to start from: what a release is short of. Without it the amount starts empty. */
   suggested?: Cents
 }) {
   const { state } = useViatikState()
@@ -38,10 +38,11 @@ export function FundAgreementSheet({
   const vaultAvailable = portfolioVault ? vaultBalance(state, portfolioVault.id) : ZERO
   // Never more than the tranches still to release need: more could never leave the Funding Vault.
   const max = min(capital.fundable, vaultAvailable)
-  // undefined = untouched, so the amount defaults to everything that can be funded.
+  // undefined = untouched: the suggested amount if there is one, else empty. Real money moves on
+  // confirm, so the Investor types the amount or picks "Fund everything left" on purpose.
   const [draft, setDraft] = React.useState<Cents | null | undefined>(undefined)
-  const amount = draft === undefined ? (suggested ? min(suggested, max) : max) : draft
-  // What was confirmed: after the state refreshes, `max` (and so the default amount) drops to what is left.
+  const amount = draft === undefined ? (suggested ? min(suggested, max) : null) : draft
+  // What was confirmed: after the state refreshes, `max` (and so the suggested amount) drops to what is left.
   const [funded, setFunded] = React.useState<Cents | null>(null)
   const agencyLabel = state.agencies.find((a) => a.id === agreement.agencyId)?.name ?? 'Agency'
   const invalid = amount !== null && (amount <= 0 || amount > max)
@@ -83,6 +84,14 @@ export function FundAgreementSheet({
       <div className="flex flex-col gap-2">
         <Label htmlFor="fund-amount">Amount</Label>
         <MoneyInput id="fund-amount" value={amount} onChange={setDraft} invalid={invalid} available={max} />
+        {suggested !== undefined ? (
+          <p className="text-xs text-subtle">Suggested: what this release is short of.</p>
+        ) : null}
+        {max > 0 ? (
+          <Button variant="link" size="sm" className="h-auto w-fit px-0" onClick={() => setDraft(max)}>
+            Fund everything left ({formatUsd(max, { withCode: true })})
+          </Button>
+        ) : null}
         {max > 0 && suggested !== undefined && vaultAvailable < suggested ? (
           <p className="text-sm text-pretty text-muted-foreground">
             Your Portfolio Vault holds {formatUsd(vaultAvailable, { withCode: true })}, which is{' '}
