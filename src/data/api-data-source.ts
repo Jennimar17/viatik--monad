@@ -186,7 +186,9 @@ export class ApiDataSource implements DataSource {
       ) {
         ;({ answer, replayed } = await prepare())
       }
-      if ('result' in answer) {
+      // Anything but a transaction to sign is settled. `{}` is final too: a command with nothing to
+      // return was stored that way before the server answered `null`.
+      if (!('pending' in answer)) {
         emit('completed')
         return answer.result
       }
@@ -361,7 +363,8 @@ export class ApiDataSource implements DataSource {
           expectedUserId: operation.userId,
         })
         const answer = (await response.json().catch(() => null)) as ConfirmAnswer<R> | null
-        if (answer && 'result' in answer) {
+        // Final unless Viatik says it is still processing (202).
+        if (answer && !('processing' in answer)) {
           forgetOpen(operation.key)
           return answer.result
         }

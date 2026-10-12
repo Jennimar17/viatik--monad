@@ -454,7 +454,8 @@ function commitOnce(
     // Ids are seeded by person and key, so a retry or the confirmation creates the same ones.
     const outcome = runCommand(before, { actor, now: nowIso, idSeed: `${user.id}:${key}` }, name, input)
 
-    let answer: Answer = { status: 200, body: { result: outcome.result } }
+    // `null`, never `undefined`: JSON drops an undefined key, and `{}` would read as unsettled.
+    let answer: Answer = { status: 200, body: { result: outcome.result ?? null } }
     const plan = planSettlement({ before, after: outcome.state, actor })
     // Saved at once, so it must not touch what a transaction already on its way will change.
     await refuseConflicts(
@@ -579,7 +580,7 @@ function settleConfirmation({ user, key, name, requestId }: Caller, confirmed: L
     return finish(
       'done',
       result.status === 'completed'
-        ? { status: 200, body: { result: outcome.result } }
+        ? { status: 200, body: { result: outcome.result ?? null } }
         : ledgerFailure(result.error),
       outcome.state,
     )
