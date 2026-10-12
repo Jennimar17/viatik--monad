@@ -52,6 +52,20 @@ export function findEvidence(state: ViatikState, evidenceId: Id): Evidence | und
   return undefined
 }
 
+/**
+ * Who an Agency Admin can pay from Send payment and Pay team: everyone active in the Agency but
+ * themselves. Nobody pays themselves: they request payment for work, which another Admin reviews.
+ */
+export function payablePeople(state: ViatikState, agencyId: Id, actorUserId: Id) {
+  return state.memberships.filter(
+    (m) =>
+      m.scope.kind === 'agency' &&
+      m.scope.agencyId === agencyId &&
+      m.status === 'active' &&
+      m.userId !== actorUserId,
+  )
+}
+
 /** The account released funding and returned money land in by default: the Agency's active Operations account. */
 export function activeOperationsAccount(state: ViatikState, agencyId: Id) {
   return state.accounts.find(

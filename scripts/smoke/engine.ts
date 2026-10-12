@@ -42,6 +42,7 @@ import {
   investorApprovals,
   isException,
   isOutsidePayment,
+  payablePeople,
   userName,
 } from '@/domain/queries'
 import {
@@ -2851,6 +2852,82 @@ async function firstSmoke(t: Checker) {
     'I Maya restores it',
   )
   t.check('and restored', back.result.status === 'approved')
+
+  // Nobody pays themselves: an Admin requests payment for work, which another Admin reviews.
+  await w.gather(U.maya, ACC.arcOperations, usd(100))
+  const toSelf = {
+    agencyId: ARC,
+    type: 'team' as const,
+    recipient: { kind: 'member' as const, userId: U.maya },
+    accountId: ACC.arcOperations,
+    amount: usd(20),
+    category: 'team' as const,
+    memo: 'October team payment',
+  }
+  const selfMessage = w.refuse(U.maya, 'sendPayment', toSelf, 'forbidden', 'I an Admin cannot pay herself')
+  t.check(
+    'I it says to request payment for work instead',
+    selfMessage === 'You cannot pay yourself. Request payment for work and another Agency Admin reviews it.',
+    selfMessage,
+  )
+  w.refuse(
+    U.maya,
+    'sendPayment',
+    { ...toSelf, scheduledFor: plusHours(w.now, 2) },
+    'forbidden',
+    'I nor schedule a payment to herself',
+  )
+  w.refuse(
+    U.maya,
+    'sendTeamPayments',
+    {
+      agencyId: ARC,
+      accountId: ACC.arcOperations,
+      memo: 'October team payment',
+      items: [
+        { userId: U.alex, amount: usd(10) },
+        { userId: U.maya, amount: usd(10) },
+      ],
+    },
+    'forbidden',
+    'I nor be part of a team payment (nobody in that batch is paid)',
+  )
+  const team = await w.run(
+    U.maya,
+    'sendTeamPayments',
+    {
+      agencyId: ARC,
+      accountId: ACC.arcOperations,
+      memo: 'October team payment',
+      items: [
+        { userId: U.alex, amount: usd(10) },
+        { userId: U.jordan, amount: usd(10) },
+      ],
+    },
+    'I Maya pays Alex and Jordan, another Agency Admin, in one batch',
+    { ops: ['pay', 'pay'] },
+  )
+  t.check(
+    'I the batch pays both, Admin included',
+    team.result.length === 2 && team.result.every((p) => p.batchId === team.result[0]?.batchId),
+  )
+  const arcPeople = w.state.memberships
+    .filter((m) => m.scope.kind === 'agency' && m.scope.agencyId === ARC && m.status === 'active')
+    .map((m) => m.userId)
+  checkSame(
+    t,
+    'I Send payment and Pay team list everyone active in the Agency but the Admin paying',
+    payablePeople(w.state, ARC, U.maya)
+      .map((m) => m.userId)
+      .sort(),
+    arcPeople.filter((id) => id !== U.maya).sort(),
+  )
+  t.check(
+    'I that includes the other Admin and the Members',
+    [U.jordan, U.alex, U.priya].every((id) =>
+      payablePeople(w.state, ARC, U.maya).some((m) => m.userId === id),
+    ),
+  )
 }
 
 // ─── J. Labels, statuses, the seed, the schemas ──────────────────────────────

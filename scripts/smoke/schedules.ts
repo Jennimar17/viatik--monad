@@ -92,6 +92,7 @@ export default async function schedules(t: Checker) {
   await t.scenario('F16. Payments from before schedules: scheduled again (replaced) or dismissed', () =>
     unscheduled(t),
   )
+  await t.scenario('F17. Nobody pays themselves, now or when a schedule runs', () => selfPayment(t))
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -1785,5 +1786,62 @@ async function unscheduled(t: Checker) {
     { paymentId: 'pay_legacy_dismiss' },
     'not_found',
     'F16 dismissing it twice',
+  )
+}
+
+// ─── F17. Nobody pays themselves ─────────────────────────────────────────────
+
+async function selfPayment(t: Checker) {
+  const w = new World(t, 'f17')
+  await w.gather(U.maya, ACC.arcOperations, usd(500))
+  const toJordan = {
+    agencyId: ARC,
+    type: 'team' as const,
+    recipient: { kind: 'member' as const, userId: U.jordan },
+    accountId: ACC.arcOperations,
+    amount: usd(25),
+    category: 'team' as const,
+    memo: 'Workshop hosting',
+    firstRunAt: inMinutes(w, 5),
+  }
+  w.refuse(
+    U.maya,
+    'schedulePayment',
+    { ...toJordan, recipient: { kind: 'member', userId: U.maya } },
+    'forbidden',
+    'F17 Maya cannot schedule a payment to herself',
+  )
+  const step = await w.run(U.maya, 'schedulePayment', toJordan, 'F17 Maya schedules Jordan, another Admin', {
+    ops: ['createSchedule'],
+  })
+
+  // A schedule to its own Admin, as one made before the rule would be stored: the keeper never pays it.
+  const mine = structuredClone(w.state)
+  const stored = must(
+    mine.schedules.find((s) => s.id === step.result.id),
+    'the schedule',
+  )
+  stored.recipient = { kind: 'member', userId: U.maya }
+  w.state = mine
+  w.later(10 * MINUTE)
+  const run = await keeperRun(t, w, stored.id, 'F17 the keeper tries a schedule to its own Admin')
+  t.check(
+    'F17 the engine refuses it: nothing planned, nothing paid',
+    Boolean(run.error?.startsWith('forbidden')) &&
+      run.plan === null &&
+      !w.state.payments.some((p) => p.scheduleId === stored.id),
+    run.error,
+  )
+  const noted = noteFailure(w.state, w.now, scheduleOf(w, stored.id), {
+    code: 'forbidden',
+    message: must(run.error, 'the refusal').replace(/^forbidden: /, ''),
+  })
+  t.check('F17 it is noted for the Admins', noted.noted)
+  w.state = noted.state
+  t.check(
+    'F17 it needs attention, and says why',
+    scheduleState(w.state, scheduleOf(w, stored.id), w.now) === 'needs_attention' &&
+      Boolean(scheduleOf(w, stored.id).failure?.message.includes('nobody can pay themselves')),
+    scheduleOf(w, stored.id).failure?.message,
   )
 }

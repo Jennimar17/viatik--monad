@@ -1140,10 +1140,11 @@ export type AgencyPaymentChecks = {
 /**
  * What a payment an Agency Admin makes must satisfy, paid now, scheduled, or
  * when the keeper runs it: a positive amount; the account (and budget) of this
- * Agency; a payee who is a person in it or an approved vendor of it; then the
- * ledger's own limits, in its order (a paused budget pays nothing, the
- * budget's per-operation limit and approved vendors, then the Investor's
- * exception threshold). The money available is checked by the caller.
+ * Agency; a payee who is a person in it (never the Admin paying: they request
+ * payment for work, which another Agency Admin reviews) or an approved vendor
+ * of it; then the ledger's own limits, in its order (a paused budget pays
+ * nothing, the budget's per-operation limit and approved vendors, then the
+ * Investor's exception threshold). The money available is checked by the caller.
  */
 export function checkAgencyPayment(
   tx: Tx,
@@ -1163,6 +1164,12 @@ export function checkAgencyPayment(
         m.scope.agencyId === input.agencyId,
     )
     if (!inAgency) throw new DomainError('forbidden', 'Payments can only go to people in this Agency.')
+    if (tx.actor.kind === 'user' && recipient.userId === tx.actor.userId) {
+      throw new DomainError(
+        'forbidden',
+        'You cannot pay yourself. Request payment for work and another Agency Admin reviews it.',
+      )
+    }
   } else {
     const destination = tx.find('destinations', recipient.destinationId, 'Payment destination')
     if (destination.agencyId !== input.agencyId)

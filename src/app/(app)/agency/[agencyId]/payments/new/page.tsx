@@ -35,7 +35,7 @@ import type { SendPaymentInput } from '@/domain/engine'
 import { categoryLabel, paymentTypeLabel, scheduleCadenceLabel } from '@/domain/labels'
 import { formatUsd, ZERO, type Cents } from '@/domain/money'
 import { roleLabel } from '@/domain/permissions'
-import { accountName, governingAgreement, receiptFor, userName } from '@/domain/queries'
+import { accountName, governingAgreement, payablePeople, receiptFor, userName } from '@/domain/queries'
 import { isUnscheduledPayment } from '@/domain/schedules'
 import { accountBalance, budgetUsage } from '@/domain/selectors'
 import type { Id, SpendingCategory, ViatikRecipient, ViatikState } from '@/domain/types'
@@ -122,7 +122,7 @@ function NewPaymentForQuery() {
  * `?again=<scheduleId|paymentId>`.
  */
 function NewPayment() {
-  const { state, now, mode } = useViatikState()
+  const { state, now, mode, userId } = useViatikState()
   const { scopeId: agencyId } = useRole()
   const href = useHref()
   const router = useRouter()
@@ -135,9 +135,8 @@ function NewPayment() {
 
   const accounts = state.accounts.filter((a) => a.agencyId === agencyId && a.status === 'active')
   const destinations = state.destinations.filter((d) => d.agencyId === agencyId && d.status === 'approved')
-  const people = state.memberships.filter(
-    (m) => m.scope.kind === 'agency' && m.scope.agencyId === agencyId && m.status === 'active',
-  )
+  // Everyone in the Agency but you: nobody pays themselves.
+  const people = payablePeople(state, agencyId, userId)
   const budgets = state.budgets.filter((b) => b.agencyId === agencyId && b.status === 'active')
   // The agreement whose exception threshold the engine and the contract apply.
   const agreement = governingAgreement(state, agencyId)

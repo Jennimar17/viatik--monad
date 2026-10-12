@@ -19,7 +19,7 @@ import { PageHeader, Panel } from '@/components/viatik/layout'
 import { PersonAvatar } from '@/components/viatik/people'
 import { useCommand, useViatikState } from '@/data/react'
 import { formatUsd, sum, usd, ZERO, type Cents } from '@/domain/money'
-import { accountName, userName } from '@/domain/queries'
+import { accountName, payablePeople, userName } from '@/domain/queries'
 import { accountBalance, budgetUsage } from '@/domain/selectors'
 import { pluralize } from '@/lib/format'
 
@@ -29,19 +29,14 @@ const monthName = new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'U
 type Row = { userId: string; selected: boolean; amount: Cents | null }
 
 export default function TeamPaymentsPage() {
-  const { state, now } = useViatikState()
+  const { state, now, userId } = useViatikState()
   const { scopeId: agencyId } = useRole()
   const href = useHref()
   const router = useRouter()
   const send = useCommand('sendTeamPayments')
 
-  const people = state.memberships.filter(
-    (m) =>
-      m.scope.kind === 'agency' &&
-      m.scope.agencyId === agencyId &&
-      m.status === 'active' &&
-      m.role === 'member',
-  )
+  // Everyone in the Agency but you, Admins included: nobody pays themselves.
+  const people = payablePeople(state, agencyId, userId)
   const accounts = state.accounts.filter((a) => a.agencyId === agencyId && a.status === 'active')
   const budgets = state.budgets.filter(
     (b) => b.agencyId === agencyId && b.status === 'active' && b.allowedCategories.includes('team'),
@@ -110,8 +105,8 @@ export default function TeamPaymentsPage() {
       <div className="flex flex-col gap-8">
         <PageHeader title="Pay team" />
         <EmptyState
-          title="No Members to pay"
-          description="Invite people to the Agency first. Team payments go to active Members."
+          title="Nobody to pay yet"
+          description="Invite people to the Agency first. Team payments go to everyone in it except you."
           action={
             <ButtonLink href={href('team')} size="pill">
               Go to Team

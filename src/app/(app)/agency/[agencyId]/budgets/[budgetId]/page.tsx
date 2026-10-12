@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 import * as React from 'react'
 
 import { FormField, SimpleSelect } from '@/components/app/form-controls'
-import { HolderAvatar, holderFromKey, holderOptions } from '@/components/app/holders'
+import { HolderAvatar, holderFromKey, holderOptions, personRoleLabel } from '@/components/app/holders'
 import { AddDestinationButton, EmptySourceHint } from '@/components/app/money-setup'
 import { PaymentsTable } from '@/components/app/payments-table'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
@@ -248,7 +248,7 @@ export default function BudgetDetailPage() {
           <EmptyState
             compact
             title="No spending access yet"
-            description="Assign a Member or an AI Agent to let them spend from this budget."
+            description="Assign a person or an AI Agent to let them spend from this budget."
           />
         ) : (
           <ul className="flex flex-col">
@@ -265,8 +265,10 @@ export default function BudgetDetailPage() {
                     <span className="flex min-w-0 flex-col">
                       <span className="truncate text-sm font-medium">{name}</span>
                       <span className="text-xs text-subtle">
-                        {a.holder.kind === 'member' ? 'Member' : 'AI Agent'} ·{' '}
-                        {formatUsd(a.periodLimit, { withCode: true })} per {unit}
+                        {a.holder.kind === 'member'
+                          ? personRoleLabel(state, budget.agencyId, a.holder.userId)
+                          : 'AI Agent'}{' '}
+                        · {formatUsd(a.periodLimit, { withCode: true })} per {unit}
                         {a.perOperationLimit ? ` · max ${formatUsd(a.perOperationLimit)} each` : ''}
                       </span>
                     </span>
@@ -434,7 +436,7 @@ export default function BudgetDetailPage() {
               value={holderKey}
               onValueChange={setHolderKey}
               options={candidates}
-              placeholder="Choose a Member or AI Agent"
+              placeholder="Choose a person or an AI Agent"
             />
           </FormField>
           <FormField

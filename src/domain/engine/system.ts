@@ -140,9 +140,10 @@ export type RunScheduledPaymentInput = {
  * does (the schedule is active and due, its Admin still holds the role, the
  * payee is still in the Agency, the budget's rules and the exception
  * threshold), plus what the app checks by hand (an approved vendor, the money
- * available). A refusal here means nothing is sent: the run stays due and the
- * keeper notes it (`noteScheduleFailed`). A run moves the schedule on (or
- * completes it), pays a linked bill and tells the payee and the Admin.
+ * available, a payee who is not that Admin). A refusal here means nothing is
+ * sent: the run stays due and the keeper notes it (`noteScheduleFailed`). A
+ * run moves the schedule on (or completes it), pays a linked bill and tells
+ * the payee and the Admin.
  *
  * Run it with the id seed `keeper:<scheduleId>:<run>`, so the same run applied
  * twice is refused (`already_applied`).
@@ -165,6 +166,14 @@ export function runScheduledPayment(tx: Tx, input: RunScheduledPaymentInput): Pa
     throw new DomainError(
       'forbidden',
       `${tx.nameOf(schedule.createdBy)} is no longer an Agency Admin, so this scheduled payment stopped. Cancel it, and schedule it again if it is still needed.`,
+    )
+  }
+  // Nobody pays themselves (`checkAgencyPayment` refuses it from a person): a schedule made
+  // before that rule, to its own Admin, is never paid.
+  if (schedule.recipient.kind === 'member' && schedule.recipient.userId === schedule.createdBy) {
+    throw new DomainError(
+      'forbidden',
+      `${tx.nameOf(schedule.createdBy)} scheduled it to their own balance, and nobody can pay themselves. Cancel it, and request payment for work instead.`,
     )
   }
   const { account, budget, portfolioId, recipientName } = checkAgencyPayment(tx, {
