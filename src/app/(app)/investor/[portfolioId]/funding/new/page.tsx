@@ -48,6 +48,9 @@ const CADENCE_OPTIONS: { value: SpendingPolicy['reportingCadence']; label: strin
   { value: 'quarterly', label: 'Quarterly' },
 ]
 
+const defaultCadence = (model: ReleaseModel): SpendingPolicy['reportingCadence'] =>
+  model === 'milestone' ? 'per_milestone' : 'monthly'
+
 type TrancheRow = {
   key: string
   name: string
@@ -101,7 +104,15 @@ function NewAgreement() {
     'cloud',
   ])
   const [exception, setException] = React.useState<Cents | null>(usd(10_000))
-  const [cadence, setCadence] = React.useState<SpendingPolicy['reportingCadence']>('per_milestone')
+  // Reporting follows the release model: per milestone only exists with milestones, so a choice
+  // that no longer fits the model falls back to its default.
+  const [cadenceChoice, setCadence] = React.useState<SpendingPolicy['reportingCadence'] | null>(null)
+  const cadence =
+    cadenceChoice && (model === 'milestone' || cadenceChoice !== 'per_milestone')
+      ? cadenceChoice
+      : defaultCadence(model)
+  const cadenceOptions =
+    model === 'milestone' ? CADENCE_OPTIONS : CADENCE_OPTIONS.filter((c) => c.value !== 'per_milestone')
   const [returns, setReturns] = React.useState(
     'Unreleased capital stays in the Funding Vault until the parties agree on what happens to it.',
   )
@@ -515,7 +526,7 @@ function NewAgreement() {
                 error={errors.exception}
                 hint={
                   governing
-                    ? `${agency?.name ?? 'This Agency'} already has an active agreement: its threshold (${formatUsd(governing.spendingPolicy.exceptionThreshold, { withCode: true })}) applies until it ends. Releasing a tranche is always your decision.`
+                    ? `${agency?.name ?? 'This Agency'} already has an agreement in force (${governing.title}). Its threshold (${formatUsd(governing.spendingPolicy.exceptionThreshold, { withCode: true })}) governs all of the Agency’s payments, also after its tranches are released, because the first agreement in force governs. The threshold you set here only applies if that agreement stops governing. Releasing a tranche is always your decision.`
                     : 'Single payments above this come to you for approval. Releasing a tranche is always your decision, whatever its size.'
                 }
               >
@@ -531,7 +542,7 @@ function NewAgreement() {
                   id="agreement-cadence"
                   value={cadence}
                   onValueChange={(value) => setCadence(value as SpendingPolicy['reportingCadence'])}
-                  options={CADENCE_OPTIONS}
+                  options={cadenceOptions}
                 />
               </FormField>
             </div>
@@ -581,8 +592,10 @@ function NewAgreement() {
                 model === 'milestone'
                   ? 'Each tranche is released only after you approve its milestone.'
                   : 'You release each tranche yourself, in order. Viatik does not release by itself.',
-                `Capital can be used for ${joinList(categories.map((c) => categoryLabel[c].toLowerCase()))}.`,
-                `Single operations above ${formatUsd(exception ?? ZERO, { withCode: true })} come to you as exceptions.`,
+                `Approved uses agreed with the Agency: ${joinList(categories.map((c) => categoryLabel[c].toLowerCase()))}. The Agency’s budgets set which categories each payment can use.`,
+                governing
+                  ? `${governing.title} keeps governing ${agency?.name ?? 'the Agency'}’s payments: single operations above ${formatUsd(governing.spendingPolicy.exceptionThreshold, { withCode: true })} come to you as exceptions.`
+                  : `Single operations above ${formatUsd(exception ?? ZERO, { withCode: true })} come to you as exceptions.`,
                 'Released capital can never exceed what you have funded.',
               ]}
             />

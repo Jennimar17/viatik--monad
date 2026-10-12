@@ -336,7 +336,7 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
         exceptionThreshold: usd(10_000),
         reportingCadence: 'per_milestone',
         returnConditions:
-          'Unreleased capital returns to the Portfolio Vault if the agreement is cancelled or expires.',
+          'Unreleased capital stays in the Funding Vault until the parties agree on what happens to it.',
       },
       evidenceRequirements:
         'Each milestone needs a written summary, a demo link or build, and supporting documents.',
@@ -358,7 +358,8 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
         allowedCategories: ['team', 'contractors', 'software', 'cloud', 'legal'],
         exceptionThreshold: usd(5_000),
         reportingCadence: 'monthly',
-        returnConditions: 'Unreleased capital returns to the Portfolio Vault at the end of the agreement.',
+        returnConditions:
+          'Released capital the Agency does not use is returned to the Portfolio Vault with Return to Investor.',
       },
       evidenceRequirements: 'Monthly spend report before each scheduled release.',
       createdBy: U.elena,
@@ -380,7 +381,7 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
         exceptionThreshold: usd(5_000),
         reportingCadence: 'per_milestone',
         returnConditions:
-          'Unreleased capital returns to the Portfolio Vault if the pilot does not start within 60 days.',
+          'Unreleased capital stays in the Funding Vault until the parties agree on what happens to it.',
       },
       evidenceRequirements: 'Field notes, participant consent summary, and a phase report.',
       createdBy: U.marcus,

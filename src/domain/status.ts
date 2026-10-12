@@ -9,6 +9,7 @@ import type {
   OperationStatus,
   ReminderStatus,
   RequestStatus,
+  Tranche,
   TrancheStatus,
 } from './types'
 
@@ -46,6 +47,19 @@ export const trancheStatus: Record<TrancheStatus, StatusDescriptor> = {
   released: { label: 'Released', tone: 'success' },
   rejected: { label: 'Rejected', tone: 'danger' },
   cancelled: { label: 'Cancelled', tone: 'neutral' },
+}
+
+/**
+ * A tranche's badge for who reads it. A tranche without a milestone that is available needs no
+ * request: the Agency may request it, the Investor can release it as it is.
+ */
+export function trancheStatusFor(
+  tranche: Pick<Tranche, 'status' | 'releaseCondition'>,
+  reader: 'investor' | 'agency',
+): StatusDescriptor {
+  if (reader === 'investor' && tranche.status === 'available' && tranche.releaseCondition !== 'milestone')
+    return { label: 'Ready to release', tone: 'info' }
+  return trancheStatus[tranche.status]
 }
 
 export const milestoneStatus: Record<MilestoneStatus, StatusDescriptor> = {

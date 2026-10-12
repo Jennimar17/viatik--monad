@@ -15,9 +15,9 @@ import { KeyValueList } from '@/components/viatik/layout'
 import { StatusBadge } from '@/components/viatik/status'
 import { categoryLabel, releaseModelLabel } from '@/domain/labels'
 import { formatUsd } from '@/domain/money'
-import { userName } from '@/domain/queries'
+import { governingAgreement, userName } from '@/domain/queries'
 import { agreementCapital } from '@/domain/selectors'
-import { milestoneStatus, trancheStatus } from '@/domain/status'
+import { milestoneStatus, trancheStatusFor } from '@/domain/status'
 import type { FundingAgreement, Milestone, Tranche, ViatikState } from '@/domain/types'
 import { formatBytes, formatDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -67,6 +67,8 @@ export function trancheTimeline(
   state: ViatikState,
   agreementId: string,
   actionFor?: (tranche: Tranche, milestone?: Milestone) => React.ReactNode,
+  /** Who reads it: an available tranche without a milestone is ready to release for the Investor. */
+  reader: 'investor' | 'agency' = 'agency',
 ): TimelineItem[] {
   return tranchesOf(state, agreementId).map((tranche) => {
     const milestone = tranche.milestoneId
@@ -94,7 +96,7 @@ export function trancheTimeline(
       status:
         milestone && tranche.status !== 'released'
           ? milestoneStatus[milestone.status]
-          : trancheStatus[tranche.status],
+          : trancheStatusFor(tranche, reader),
       state: timelineState(tranche, milestone),
       action: actionFor?.(tranche, milestone),
     }
@@ -146,6 +148,9 @@ const cadenceLabel: Record<FundingAgreement['spendingPolicy']['reportingCadence'
 export function AgreementTerms({ state, agreement }: { state: ViatikState; agreement: FundingAgreement }) {
   const policy = agreement.spendingPolicy
   const prose = (text: string) => <span className="max-w-xs text-pretty">{text}</span>
+  // The first agreement in force governs the Agency's payments, on the engine and on the ledger.
+  const governing = governingAgreement(state, agreement.agencyId)
+  const otherGoverning = governing && governing.id !== agreement.id ? governing : undefined
   return (
     <KeyValueList
       items={[
@@ -155,7 +160,9 @@ export function AgreementTerms({ state, agreement }: { state: ViatikState; agree
         {
           label: 'Exception threshold',
           value: formatUsd(policy.exceptionThreshold, { withCode: true }),
-          hint: 'Operations above this need Investor review',
+          hint: otherGoverning
+            ? `Applies while this agreement governs the Agency. Today ${otherGoverning.title} does.`
+            : 'Operations above this need Investor review',
         },
         { label: 'Reporting', value: cadenceLabel[policy.reportingCadence] },
         {
@@ -174,12 +181,14 @@ export function MilestoneTimelineFor({
   state,
   agreementId,
   actionFor,
+  reader = 'agency',
 }: {
   state: ViatikState
   agreementId: string
   actionFor?: (tranche: Tranche, milestone?: Milestone) => React.ReactNode
+  reader?: 'investor' | 'agency'
 }) {
-  return <MilestoneTimeline items={trancheTimeline(state, agreementId, actionFor)} />
+  return <MilestoneTimeline items={trancheTimeline(state, agreementId, actionFor, reader)} />
 }
 
 /** Submitted evidence. Documents stay private; only their fingerprints are recorded. */

@@ -366,7 +366,7 @@ export default function AgencyOverviewPage() {
                     ? `Submit evidence for “${nextMilestone.title}” to request this tranche. Due ${formatDate(nextMilestone.dueDate)}.`
                     : nextTranche.scheduledFor
                       ? `Planned for ${formatDate(nextTranche.scheduledFor)}. The Investor releases it.`
-                      : 'Request this tranche when you are ready.'}
+                      : `${investor ?? 'Your Investor'} releases it when they decide. You can also request it.`}
               </p>
               <ButtonLink
                 href={href(`funding?agreement=${nextTranche.agreementId}`)}

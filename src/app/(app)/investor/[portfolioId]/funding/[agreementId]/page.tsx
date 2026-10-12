@@ -44,7 +44,7 @@ import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useCommand, useViatikState } from '@/data/react'
 import { categoryLabel, releaseModelLabel } from '@/domain/labels'
 import { formatUsd } from '@/domain/money'
-import { receiptFor } from '@/domain/queries'
+import { governingAgreement, receiptFor } from '@/domain/queries'
 import { agreementBadge, agreementCapital, isFullyReleased } from '@/domain/selectors'
 import { formatDate } from '@/lib/format'
 
@@ -82,6 +82,8 @@ export default function AgreementDetailPage() {
   // What the tranches still to release can take; funding more would leave it in the Funding Vault.
   const fundable = agreementCapital(state, agreement.id).fundable
   const policy = agreement.spendingPolicy
+  // The first agreement in force governs the Agency's payments, also once its tranches are released.
+  const governing = governingAgreement(state, agreement.agencyId)
   const milestoneHref = (milestoneId: string) => href(`funding/${agreement.id}/milestones/${milestoneId}`)
 
   return (
@@ -180,6 +182,7 @@ export default function AgreementDetailPage() {
                 <MilestoneTimelineFor
                   state={state}
                   agreementId={agreement.id}
+                  reader="investor"
                   actionFor={(tranche, milestone) => {
                     // No milestone to review and nothing the Agency has to request: the Investor can release it.
                     if (
@@ -243,8 +246,10 @@ export default function AgreementDetailPage() {
                   <PolicySummary
                     title="Spending policy"
                     lines={[
-                      `Released capital can only be used for ${policy.allowedCategories.map((c) => categoryLabel[c].toLowerCase()).join(', ')}.`,
-                      `Any single operation above ${formatUsd(policy.exceptionThreshold, { withCode: true })} comes to you as an exception.`,
+                      `Approved uses agreed with the Agency: ${policy.allowedCategories.map((c) => categoryLabel[c].toLowerCase()).join(', ')}. The Agency’s budgets set which categories each payment can use.`,
+                      governing && governing.id !== agreement.id
+                        ? `${governing.title} governs ${agency?.name ?? 'the Agency'}’s payments: single operations above ${formatUsd(governing.spendingPolicy.exceptionThreshold, { withCode: true })} come to you as exceptions.`
+                        : `Any single operation above ${formatUsd(policy.exceptionThreshold, { withCode: true })} comes to you as an exception.`,
                       'Nobody can approve their own request, including Agency Admins.',
                       'Budgets and Member limits are enforced by the funding contract, not only in the app.',
                     ]}

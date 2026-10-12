@@ -27,7 +27,7 @@ import { OrgAvatar } from '@/components/viatik/people'
 import { StatusBadge, Tag } from '@/components/viatik/status'
 import { VerifiedDetailsButton } from '@/components/viatik/verified-details-drawer'
 import { useCommand, useViatikState } from '@/data/react'
-import { releaseModelLabel } from '@/domain/labels'
+import { agencyNextTranche, releaseModelLabel } from '@/domain/labels'
 import { agreementsOf, receiptFor } from '@/domain/queries'
 import {
   agreementBadge,
@@ -156,7 +156,11 @@ function AgencyFunding() {
             content: (
               <Panel
                 title="Release schedule"
-                description="Submit evidence for a milestone to request its tranche."
+                description={
+                  agreement.releaseModel === 'milestone'
+                    ? 'Submit evidence for a milestone to request its tranche.'
+                    : 'The Investor releases each tranche; no request is needed. You can request one to choose the account it lands in.'
+                }
               >
                 <MilestoneTimelineFor
                   state={state}
@@ -251,7 +255,11 @@ function AgencyFunding() {
                   <EmptyState
                     compact
                     title="No tranches released yet"
-                    description="Releases appear here once the Investor approves a milestone."
+                    description={
+                      agreement.releaseModel === 'milestone'
+                        ? 'Releases appear here once the Investor approves a milestone.'
+                        : 'Releases appear here once the Investor releases a tranche.'
+                    }
                   />
                 ) : (
                   <ul className="flex flex-col">
@@ -304,11 +312,7 @@ function AgencyFunding() {
         onConfirm={() => accept.run({ agreementId: agreement.id })}
         success={{
           title: 'Agreement accepted',
-          body: `${investor} was notified. Released funding lands in your Operations account. ${
-            agreement.releaseModel === 'milestone'
-              ? 'Submit evidence for the first milestone to request its tranche.'
-              : 'You can request the first tranche now.'
-          }`,
+          body: `${investor} was notified. Released funding lands in your Operations account unless you choose another when you request it. ${agencyNextTranche[agreement.releaseModel]}`,
         }}
       />
       {receipts.drawer}

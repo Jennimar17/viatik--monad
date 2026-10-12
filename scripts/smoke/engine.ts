@@ -32,7 +32,13 @@ import {
 import { attachmentsHash } from '@/domain/evidence'
 import { DEMO } from '@/domain/fixtures'
 import { cents, clampToZero, formatUsd, sum, usd, type Cents } from '@/domain/money'
-import { paymentTypeLabel, receiptKindLabel, requestTypeLabel } from '@/domain/labels'
+import {
+  agencyNextTranche,
+  paymentTypeLabel,
+  receiptKindLabel,
+  releaseModelLabel,
+  requestTypeLabel,
+} from '@/domain/labels'
 import { describeBudgetPolicy, paysRequester, perPaymentCap } from '@/domain/policy'
 import {
   adminApprovals,
@@ -64,7 +70,7 @@ import {
   portfolioCapital,
   vaultBalance,
 } from '@/domain/selectors'
-import { justificationStatus, proofStatus, reminderStatus } from '@/domain/status'
+import { justificationStatus, proofStatus, reminderStatus, trancheStatusFor } from '@/domain/status'
 import type {
   Budget,
   Evidence,
@@ -2970,7 +2976,41 @@ async function labelsAndSeed(t: Checker) {
   ])
   checkSame(t, 'J: reminder statuses', Object.keys(reminderStatus).sort(), ['active', 'archived', 'paused'])
 
+  // What the Agency reads after accepting matches each release model: only a milestone needs a
+  // request (its evidence); otherwise the Investor releases, and sees the tranche ready to release.
+  checkSame(
+    t,
+    'J: every release model says what the Agency does next',
+    Object.keys(agencyNextTranche).sort(),
+    [...Object.keys(releaseModelLabel).sort()],
+  )
+  t.check(
+    'J: a Manual agreement never tells the Agency to request its first tranche now',
+    !agencyNextTranche.manual.includes('request the first tranche now') &&
+      agencyNextTranche.manual.startsWith('The Investor releases') &&
+      agencyNextTranche.milestone.startsWith('Submit evidence'),
+  )
+  t.check(
+    'J: an available tranche without a milestone reads "Ready to release" to the Investor only',
+    trancheStatusFor({ status: 'available', releaseCondition: 'manual' }, 'investor').label ===
+      'Ready to release' &&
+      trancheStatusFor({ status: 'available', releaseCondition: 'manual' }, 'agency').label ===
+        'Available to request' &&
+      trancheStatusFor({ status: 'available', releaseCondition: 'milestone' }, 'investor').label ===
+        'Available to request',
+  )
+
   const w = new World(t, 'engine-j')
+  // Nothing moves unreleased capital back by itself: the seeded terms do not promise it.
+  t.check(
+    'J: no seeded return condition promises an automatic return to the Portfolio Vault',
+    w.state.agreements.every(
+      (a) =>
+        !/returns to the Portfolio Vault (if|at)/.test(a.spendingPolicy.returnConditions) &&
+        a.spendingPolicy.returnConditions.length > 0,
+    ),
+    JSON.stringify(w.state.agreements.map((a) => a.spendingPolicy.returnConditions)),
+  )
   const tools = budgetOf(w.state, B.arcTools)
   const lines = describeBudgetPolicy(tools, { destinationNames: ['Vertex Cloud', 'Canvasly'] })
   t.check(

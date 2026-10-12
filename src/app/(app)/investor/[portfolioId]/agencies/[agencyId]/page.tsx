@@ -325,6 +325,7 @@ function InvestorAgencyDetail() {
                           <MilestoneTimelineFor
                             state={state}
                             agreementId={item.id}
+                            reader="investor"
                             actionFor={(tranche, milestone) =>
                               milestone?.status === 'ready_for_review' ? (
                                 <ButtonLink
