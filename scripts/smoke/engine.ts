@@ -3091,6 +3091,23 @@ async function labelsAndSeed(t: Checker) {
     `${overCap.outcome}: ${overCap.reason?.message}`,
   )
 
+  // Verified details hide a simulated record's stand-in account, transaction, block and receipt
+  // hash, so every record the seed carries must say it is simulated.
+  const seededRecords = [
+    ...w.state.receipts.map((r) => [r.id, r.verified] as const),
+    ...w.state.payments.map((p) => [p.id, p.proofVerified] as const),
+    ...w.state.requests.map((r) => [r.id, r.ledger] as const),
+    ...w.state.tranches.map((tr) => [tr.id, tr.requestVerified] as const),
+    ...w.state.milestones.map((m) => [m.id, m.submissionVerified] as const),
+    ...w.state.schedules.flatMap((s) => [[s.id, s.ledger] as const, [s.id, s.changeLedger] as const]),
+  ].filter(([, details]) => details !== undefined)
+  const notSimulated = seededRecords.filter(([, details]) => details?.simulated !== true)
+  t.check(
+    'J: every seeded record with verified details is flagged simulated',
+    seededRecords.length > 0 && notSimulated.length === 0,
+    notSimulated.map(([id]) => id).join(', '),
+  )
+
   // The seed is built the way the engine would have built it.
   const completed = w.state.requests.filter((r) => r.paymentId)
   const wrongDestination = w.state.requests.filter((r) =>

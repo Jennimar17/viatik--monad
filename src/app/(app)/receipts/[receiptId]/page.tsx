@@ -163,7 +163,8 @@ export default function ReceiptPage() {
     { label: 'Policy applied', value: receipt.policyLabel },
     ...(bill ? [{ label: 'Bill', value: bill.number }] : []),
     ...(address ? [{ label: 'Paid to address', value: address, mono: true }] : []),
-    ...(receipt.verified.receiptHash
+    // A simulated receipt's hash is a stand-in, not one the ledger recorded.
+    ...(receipt.verified.receiptHash && !receipt.verified.simulated
       ? [{ label: 'Receipt hash', value: shortHash(receipt.verified.receiptHash, 10, 8), mono: true }]
       : []),
   ]
