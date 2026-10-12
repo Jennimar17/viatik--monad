@@ -570,10 +570,9 @@ function Settings() {
                   { label: 'Network', value: `${network.name} · chain ${network.chainId}` },
                   {
                     label: 'Settlement asset',
-                    value:
-                      publicEnv.NEXT_PUBLIC_MONAD_NETWORK === 'testnet'
-                        ? 'TestUSD (6 decimals), standing in for USDC on testnet'
-                        : 'USDC (6 decimals)',
+                    value: network.asset.standsInFor
+                      ? `${network.asset.detail}, standing in for ${network.asset.standsInFor} on testnet`
+                      : network.asset.detail,
                   },
                   {
                     label: realAccount ? 'Your account' : 'Your account (demo)',

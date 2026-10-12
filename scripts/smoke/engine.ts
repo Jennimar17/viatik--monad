@@ -92,6 +92,7 @@ import { ledgerSnapshot } from '@/ledger/snapshot'
 import { heldByCommand, heldByOperation, sharesAny } from '@/server/conflicts'
 import { parseCommandInput } from '@/server/schemas'
 import { USDC } from '@/web3/addresses'
+import { MONAD_NETWORKS } from '@/web3/networks'
 
 import {
   bookedTotal,
@@ -2963,6 +2964,15 @@ async function labelsAndSeed(t: Checker) {
     'J: the new receipt kinds have their names',
     receiptKindLabel.outside_payment === 'Outside payment receipt' &&
       receiptKindLabel.capital_return === 'Capital return receipt',
+  )
+  // Vault asset details, the Portfolio card and Verified details all read the asset from here.
+  t.check(
+    'J: the network names the settlement asset: TestUSD on testnet (for USDC), USDC on mainnet',
+    MONAD_NETWORKS.testnet.asset.symbol === 'TestUSD' &&
+      MONAD_NETWORKS.testnet.asset.standsInFor === 'USDC' &&
+      MONAD_NETWORKS.mainnet.asset.symbol === 'USDC' &&
+      MONAD_NETWORKS.mainnet.asset.standsInFor === undefined,
+    JSON.stringify([MONAD_NETWORKS.testnet.asset, MONAD_NETWORKS.mainnet.asset]),
   )
   checkSame(t, 'J: invoice statuses', proofStatus, {
     missing: { label: 'Invoice pending', tone: 'warning' },

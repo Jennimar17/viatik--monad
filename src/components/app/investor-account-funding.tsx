@@ -571,7 +571,7 @@ function NetworkDetails({
 }) {
   const network = networkInfo(publicEnv.NEXT_PUBLIC_MONAD_NETWORK)
   const items = [
-    { label: 'Asset', value: 'TestUSD (6 decimals, no value)' },
+    { label: 'Asset', value: network.asset.detail },
     ...(monad
       ? [
           {
