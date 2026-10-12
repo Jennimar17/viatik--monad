@@ -29,7 +29,7 @@ import { PolicySummary } from '@/components/viatik/policy'
 import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useCommand, useViatikState } from '@/data/react'
 import { budgetPeriodLabel, budgetPeriodUnit, categoryLabel } from '@/domain/labels'
-import { formatUsd, usd, ZERO, type Cents } from '@/domain/money'
+import { formatUsd, ZERO, type Cents } from '@/domain/money'
 import { describeBudgetPolicy } from '@/domain/policy'
 import { accountName, actorName, destinationName, holderName } from '@/domain/queries'
 import { accountBalance, budgetUsage, holderSpentInPeriod, isHold, spendByMonth } from '@/domain/selectors'
@@ -51,7 +51,7 @@ export default function BudgetDetailPage() {
   const [resuming, setResuming] = React.useState(false)
   const [revokeId, setRevokeId] = React.useState<string | null>(null)
   const [holderKey, setHolderKey] = React.useState<string | null>(null)
-  const [allowance, setAllowance] = React.useState<Cents | null>(usd(500))
+  const [allowance, setAllowance] = React.useState<Cents | null>(null)
   const [fundAmount, setFundAmount] = React.useState<Cents | null>(null)
   const pause = useCommand('setBudgetPaused')
   const assign = useCommand('assignAllowance')
@@ -406,7 +406,7 @@ export default function BudgetDetailPage() {
         onClosed={() => {
           assign.reset()
           setHolderKey(null)
-          setAllowance(usd(500))
+          setAllowance(null)
         }}
         title="Assign allowance"
         summary={{
@@ -442,6 +442,7 @@ export default function BudgetDetailPage() {
           <FormField
             label={`Allowance per ${unit}`}
             htmlFor="allowance"
+            hint={`Up to ${formatUsd(budget.periodLimit, { withCode: true })} per ${unit}.`}
             error={
               allowance && allowance > budget.periodLimit
                 ? `Cannot exceed the ${formatUsd(budget.periodLimit, { withCode: true })} period limit.`
