@@ -4,6 +4,7 @@ import { TriangleAlert } from 'lucide-react'
 import * as React from 'react'
 
 import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
+import { PAYMENT_REFERENCE_HINT } from '@/components/app/money-setup'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
 import { useCommand } from '@/data/react'
 import { formatUsd, type Cents } from '@/domain/money'
@@ -166,7 +167,7 @@ const draftOf = (provider: PaymentDestination): Draft => ({
   website: provider.website ?? '',
 })
 
-/** The same fields as adding a payment destination, starting from the provider's current details. */
+/** The same fields as adding a provider, starting from the provider's current details. */
 export function ProviderEditSheet({
   open,
   onOpenChange,
@@ -183,20 +184,19 @@ export function ProviderEditSheet({
   const edit = (patch: Partial<Draft>) => setDraft({ ...value, ...patch })
 
   const name = value.name.trim()
-  const settlement = value.settlementLabel.trim()
+  const reference = value.settlementLabel.trim()
   const website = value.website.trim()
   const changes = {
     ...(name !== provider.name ? { name } : {}),
     ...(value.kind !== provider.kind ? { kind: value.kind } : {}),
     ...(value.category !== provider.category ? { category: value.category } : {}),
-    ...(settlement !== provider.settlementLabel ? { settlementLabel: settlement } : {}),
-    // An empty website clears it.
+    // An empty reference or website clears it.
+    ...(reference !== provider.settlementLabel ? { settlementLabel: reference } : {}),
     ...(website !== (provider.website ?? '') ? { website } : {}),
   }
   const changed = Object.keys(changes).length > 0
   const errors = {
     name: name.length < 2 ? 'Enter at least 2 characters.' : undefined,
-    settlement: settlement.length < 3 ? 'Enter at least 3 characters.' : undefined,
   }
 
   return (
@@ -215,7 +215,7 @@ export function ProviderEditSheet({
         policy: 'Only Agency Admins can change a provider. Every change is recorded in Activity.',
       }}
       confirmLabel="Save changes"
-      disabled={!changed || Boolean(errors.name) || Boolean(errors.settlement)}
+      disabled={!changed || Boolean(errors.name)}
       phase={update.phase}
       error={update.error}
       onConfirm={() => update.run({ destinationId: provider.id, ...changes })}
@@ -250,17 +250,16 @@ export function ProviderEditSheet({
           </FormField>
         </div>
         <FormField
-          label="Settlement method"
-          htmlFor="provider-settlement"
-          hint="A generic label, e.g. “USDC account •• 9f3a” or “Card on file •• 1107”."
-          error={draft ? errors.settlement : undefined}
+          label="Payment reference"
+          htmlFor="provider-reference"
+          optional
+          hint={PAYMENT_REFERENCE_HINT}
         >
           <PillInput
-            id="provider-settlement"
+            id="provider-reference"
             value={value.settlementLabel}
             maxLength={80}
             onChange={(e) => edit({ settlementLabel: e.target.value })}
-            aria-invalid={draft && errors.settlement ? true : undefined}
           />
         </FormField>
         <FormField

@@ -273,7 +273,10 @@ export type PaymentDestination = {
   name: string
   kind: 'vendor' | 'service' | 'contractor'
   category: SpendingCategory
-  /** Generic, country-neutral settlement label. */
+  /**
+   * The payment reference: an optional note for people (e.g. a customer number), empty when
+   * not set. Never sent to the ledger and not read by any rule.
+   */
   settlementLabel: string
   website?: string
   /** Paused and archived destinations cannot be paid; `approved` ones can. */

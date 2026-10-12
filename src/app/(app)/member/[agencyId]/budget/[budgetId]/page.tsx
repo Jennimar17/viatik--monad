@@ -5,6 +5,7 @@ import Link from '@/components/viatik/link'
 import { useParams } from 'next/navigation'
 
 import { ButtonLink } from '@/components/app/button-link'
+import { providerKindLine } from '@/components/app/provider-parts'
 import { requestRecipientLabel } from '@/components/app/request-parts'
 import { useHref, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
@@ -134,7 +135,9 @@ export default function MemberBudgetDetailPage() {
                 return (
                   <li key={id} className="flex items-center justify-between gap-3 text-sm">
                     <span>{destination?.name ?? 'Payment destination'}</span>
-                    <span className="text-xs text-subtle">{destination?.settlementLabel}</span>
+                    <span className="text-xs text-subtle">
+                      {destination ? providerKindLine(destination) : null}
+                    </span>
                   </li>
                 )
               })}

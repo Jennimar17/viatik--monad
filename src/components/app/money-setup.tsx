@@ -13,7 +13,7 @@ import type { PaymentDestination, SpendingCategory } from '@/domain/types'
 
 /**
  * What an Agency needs before money can move: an account to hold it and
- * approved destinations to pay. Forms offer these in place, so a new Agency
+ * approved providers to pay. Forms offer these in place, so a new Agency
  * never reaches a form it cannot finish.
  */
 
@@ -32,6 +32,10 @@ const CATEGORY_OPTIONS = (Object.keys(categoryLabel) as SpendingCategory[]).map(
   value: category,
   label: categoryLabel[category],
 }))
+
+/** What a provider's payment reference is for (`settlementLabel`): a note, never where money goes. */
+export const PAYMENT_REFERENCE_HINT =
+  'A note for your team, such as the provider’s customer number. Viatik does not use it to send money.'
 
 /** Shown where a form needs an Agency account and there is none yet: opens the Operations account. */
 export function CreateOperationsAccount({
@@ -86,11 +90,11 @@ export function EmptySourceHint({
   )
 }
 
-/** A text button that adds an approved payment destination without leaving the form. */
+/** A text button that adds an approved provider without leaving the form. */
 export function AddDestinationButton({
   agencyId,
   onAdded,
-  label = 'Add a payment destination',
+  label = 'Add a provider',
 }: {
   agencyId: string
   onAdded?: (destination: PaymentDestination) => void
@@ -127,7 +131,7 @@ export function AddDestinationSheet({
   const [name, setName] = React.useState('')
   const [kind, setKind] = React.useState<PaymentDestination['kind']>('vendor')
   const [category, setCategory] = React.useState<SpendingCategory>('software')
-  const [settlement, setSettlement] = React.useState('')
+  const [reference, setReference] = React.useState('')
   const [website, setWebsite] = React.useState('')
   const trimmed = name.trim()
 
@@ -139,18 +143,19 @@ export function AddDestinationSheet({
         setName('')
         setKind('vendor')
         setCategory('software')
-        setSettlement('')
+        setReference('')
         setWebsite('')
         add.reset()
       }}
-      title="Add payment destination"
+      title="Add provider"
       summary={{
-        what: `${trimmed || 'This destination'} becomes an approved place the Agency can pay. Budgets can still restrict who pays it.`,
-        reversible: 'You can leave it out of any budget’s allowed destinations.',
-        policy: 'Payments can only go to approved destinations; settlement enforces it, not only the app.',
+        what: `${trimmed || 'This provider'} becomes an approved provider the Agency can pay. Budgets can still restrict who pays it.`,
+        reversible: 'You can pause or archive it from Providers at any time.',
+        policy:
+          'Viatik only pays approved providers. When a budget names its providers, settlement on Monad enforces that list too.',
       }}
-      confirmLabel="Add destination"
-      disabled={trimmed.length < 2 || settlement.trim().length < 3}
+      confirmLabel="Add provider"
+      disabled={trimmed.length < 2}
       phase={add.phase}
       error={add.error}
       onConfirm={async () => {
@@ -159,16 +164,16 @@ export function AddDestinationSheet({
           name: trimmed,
           kind,
           category,
-          settlementLabel: settlement.trim(),
+          settlementLabel: reference.trim() || undefined,
           website: website.trim() || undefined,
         })
         if (destination) onAdded?.(destination)
       }}
-      success={{ title: 'Destination added', body: `${trimmed} can now be paid from budgets that allow it.` }}
+      success={{ title: 'Provider added', body: `${trimmed} can now be paid from budgets that allow it.` }}
     >
       <div className="flex flex-col gap-4">
         <FormField label="Name" htmlFor="dest-name">
-          <PillInput id="dest-name" value={name} onChange={(e) => setName(e.target.value)} />
+          <PillInput id="dest-name" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
         </FormField>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FormField label="Type" htmlFor="dest-kind">
@@ -188,15 +193,12 @@ export function AddDestinationSheet({
             />
           </FormField>
         </div>
-        <FormField
-          label="Settlement method"
-          htmlFor="dest-settlement"
-          hint="A generic label, e.g. “USDC account •• 9f3a” or “Card on file •• 1107”."
-        >
+        <FormField label="Payment reference" htmlFor="dest-reference" optional hint={PAYMENT_REFERENCE_HINT}>
           <PillInput
-            id="dest-settlement"
-            value={settlement}
-            onChange={(e) => setSettlement(e.target.value)}
+            id="dest-reference"
+            value={reference}
+            maxLength={80}
+            onChange={(e) => setReference(e.target.value)}
           />
         </FormField>
         <FormField label="Website" htmlFor="dest-website" optional>

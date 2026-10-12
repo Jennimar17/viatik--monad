@@ -6,6 +6,7 @@ import * as React from 'react'
 
 import { FormField, PillInput, SimpleSelect, useChoice } from '@/components/app/form-controls'
 import { AddDestinationButton, CreateOperationsAccount } from '@/components/app/money-setup'
+import { providerKindLine } from '@/components/app/provider-parts'
 import { useHref, useRole } from '@/components/app/role-context'
 import { useBottomBar } from '@/components/app/shell/app-shell'
 import { Button } from '@/components/ui/button'
@@ -166,7 +167,7 @@ export default function NewBillPage() {
                 options={destinations.map((d) => ({
                   value: d.id,
                   label: d.name,
-                  description: d.settlementLabel,
+                  description: providerKindLine(d),
                 }))}
                 placeholder="Choose a vendor"
                 empty="No vendors yet"

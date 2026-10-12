@@ -135,9 +135,7 @@ export default function ProviderDetailPage() {
         meta={
           <>
             <StatusBadge status={providerStatus[provider.status]} size="md" />
-            <span className="text-sm text-subtle">
-              {provider.settlementLabel} · added {formatLocalDate(provider.addedAt)}
-            </span>
+            <span className="text-sm text-subtle">Added {formatLocalDate(provider.addedAt)}</span>
           </>
         }
         actions={
@@ -253,7 +251,7 @@ export default function ProviderDetailPage() {
             items={[
               { label: 'Type', value: destinationKindLabel[provider.kind] },
               { label: 'Category', value: categoryLabel[provider.category] },
-              { label: 'Settlement method', value: provider.settlementLabel },
+              { label: 'Payment reference', value: provider.settlementLabel || 'Not set' },
               {
                 label: 'Website',
                 value: website ? (

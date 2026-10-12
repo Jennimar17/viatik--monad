@@ -9,6 +9,7 @@ import { FormField, SimpleSelect } from '@/components/app/form-controls'
 import { HolderAvatar, holderFromKey, holderOptions, personRoleLabel } from '@/components/app/holders'
 import { AddDestinationButton, EmptySourceHint } from '@/components/app/money-setup'
 import { PaymentsTable } from '@/components/app/payments-table'
+import { providerKindLine } from '@/components/app/provider-parts'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
 import { Button } from '@/components/ui/button'
@@ -341,7 +342,9 @@ export default function BudgetDetailPage() {
                 return (
                   <li key={id} className="flex items-center justify-between gap-3 text-sm">
                     <span>{destination?.name ?? 'Payment destination'}</span>
-                    <span className="text-xs text-subtle">{destination?.settlementLabel}</span>
+                    <span className="text-xs text-subtle">
+                      {destination ? providerKindLine(destination) : null}
+                    </span>
                   </li>
                 )
               })}

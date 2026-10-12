@@ -379,11 +379,11 @@ function Settings() {
       },
       {
         value: 'destinations',
-        label: 'Payment destinations',
+        label: 'Providers',
         count: destinations.length,
         content: (
           <Panel
-            title="Payment destinations"
+            title="Providers"
             description="Vendors, services and contractors the Agency can pay. Budgets can restrict payments to a subset."
             action={
               <div className="flex flex-wrap justify-end gap-2">
@@ -392,7 +392,7 @@ function Settings() {
                 </ButtonLink>
                 {can('send_payment') ? (
                   <Button size="pill-sm" onClick={() => setDestinationOpen(true)}>
-                    <Plus data-icon="inline-start" /> Add destination
+                    <Plus data-icon="inline-start" /> Add provider
                   </Button>
                 ) : null}
               </div>
@@ -401,7 +401,7 @@ function Settings() {
             {destinations.length === 0 ? (
               <EmptyState
                 compact
-                title="No payment destinations yet"
+                title="No providers yet"
                 description="Add the vendors and services the Agency pays."
               />
             ) : (
@@ -422,7 +422,8 @@ function Settings() {
                           {d.name}
                         </Link>
                         <span className="truncate text-xs text-subtle">
-                          {destinationKindLabel[d.kind]} · {categoryLabel[d.category]} · {d.settlementLabel}
+                          {destinationKindLabel[d.kind]} · {categoryLabel[d.category]}
+                          {d.settlementLabel ? ` · ${d.settlementLabel}` : null}
                         </span>
                       </span>
                       <span className="hidden text-xs text-subtle sm:block">

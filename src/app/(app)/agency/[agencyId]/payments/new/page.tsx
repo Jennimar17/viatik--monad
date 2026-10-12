@@ -9,6 +9,7 @@ import { ButtonLink } from '@/components/app/button-link'
 import { FormField, PillInput, SimpleSelect, useChoice } from '@/components/app/form-controls'
 import { AddDestinationButton, CreateOperationsAccount, EmptySourceHint } from '@/components/app/money-setup'
 import { receiptHref } from '@/components/app/nav'
+import { providerKindLine } from '@/components/app/provider-parts'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
 import { useHref, useRole } from '@/components/app/role-context'
 import {
@@ -353,7 +354,7 @@ function NewPayment() {
                     : destinations.map((d) => ({
                         value: d.id,
                         label: d.name,
-                        description: d.settlementLabel,
+                        description: providerKindLine(d),
                       }))
                 }
                 placeholder={toMember ? 'Choose a person' : 'Choose a payment destination'}

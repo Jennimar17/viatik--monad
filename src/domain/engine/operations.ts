@@ -1717,7 +1717,8 @@ export function addDestination(
     name: string
     kind: 'vendor' | 'service' | 'contractor'
     category: SpendingCategory
-    settlementLabel: string
+    /** Optional: a note for people, such as a customer number. */
+    settlementLabel?: string
     website?: string
   },
 ) {
@@ -1728,13 +1729,18 @@ export function addDestination(
     name: requireText(input.name, 'Name', 80),
     kind: input.kind,
     category: input.category,
-    settlementLabel: requireText(input.settlementLabel, 'Settlement method', 80),
+    settlementLabel: paymentReference(input.settlementLabel),
     website: input.website?.trim() || undefined,
     status: 'approved' as const,
     addedAt: tx.now,
   }
   tx.state.destinations.push(destination)
   return destination
+}
+
+/** A provider's payment reference is optional: an empty text leaves it (or makes it) empty. */
+function paymentReference(value: string | undefined): string {
+  return value?.trim() ? requireText(value, 'Payment reference', 80) : ''
 }
 
 /** A destination can only be paid while it is approved: a paused or archived one is not. */
@@ -1960,6 +1966,7 @@ export function updateDestination(
     name?: string
     kind?: 'vendor' | 'service' | 'contractor'
     category?: SpendingCategory
+    /** The payment reference; an empty text removes it. */
     settlementLabel?: string
     /** An empty text removes it. */
     website?: string
@@ -1971,7 +1978,7 @@ export function updateDestination(
   if (input.kind !== undefined) destination.kind = input.kind
   if (input.category !== undefined) destination.category = input.category
   if (input.settlementLabel !== undefined)
-    destination.settlementLabel = requireText(input.settlementLabel, 'Settlement method', 80)
+    destination.settlementLabel = paymentReference(input.settlementLabel)
   if (input.website !== undefined) destination.website = input.website.trim() || undefined
   tx.activity(
     'destination_updated',

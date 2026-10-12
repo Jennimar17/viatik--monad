@@ -17,6 +17,7 @@ import * as React from 'react'
 import { ButtonLink } from '@/components/app/button-link'
 import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
 import { receiptHref } from '@/components/app/nav'
+import { providerKindLine } from '@/components/app/provider-parts'
 import { ReceiptDetailsButton, requestRecord } from '@/components/app/receipt-details'
 import { PAYS_REQUESTER, requestFollowUp, requestRecipientLabel } from '@/components/app/request-parts'
 import { useHref, useRole } from '@/components/app/role-context'
@@ -132,7 +133,7 @@ function NewRequest() {
           (d) => budget.allowedDestinationIds.includes(d.id) && d.status === 'approved',
         )
       : state.destinations.filter((d) => d.agencyId === agencyId && d.status === 'approved')
-  ).map((d) => ({ value: d.id, label: d.name, description: d.settlementLabel }))
+  ).map((d) => ({ value: d.id, label: d.name, description: providerKindLine(d) }))
 
   // Switching budgets keeps a choice only when the new budget allows it. Otherwise nothing is
   // guessed: the budget's only category, or work's usual one, else the Member chooses.

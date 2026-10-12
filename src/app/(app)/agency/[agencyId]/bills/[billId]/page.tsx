@@ -223,7 +223,7 @@ export default function BillDetailPage() {
                   label: 'Budget',
                   value: bill.budgetId ? budgetName(state, bill.budgetId) : 'Paid from the account',
                 },
-                { label: 'Payment destination', value: vendor?.settlementLabel },
+                { label: 'Payment reference', value: vendor?.settlementLabel || 'Not set' },
                 {
                   label: 'Added by',
                   value: `${userName(state, bill.createdBy)} · ${formatLocalDate(bill.createdAt)}`,
@@ -308,7 +308,7 @@ export default function BillDetailPage() {
           from: chosenBudget
             ? `${accountName(state, chosenBudget.sourceAccountId)} · ${chosenBudget.name}`
             : accountName(state, accountId ?? undefined),
-          to: `${vendorName} · ${vendor?.settlementLabel ?? 'Payment destination'}`,
+          to: vendorName,
           reversible: payingNow
             ? 'Cannot be undone once completed. A refund would be a new payment from the vendor.'
             : 'You, another Agency Admin or the Investor can pause or cancel it until it is paid. Once paid, it cannot be undone.',

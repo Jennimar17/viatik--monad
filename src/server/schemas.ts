@@ -287,10 +287,10 @@ export const commandSchemas = {
   attachReceipt: z.object({ expenseId: id, receipt: evidence }),
   addDestination: z.object({
     agencyId: id,
-    name: text(120),
+    name: text(80),
     kind: z.enum(['vendor', 'service', 'contractor']),
     category,
-    settlementLabel: text(120),
+    settlementLabel: text(80).optional(),
     website: text(300).optional(),
   }),
   returnUnusedFunds: z.object({ agencyId: id, amount: cents, paymentId: id.optional() }),
@@ -301,10 +301,10 @@ export const commandSchemas = {
   removePayoutAddress: z.object({ addressId: id }),
   updateDestination: z.object({
     destinationId: id,
-    name: text(120).optional(),
+    name: text(80).optional(),
     kind: z.enum(['vendor', 'service', 'contractor']).optional(),
     category: category.optional(),
-    settlementLabel: text(120).optional(),
+    settlementLabel: text(80).optional(),
     website: text(300).optional(),
   }),
   setDestinationStatus: z.object({

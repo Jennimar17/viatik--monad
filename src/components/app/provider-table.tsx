@@ -74,11 +74,11 @@ export function ProvidersTable({
       ),
     },
     {
-      id: 'settlement',
-      header: 'Settlement method',
+      id: 'reference',
+      header: 'Payment reference',
       enableSorting: false,
       cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">{row.original.provider.settlementLabel}</span>
+        <span className="text-sm text-muted-foreground">{row.original.provider.settlementLabel || '—'}</span>
       ),
     },
     {

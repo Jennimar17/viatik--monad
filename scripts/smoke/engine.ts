@@ -2950,6 +2950,86 @@ async function firstSmoke(t: Checker) {
       payablePeople(w.state, ARC, U.maya).some((m) => m.userId === id),
     ),
   )
+
+  // Providers: the payment reference is an optional note, and adding one only changes Viatik's records.
+  const acme = await w.run(
+    U.maya,
+    'addDestination',
+    {
+      agencyId: ARC,
+      name: 'Acme Tools',
+      kind: 'service',
+      category: 'software',
+      settlementLabel: ' Customer no. 77 ',
+    },
+    'I Maya adds a provider with a payment reference',
+    { ops: [] },
+  )
+  t.check(
+    'the Admin adds an approved provider, with its reference trimmed',
+    acme.result.status === 'approved' &&
+      acme.result.settlementLabel === 'Customer no. 77' &&
+      w.state.destinations.some((d) => d.id === acme.result.id),
+    JSON.stringify(acme.result),
+  )
+  const bare = await w.run(
+    U.maya,
+    'addDestination',
+    { agencyId: ARC, name: 'Bare Tools', kind: 'vendor', category: 'software' },
+    'I Maya adds a provider without a payment reference',
+    { ops: [] },
+  )
+  t.check('a provider needs no payment reference', bare.result.settlementLabel === '')
+  const blank = await w.run(
+    U.maya,
+    'addDestination',
+    { agencyId: ARC, name: 'Blank Tools', kind: 'vendor', category: 'software', settlementLabel: '   ' },
+    'I Maya adds a provider with a blank payment reference',
+  )
+  t.check('a blank payment reference is saved empty', blank.result.settlementLabel === '')
+  const cleared = await w.run(
+    U.maya,
+    'updateDestination',
+    { destinationId: acme.result.id, settlementLabel: '' },
+    'I Maya clears the payment reference',
+    { ops: [] },
+  )
+  t.check('the Admin clears a payment reference', cleared.result.settlementLabel === '')
+  const long = w.refuseRaw(
+    U.maya,
+    'updateDestination',
+    { destinationId: acme.result.id, settlementLabel: 'R'.repeat(81) },
+    'validation',
+    'I the engine refuses a payment reference longer than 80 characters',
+    { skipSchema: true },
+  )
+  t.check(
+    'the engine names the field a payment reference',
+    long === 'Payment reference must be 80 characters or fewer.',
+    long,
+  )
+  const provider = { agencyId: ARC, name: 'Long Tools', kind: 'vendor', category: 'software' }
+  w.refuseRaw(
+    U.maya,
+    'addDestination',
+    { ...provider, name: 'N'.repeat(81) },
+    'schema',
+    'I a provider name longer than 80 characters (API)',
+  )
+  w.refuseRaw(
+    U.maya,
+    'addDestination',
+    { ...provider, settlementLabel: 'R'.repeat(81) },
+    'schema',
+    'I a payment reference longer than 80 characters (API)',
+  )
+  w.refuseRaw(
+    U.maya,
+    'updateDestination',
+    { destinationId: acme.result.id, name: 'N'.repeat(81) },
+    'schema',
+    'I a new provider name longer than 80 characters (API)',
+  )
 }
 
 // ─── J. Labels, statuses, the seed, the schemas ──────────────────────────────
