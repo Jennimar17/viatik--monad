@@ -1,4 +1,4 @@
-import { governingAgreement } from './queries'
+import { agencyFundingAgreement, governingAgreement } from './queries'
 import { isCreatorActive, isOpenSchedule } from './schedules'
 import { agreementDisplayStatus } from './selectors'
 import type { Agency, Id, Location, Movement, Receipt, User, ViatikState } from './types'
@@ -13,8 +13,9 @@ import type { Agency, Id, Location, Movement, Receipt, User, ViatikState } from 
  *   never the Agency's full treasury. What a budget they hold paid another
  *   person shows as paid to "Team member", never who it was or its receipt.
  *   They read their Agency Admins' names, never the other Members'. Their
- *   Agency carries the governing agreement's title and status and the team's
- *   headcount, never the agreement's terms or who is in the team.
+ *   Agency carries the governing agreement's exception threshold, the title and
+ *   status of the agreement that funds it and the team's headcount, never the
+ *   agreement's terms or who is in the team.
  */
 export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
   const memberships = state.memberships.filter((m) => m.userId === userId && m.status === 'active')
@@ -46,9 +47,10 @@ export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
 
   // A Member never sees the agreements, yet their requests follow the governing agreement's
   // exception threshold: their Agency carries it, so what they preview is what the server decides.
-  // It also carries that agreement's title and status and the Agency's headcount, for the
-  // Member's Settings: never its terms, nor who is in the team. Everyone else reads them from the
-  // agreements and memberships themselves.
+  // It also carries the title and status of the agreement that funds it (`agencyFundingAgreement`,
+  // the one an Admin's Settings name) and the Agency's headcount, for the Member's Settings: never
+  // its terms, nor who is in the team. Everyone else reads them from the agreements and
+  // memberships themselves.
   const agencies = state.agencies
     .filter((a) => anyAgencyIds.has(a.id))
     .map((a): Agency => {
@@ -58,11 +60,12 @@ export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
       delete agency.teamSize
       if (!memberOnly(a.id)) return agency
       const governing = governingAgreement(state, a.id)
-      if (governing) {
-        agency.exceptionThreshold = governing.spendingPolicy.exceptionThreshold
-        // As screens show it: Completed once every tranche is released (the Member sees no tranches).
-        agency.fundingAgreement = { title: governing.title, status: agreementDisplayStatus(state, governing) }
-      }
+      if (governing) agency.exceptionThreshold = governing.spendingPolicy.exceptionThreshold
+      // The agreement an Admin's Settings name, as screens show it: Completed once every tranche
+      // is released (the Member sees no tranches).
+      const funding = agencyFundingAgreement(state, a.id)
+      if (funding)
+        agency.fundingAgreement = { title: funding.title, status: agreementDisplayStatus(state, funding) }
       agency.teamSize = state.memberships.filter(
         (m) => m.status === 'active' && m.scope.kind === 'agency' && m.scope.agencyId === a.id,
       ).length

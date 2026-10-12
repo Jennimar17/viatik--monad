@@ -44,6 +44,7 @@ import { describeBudgetPolicy, paysRequester, perPaymentCap } from '@/domain/pol
 import {
   adminApprovals,
   agencyAgreementSummary,
+  agencyFundingAgreement,
   agencyTeamSize,
   agreementsOf,
   budgetsForVendor,
@@ -3432,8 +3433,9 @@ async function memberPreview(t: Checker) {
   ).length
   const danielArc = danielView.agencies.find((a) => a.id === ARC)
   t.check(
-    "K1: Daniel's Agency carries the governing agreement's title and status, and its headcount",
-    danielArc?.fundingAgreement?.title === governingAgreement(w.state, ARC)?.title &&
+    "K1: Daniel's Agency carries the title and status of the agreement that funds it, and its headcount",
+    danielArc?.fundingAgreement?.title === agencyFundingAgreement(w.state, ARC)?.title &&
+      agencyFundingAgreement(w.state, ARC)?.id === governingAgreement(w.state, ARC)?.id &&
       danielArc?.fundingAgreement?.status === 'active' &&
       danielArc?.teamSize === arcTeam &&
       arcTeam > 1,
@@ -5718,6 +5720,12 @@ async function agreementLifecycle(t: Checker) {
       .map((a) => a.id)
       .join() === [second, LUMEN_AGREEMENT].join(),
   )
+  const waiting = [U.ren, U.noah].map((userId) => agencyAgreementSummary(w.view(userId), LUMEN))
+  t.check(
+    'M4: while it waits for acceptance, Ren and Noah both still see the first one, Completed',
+    waiting.every((summary) => summary?.title === lumenAgreement().title && summary.status === 'completed'),
+    JSON.stringify(waiting),
+  )
   await w.run(U.ren, 'acceptAgreement', { agreementId: second }, 'M4 Ren accepts it', {
     ops: ['acceptAgreement'],
   })
@@ -5762,6 +5770,20 @@ async function agreementLifecycle(t: Checker) {
     },
     'M4 Elena releases it (Manual: no request needed)',
     { ops: ['releaseTranche'] },
+  )
+  // Settings name the same agreement for every role: the running one with tranches left, not the
+  // first one (Completed), which still governs.
+  const summaries = [U.ren, U.noah, U.elena].map((userId) => agencyAgreementSummary(w.view(userId), LUMEN))
+  t.check(
+    'M4: Ren, Noah and Elena all see "Second year · Active" in Settings',
+    summaries.every((summary) => summary?.title === 'Second year' && summary.status === 'active') &&
+      agencyFundingAgreement(w.state, LUMEN)?.id === second,
+    JSON.stringify(summaries),
+  )
+  t.check(
+    "M4: …while Noah's Agency still carries the first agreement's exception threshold",
+    w.view(U.noah).agencies.find((a) => a.id === LUMEN)?.exceptionThreshold ===
+      lumenAgreement().spendingPolicy.exceptionThreshold,
   )
   t.check(
     'M4: not the last tranche: "Funding released", and the agreement reads Active',

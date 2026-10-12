@@ -1,6 +1,12 @@
 import { calendarDaysUntil } from './days'
 import { cents, clampToZero, sum, type Cents } from './money'
-import { accountBalance, agreementDisplayStatus, budgetUsage, committedAt } from './selectors'
+import {
+  accountBalance,
+  agreementDisplayStatus,
+  budgetUsage,
+  committedAt,
+  isFullyReleased,
+} from './selectors'
 import type {
   Account,
   Actor,
@@ -152,15 +158,31 @@ export function exceptionThresholdOf(state: ViatikState, agencyId: Id): Cents | 
 }
 
 /**
- * The agreement an Agency's Settings name: the one shown to Admins and Investors, or, in a
- * Member's scoped state (which has no agreements), the title and status the Agency carries.
+ * The agreement that funds an Agency, as Settings name it for every role: a running (active or
+ * paused) one with a tranche still to release, else the governing one, else `activeAgreement`
+ * (a pending one included). Running ones are taken in `agreementsOf` order (active before
+ * paused), as the Investor's Agency header picks them.
+ */
+export function agencyFundingAgreement(state: ViatikState, agencyId: Id): FundingAgreement | undefined {
+  return (
+    agreementsOf(state, agencyId).find(
+      (a) => (a.status === 'active' || a.status === 'paused') && !isFullyReleased(state, a.id),
+    ) ??
+    governingAgreement(state, agencyId) ??
+    activeAgreement(state, agencyId)
+  )
+}
+
+/**
+ * The agreement an Agency's Settings name (`agencyFundingAgreement`), or, in a Member's scoped
+ * state (which has no agreements), the title and status the Agency carries, picked the same way.
  * The status is the one screens show: Completed once every tranche is released.
  */
 export function agencyAgreementSummary(
   state: ViatikState,
   agencyId: Id,
 ): { title: string; status: AgreementStatus } | undefined {
-  const agreement = activeAgreement(state, agencyId)
+  const agreement = agencyFundingAgreement(state, agencyId)
   if (agreement) return { title: agreement.title, status: agreementDisplayStatus(state, agreement) }
   return state.agencies.find((a) => a.id === agencyId)?.fundingAgreement
 }
