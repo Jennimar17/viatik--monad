@@ -40,7 +40,7 @@ import {
   requestTypeLabel,
 } from '@/domain/labels'
 import { upgradeState } from '@/domain/migrate'
-import { describeBudgetPolicy, paysRequester, perPaymentCap } from '@/domain/policy'
+import { describeBudgetPolicy, paysRequester, perPaymentCap, policyForReader } from '@/domain/policy'
 import {
   adminApprovals,
   agencyAgreementSummary,
@@ -172,6 +172,9 @@ export default async function engine(t: Checker) {
   await t.scenario('N. Funding never exceeds what the tranches left can release', () => fundingCap(t))
   await t.scenario('O. A notification that asks for a decision is read once someone decides', () =>
     decidedNotifications(t),
+  )
+  await t.scenario('P. A stored decision, as the requester and the reviewer read it', () =>
+    decisionReaders(t),
   )
 }
 
@@ -6395,6 +6398,140 @@ async function decidedNotifications(t: Checker) {
       accepted.notifications.every((n) => n.title === 'Agreement accepted' && !n.subject && !n.readAt),
   )
 }
+
+// ─── P. A stored decision, as each person reads it ───────────────────────────
+
+/**
+ * A request's decision is stored worded for its requester ("your per-operation limit"). The
+ * Agency Admin who reviews it reads whose limits they are, and a budget without an automatic
+ * limit (Team payments) says every request needs an Agency Admin, also in decisions stored
+ * before it said so ("Requests above 0.00 USD …").
+ */
+async function decisionReaders(t: Checker) {
+  const w = new World(t, 'engine-p')
+  const team = budgetOf(w.state, B.arcTeam)
+  t.check('P: Team payments approves nothing by itself', team.approvalThreshold === 0)
+  const amount = usd(100)
+  const requester = must(
+    [U.priya, U.alex, U.daniel].find((id) => allowanceLeft(w, B.arcTeam, id) >= amount),
+    'a Member with room left on Team payments',
+  )
+  await w.fund(U.maya, B.arcTeam, amount)
+  const ask: RequestPaymentInput = {
+    agencyId: ARC,
+    budgetId: B.arcTeam,
+    type: 'funds',
+    amount,
+    category: 'team',
+    purpose: 'Team offsite lunch',
+    idempotencyKey: 'smoke-o1-funds',
+  }
+  const every = 'Every request needs approval from an Agency Admin.'
+  const previewed = preview(w, requester, ask)
+  t.check(
+    'P1: the form says every request needs an Agency Admin',
+    previewed.outcome === 'needs_approval' &&
+      previewed.reason?.rule === 'approval_threshold' &&
+      previewed.reason.message === every,
+    JSON.stringify(previewed.reason),
+  )
+  const o1 = await w.run(requester, 'requestPayment', ask, 'O1 a Member asks Team payments for money', {
+    ops: ['requestPayment'],
+  })
+  const stored = o1.result.decision
+  samePreview(t, 'O1', previewed, stored)
+  t.check(
+    'P1: the stored decision is worded for the requester',
+    stored.checks.some((c) => c.rule === 'per_operation_limit' && c.message.startsWith('Within your ')),
+    JSON.stringify(stored.checks.map((c) => c.message)),
+  )
+  t.check(
+    'P1: the requester reads it unchanged',
+    JSON.stringify(policyForReader(stored)) === JSON.stringify(stored),
+  )
+
+  // P2. Maya reviews it: the same checks, about the requester.
+  const name = userName(w.state, requester)
+  const read = policyForReader(stored, name)
+  const messages = [...read.checks, ...(read.reason ? [read.reason] : [])].map((c) => c.message)
+  const allowance = must(
+    w.state.allowances.find(
+      (a) =>
+        a.budgetId === B.arcTeam &&
+        a.status === 'active' &&
+        a.holder.kind === 'member' &&
+        a.holder.userId === requester,
+    ),
+    "the requester's allowance on Team payments",
+  )
+  const cap = perPaymentCap(team, allowance)
+  const messageOf = (rule: string) => read.checks.find((c) => c.rule === rule)?.message
+  t.check(
+    'P2: the reviewer never reads "you" or "your"',
+    messages.every((m) => !/\byour?\b/i.test(m)),
+    messages.join(' | '),
+  )
+  t.check(
+    "P2: …but whose access and limits they are",
+    messageOf('holder_has_access') === `${name} has spending access to this budget.` &&
+      messageOf('per_operation_limit') === `Within ${name}'s per-operation limit of ${usdText(cap)}.` &&
+      Boolean(messageOf('period_limit')?.startsWith(`Within ${name}'s monthly limit. `)),
+    messages.join(' | '),
+  )
+  t.check(
+    'P2: the outcome, the rules and the reason stay the same',
+    read.outcome === stored.outcome &&
+      read.reason?.rule === stored.reason?.rule &&
+      read.reason?.message === every &&
+      JSON.stringify(read.checks.map((c) => [c.rule, c.passed, c.blocking])) ===
+        JSON.stringify(stored.checks.map((c) => [c.rule, c.passed, c.blocking])),
+  )
+  t.check(
+    'P2: reading it again changes nothing',
+    JSON.stringify(policyForReader(read, name)) === JSON.stringify(read),
+  )
+
+  // P3. A decision stored before: "Requests above 0.00 USD", and a refused per-operation limit.
+  const legacyThreshold = `Requests above ${usdText(cents(0))} need approval from an Agency Admin.`
+  const exceeded = `The amount exceeds your per-operation limit of ${usdText(cap)}.`
+  const legacy: PolicyDecision = {
+    ...stored,
+    checks: stored.checks.map((c) =>
+      c.rule === 'approval_threshold'
+        ? { ...c, message: legacyThreshold }
+        : c.rule === 'per_operation_limit'
+          ? { ...c, passed: false, message: `${exceeded} Reduce the amount or request a budget change.` }
+          : c,
+    ),
+    reason: stored.reason && { ...stored.reason, message: legacyThreshold },
+  }
+  const mine = policyForReader(legacy)
+  const theirs = policyForReader(legacy, name)
+  t.check(
+    'P3: the requester reads every request needs an Agency Admin, and what to do about the limit',
+    mine.reason?.message === every &&
+      mine.checks.find((c) => c.rule === 'approval_threshold')?.message === every &&
+      mine.checks.find((c) => c.rule === 'per_operation_limit')?.message ===
+        `${exceeded} Reduce the amount or request a budget change.`,
+    JSON.stringify(mine.checks.map((c) => c.message)),
+  )
+  t.check(
+    "P3: the reviewer reads the requester's limit, without the requester's advice",
+    theirs.reason?.message === every &&
+      theirs.checks.find((c) => c.rule === 'per_operation_limit')?.message ===
+        `The amount exceeds ${name}'s per-operation limit of ${usdText(cap)}.`,
+    JSON.stringify(theirs.checks.map((c) => c.message)),
+  )
+  const tools = budgetOf(w.state, B.arcTools)
+  const above = `Requests above ${usdText(tools.approvalThreshold)} need approval from an Agency Admin.`
+  t.check(
+    'P3: a budget with an automatic limit keeps saying what it is',
+    tools.approvalThreshold > 0 &&
+      policyForReader({ ...stored, checks: [{ ...must(stored.reason, 'the reason'), message: above }] }, name)
+        .checks[0]?.message === above,
+  )
+}
+
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

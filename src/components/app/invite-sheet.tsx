@@ -18,6 +18,9 @@ const rolePolicy: Record<Role, string> = {
   investor: 'Investors see the whole portfolio and decide on exceptions.',
 }
 
+/** "an Investor", "an Agency Admin", "a Member". */
+const withArticle = (label: string) => `${/^[aeiou]/i.test(label) ? 'an' : 'a'} ${label}`
+
 /**
  * Invite a person into an Agency (Admin or Member) or a portfolio (Investor).
  * Viatik sends no email: the inviter copies the link or opens a prefilled
@@ -60,7 +63,7 @@ export function InviteSheet({
       }}
       title={`Invite to ${workspaceName}`}
       summary={{
-        what: `${trimmed || 'They'} gets a link to join ${workspaceName} as ${roleLabel[role]}. Their account is set up when they first sign in with ${email.trim() || 'their email'}.`,
+        what: `${trimmed ? `${trimmed} gets` : 'They get'} a link to join ${workspaceName} as ${withArticle(roleLabel[role])}. Their account is set up when they first sign in with ${email.trim() || 'their email'}.`,
         reversible: 'You can cancel the invitation or remove access later; removal is immediate.',
         policy: rolePolicy[role],
       }}
@@ -75,7 +78,7 @@ export function InviteSheet({
       }}
       success={{
         title: 'Invitation ready',
-        body: `${created?.name ?? trimmed} can join ${workspaceName} as ${roleLabel[created?.role ?? role]}. It stays pending until they accept.`,
+        body: `${created?.name ?? trimmed} can join ${workspaceName} as ${withArticle(roleLabel[created?.role ?? role])}. It stays pending until they accept.`,
         actions: created ? (
           <InvitationLink invitation={created} workspace={workspaceName} inviter={user?.name} />
         ) : undefined,

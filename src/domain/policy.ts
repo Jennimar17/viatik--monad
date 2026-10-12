@@ -42,6 +42,12 @@ export type PolicyInput = {
 
 const fmt = (value: Cents) => formatUsd(value, { withCode: true })
 
+/** The approval rule of a budget without an automatic limit (its threshold is 0). */
+const EVERY_REQUEST = 'Every request needs approval from an Agency Admin.'
+
+/** What the requester is told to do about a per-operation limit; not said to anyone else. */
+const REDUCE_HINT = ' Reduce the amount or request a budget change.'
+
 /**
  * Deterministic spending policy. The same rules are enforced by the ledger
  * contract; running them here gives the requester an instant, plain-English
@@ -122,7 +128,7 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
     blocking: true,
     message: withinPerOperation
       ? `Within ${whose} per-operation limit of ${fmt(perOperationLimit)}.`
-      : `The amount exceeds ${whose} per-operation limit of ${fmt(perOperationLimit)}.${holderName ? '' : ' Reduce the amount or request a budget change.'}`,
+      : `The amount exceeds ${whose} per-operation limit of ${fmt(perOperationLimit)}.${holderName ? '' : REDUCE_HINT}`,
   })
 
   if (allowance) {
@@ -184,7 +190,9 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
     blocking: false,
     message: belowThreshold
       ? `Up to ${fmt(budget.approvalThreshold)} approves automatically.`
-      : `Requests above ${fmt(budget.approvalThreshold)} need approval from an Agency Admin.`,
+      : budget.approvalThreshold > 0
+        ? `Requests above ${fmt(budget.approvalThreshold)} need approval from an Agency Admin.`
+        : EVERY_REQUEST,
   })
 
   const firstBlockingFailure = checks.find((check) => check.blocking && !check.passed)
@@ -199,6 +207,39 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
   }
 
   return { outcome, checks, reason, evaluatedAt: now }
+}
+
+/** How a stored decision said a budget without an automatic limit needs approval, before it said so plainly. */
+const ZERO_THRESHOLD = /^Requests above 0\.00 USD need approval from an Agency Admin\.$/
+
+/**
+ * A stored decision as it reads today. A request's decision is stored worded for its
+ * requester ("your per-operation limit"): with `holderName`, it reads as `evaluatePolicy`
+ * words it for someone else, such as the Admin or Investor reviewing it. Decisions stored
+ * when a budget without an automatic limit said "Requests above 0.00 USD …" get today's
+ * sentence. Text that already reads right is left as it is.
+ */
+export function policyForReader(decision: PolicyDecision, holderName?: string): PolicyDecision {
+  const reword = (check: PolicyCheck): PolicyCheck => {
+    let message = check.message
+    if (check.rule === 'approval_threshold' && ZERO_THRESHOLD.test(message)) message = EVERY_REQUEST
+    if (holderName && check.rule === 'holder_has_access') {
+      message = message
+        .replace(/^You have /, () => `${holderName} has `)
+        .replace(/^You do not have /, () => `${holderName} does not have `)
+    }
+    if (holderName && (check.rule === 'per_operation_limit' || check.rule === 'period_limit')) {
+      message = message
+        .replace(/\byour (?=(?:per-operation|monthly|quarterly|total) limit\b)/g, () => `${holderName}'s `)
+        .replace(REDUCE_HINT, '')
+    }
+    return message === check.message ? check : { ...check, message }
+  }
+  return {
+    ...decision,
+    checks: decision.checks.map(reword),
+    reason: decision.reason && reword(decision.reason),
+  }
 }
 
 /**

@@ -20,6 +20,7 @@ import { useCommand, useViatikState } from '@/data/react'
 import { addDays, JUSTIFY_WITHIN_DAYS, paidAt } from '@/domain/accountability'
 import { categoryLabel } from '@/domain/labels'
 import { formatUsd, ZERO } from '@/domain/money'
+import { policyForReader } from '@/domain/policy'
 import {
   aboveExceptionThreshold,
   governingAgreement,
@@ -149,7 +150,9 @@ export function RequestReviewSheet({
           ? `Above the ${thresholdText} exception threshold of the funding agreement, so the Investor decides.`
           : work
             ? `Payment for work is always reviewed by an Agency Admin and paid from ${budget?.name ?? 'the budget'}. Nobody approves their own request.`
-            : `${budget?.name ?? 'This budget'}: requests above ${formatUsd(budget?.approvalThreshold ?? ZERO, { withCode: true })} need an Agency Admin. Nobody approves their own request.`,
+            : budget && budget.approvalThreshold > 0
+              ? `${budget.name}: requests above ${formatUsd(budget.approvalThreshold, { withCode: true })} need an Agency Admin. Nobody approves their own request.`
+              : `${budget?.name ?? 'This budget'}: every request needs an Agency Admin. Nobody approves their own request.`,
       }}
       confirmLabel={declining ? 'Decline request' : 'Approve and pay'}
       confirmVariant={declining ? 'destructive' : 'default'}
@@ -265,7 +268,11 @@ export function RequestReviewSheet({
               },
             ]}
           />
-          <PolicyVerdict decision={request.decision} perspective="reviewer" />
+          {/* Stored worded for the requester: someone else reads whose limits they are. */}
+          <PolicyVerdict
+            decision={policyForReader(request.decision, ownRequest ? undefined : requester)}
+            perspective="reviewer"
+          />
         </>
       )}
     </ApprovalSheet>

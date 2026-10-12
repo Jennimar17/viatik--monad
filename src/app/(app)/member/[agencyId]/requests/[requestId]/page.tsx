@@ -27,6 +27,7 @@ import { useCommand, useViatikState } from '@/data/react'
 import { advanceStanding, returnableFor } from '@/domain/accountability'
 import { categoryLabel, requestTypeLabel } from '@/domain/labels'
 import { ZERO } from '@/domain/money'
+import { policyForReader } from '@/domain/policy'
 import { budgetName, receiptFor, userName } from '@/domain/queries'
 import { justificationState, justificationStatus, requestStatusFor } from '@/domain/status'
 import type { PaymentRequest, ViatikState } from '@/domain/types'
@@ -261,7 +262,7 @@ export default function RequestDetailPage() {
         <Steps steps={steps} />
       </Panel>
 
-      <PolicyVerdict decision={request.decision} />
+      <PolicyVerdict decision={policyForReader(request.decision)} />
 
       <Panel title="Details">
         <KeyValueList
