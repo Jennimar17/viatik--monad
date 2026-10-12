@@ -23,6 +23,7 @@ import { PaymentsTable } from '@/components/app/payments-table'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { ScheduledPayments, UNSCHEDULED_STATUS } from '@/components/app/schedules'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { useTabParam } from '@/components/app/use-tab-param'
 import { Button } from '@/components/ui/button'
 import {
@@ -75,6 +76,13 @@ function InvestorAgencyDetail() {
   const [pauseOpen, setPauseOpen] = React.useState(false)
   // Fixed when the sheet opens: the refreshed status must not flip its copy.
   const [resuming, setResuming] = React.useState(false)
+  const pauseSteps = useSigningSteps(pause.phase, {
+    prepared: 'Viatik checks that you may pause or resume this agreement.',
+    done: {
+      label: 'Recorded on Monad',
+      detail: resuming ? 'Tranches can be released again.' : 'No tranche is released until it resumes.',
+    },
+  })
   // Read-only for the Investor: outside payments, invoices, money to justify, returns, monthly payments.
   const showAccountability = canView('pay_outside')
   const tab = useTabParam(
@@ -527,6 +535,7 @@ function InvestorAgencyDetail() {
           confirmVariant={resuming ? 'default' : 'destructive'}
           phase={pause.phase}
           error={pause.error}
+          steps={pauseSteps}
           onConfirm={() => pause.run({ agreementId: agreement.id, paused: !resuming })}
           success={{
             title: resuming ? 'Agreement resumed' : 'Agreement paused',

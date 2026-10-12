@@ -265,6 +265,7 @@ export default function ExpensesPage() {
           what: 'The receipt is attached to this expense so your Agency can reconcile the payment.',
           amount: uploading?.amount,
           reversible: 'Once attached, the receipt stays with the expense for reconciliation.',
+          irreversible: true,
           policy: 'The file stays private; only its fingerprint goes into the verified record.',
         }}
         confirmLabel="Attach receipt"

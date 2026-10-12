@@ -28,6 +28,7 @@ import { ReleaseTrancheSheet } from '@/components/app/release-tranche-sheet'
 import { useReceiptDrawer } from '@/components/app/receipt-details'
 import { useHref, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -63,6 +64,13 @@ export default function AgreementDetailPage() {
   const [resuming, setResuming] = React.useState(false)
   const receipts = useReceiptDrawer()
   const pause = useCommand('setAgreementPaused')
+  const pauseSteps = useSigningSteps(pause.phase, {
+    prepared: 'Viatik checks that you may pause or resume this agreement.',
+    done: {
+      label: 'Recorded on Monad',
+      detail: resuming ? 'Tranches can be released again.' : 'No tranche is released until it resumes.',
+    },
+  })
 
   const agreement = state.agreements.find((a) => a.id === agreementId && a.portfolioId === portfolioId)
   if (!agreement) {
@@ -330,6 +338,7 @@ export default function AgreementDetailPage() {
         confirmVariant={resuming ? 'default' : 'destructive'}
         phase={pause.phase}
         error={pause.error}
+        steps={pauseSteps}
         onConfirm={() => pause.run({ agreementId: agreement.id, paused: !resuming })}
         success={{
           title: resuming ? 'Agreement resumed' : 'Agreement paused',

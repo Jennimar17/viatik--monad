@@ -9,9 +9,11 @@ import { ButtonLink } from '@/components/app/button-link'
 import { FundShortfall } from '@/components/app/fund-agreement-sheet'
 import { EvidenceList } from '@/components/app/funding-parts'
 import { ReceiptDetailsButton, trancheRequestRecord } from '@/components/app/receipt-details'
+import { RELEASE_STEPS } from '@/components/app/release-tranche-sheet'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
 import { useBottomBar } from '@/components/app/shell/app-shell'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
@@ -41,6 +43,11 @@ export default function MilestoneReviewPage() {
   const { can } = usePermissions()
   const release = useCommand('releaseTranche')
   const changes = useCommand('requestMilestoneChanges')
+  const releaseSteps = useSigningSteps(release.phase, RELEASE_STEPS)
+  const changesSteps = useSigningSteps(changes.phase, {
+    prepared: 'Viatik checks that you may decide on this milestone.',
+    done: { label: 'Recorded on Monad', detail: 'The Agency sees your note.' },
+  })
   const [draftChecked, setDraftChecked] = React.useState<number[]>([])
   const [note, setNote] = React.useState('')
   const [releaseOpen, setReleaseOpen] = React.useState(false)
@@ -359,6 +366,7 @@ export default function MilestoneReviewPage() {
         confirmLabel="Release tranche"
         phase={release.phase}
         error={release.error}
+        steps={releaseSteps}
         onConfirm={() => release.run({ trancheId: tranche.id, checkedCriteria: checked, note })}
         success={{
           title: 'Funding released',
@@ -401,6 +409,7 @@ export default function MilestoneReviewPage() {
         disabled={note.trim().length < 3}
         phase={changes.phase}
         error={changes.error}
+        steps={changesSteps}
         onConfirm={() => changes.run({ milestoneId: milestone.id, note, reject: rejecting })}
         success={{
           title: rejecting ? 'Milestone rejected' : 'Changes requested',

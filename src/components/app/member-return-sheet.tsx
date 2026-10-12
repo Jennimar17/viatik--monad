@@ -6,6 +6,7 @@ import * as React from 'react'
 import { FormField, SimpleSelect, type Option } from '@/components/app/form-controls'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
 import { advanceDueText, advanceTitle } from '@/components/app/request-parts'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
@@ -45,6 +46,10 @@ export function MemberReturnSheet({
 }) {
   const { state, now, userId } = useViatikState()
   const giveBack = useCommand('returnUnusedFunds')
+  const steps = useSigningSteps(giveBack.phase, {
+    prepared: "Viatik checks the amount against your balance and the ledger's rules.",
+    done: { label: 'Returned', detail: 'Recorded on Monad and back in the Agency account.' },
+  })
   const [amount, setAmount] = React.useState<Cents | null>(null)
   const [choice, setChoice] = React.useState<string | null>(null)
   const [receiptId, setReceiptId] = React.useState<string | null>(null)
@@ -129,6 +134,7 @@ export function MemberReturnSheet({
       disabled={!amount || overCap || (otherMoney && !understood)}
       phase={giveBack.phase}
       error={giveBack.error}
+      steps={steps}
       onConfirm={async () => {
         if (!amount) return
         const result = await giveBack.run({

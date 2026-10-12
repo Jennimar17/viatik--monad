@@ -27,6 +27,8 @@ export type ConsequenceSummary = {
   to?: string
   /** Whether and how it can be undone, e.g. "Cannot be undone once released." */
   reversible: string
+  /** Confirming cannot be taken back. Defaults to `reversible` starting with "Cannot". */
+  irreversible?: boolean
   /** The rule that authorizes it. */
   policy: string
 }
@@ -80,6 +82,7 @@ export function ApprovalSheet({
   const unsettled = running && Boolean(error)
   const busy = running && !unsettled
   const done = phase === 'completed'
+  const irreversible = summary.irreversible ?? /^cannot\b/i.test(summary.reversible.trim())
 
   return (
     <Sheet
@@ -125,8 +128,8 @@ export function ApprovalSheet({
                 ) : null}
                 <dl className="mt-1 grid gap-2 border-t border-border pt-3 text-sm">
                   <div className="flex gap-2.5">
-                    <dt className="sr-only">Reversible</dt>
-                    {summary.reversible.toLowerCase().startsWith('cannot') ? (
+                    <dt className="sr-only">{irreversible ? 'Irreversible' : 'Reversible'}</dt>
+                    {irreversible ? (
                       <Undo2 className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
                     ) : (
                       <RotateCcw className="mt-0.5 size-4 shrink-0 text-subtle" aria-hidden="true" />

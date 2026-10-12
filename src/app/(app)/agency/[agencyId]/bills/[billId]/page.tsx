@@ -432,6 +432,7 @@ export default function BillDetailPage() {
           what: `Links ${vendorName} bill ${bill.number}, its payment, and the invoice document into one record with a verifiable receipt.`,
           amount: bill.amount,
           reversible: 'Reconciliations are part of the audit trail and are not deleted.',
+          irreversible: true,
           policy: 'Every reconciliation references exactly one canonical payment.',
         }}
         confirmLabel="Reconcile payment"

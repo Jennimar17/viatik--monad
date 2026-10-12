@@ -8,6 +8,13 @@ import { agreementCapital, isLastTranche } from '@/domain/selectors'
 
 import { FundShortfall } from '@/components/app/fund-agreement-sheet'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
+import { useSigningSteps, type SigningLabels } from '@/components/app/signing-steps'
+
+/** Prepared → Approved → Released, for a tranche release the Investor signs on Monad. */
+export const RELEASE_STEPS: SigningLabels = {
+  prepared: "Viatik checks the release against the funded capital and the ledger's rules.",
+  done: { label: 'Released', detail: 'Recorded on Monad and in the Agency’s account.' },
+}
 
 /**
  * The Investor releases a tranche that has no milestone to review: one the Agency requested, or one
@@ -29,6 +36,7 @@ export function ReleaseTrancheSheet({
 }) {
   const { state } = useViatikState()
   const release = useCommand('releaseTranche')
+  const steps = useSigningSteps(release.phase, RELEASE_STEPS)
   const tranche = state.tranches.find((t) => t.id === trancheId)
   const agreement = state.agreements.find((a) => a.id === tranche?.agreementId)
   const agency = agreement ? agencyName(state, agreement.agencyId) : 'the Agency'
@@ -75,6 +83,7 @@ export function ReleaseTrancheSheet({
       disabled={!tranche || short !== undefined}
       phase={release.phase}
       error={release.error}
+      steps={steps}
       onConfirm={() => tranche && release.run({ trancheId: tranche.id })}
       success={{
         title: 'Funding released',

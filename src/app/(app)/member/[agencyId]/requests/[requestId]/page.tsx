@@ -14,6 +14,7 @@ import { ReceiptDetailsButton, requestRecord } from '@/components/app/receipt-de
 import { advanceFollowUp, requestFollowUp, requestRecipientLabel } from '@/components/app/request-parts'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import { Amount } from '@/components/viatik/amount'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
@@ -128,6 +129,10 @@ export default function RequestDetailPage() {
   const href = useHref()
   const { can } = usePermissions()
   const cancel = useCommand('cancelRequest')
+  const cancelSteps = useSigningSteps(cancel.phase, {
+    prepared: 'Viatik checks that the request is still waiting for a decision.',
+    done: { label: 'Recorded on Monad', detail: 'The request is closed. Nothing was paid.' },
+  })
   const [cancelOpen, setCancelOpen] = React.useState(false)
   const [returnOpen, setReturnOpen] = React.useState(false)
 
@@ -291,6 +296,8 @@ export default function RequestDetailPage() {
         confirmVariant="destructive"
         phase={cancel.phase}
         error={cancel.error}
+        // Payment for work waiting for an Admin is not on Monad yet: cancelling it stays in Viatik.
+        steps={request.type === 'work' ? undefined : cancelSteps}
         onConfirm={() => cancel.run({ requestId: request.id })}
         success={{ title: 'Request cancelled', body: 'Nothing was paid.' }}
       />

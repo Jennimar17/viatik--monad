@@ -15,6 +15,7 @@ import {
 import { PageTabs } from '@/components/app/page-tabs'
 import { trancheRequestRecord, useReceiptDrawer } from '@/components/app/receipt-details'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import { Amount } from '@/components/viatik/amount'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
@@ -60,6 +61,10 @@ function AgencyFunding() {
   const href = useHref()
   const { can } = usePermissions()
   const accept = useCommand('acceptAgreement')
+  const acceptSteps = useSigningSteps(accept.phase, {
+    prepared: 'Viatik checks that you may accept this agreement for the Agency.',
+    done: { label: 'Recorded on Monad', detail: 'The agreement is active.' },
+  })
   const receipts = useReceiptDrawer()
   const [acceptOpen, setAcceptOpen] = React.useState(false)
   const requested = useSearchParams().get('agreement')
@@ -303,13 +308,16 @@ function AgencyFunding() {
         summary={{
           what: `You accept ${agreement.title} and its conditions: tranches, milestones, spending policy, and return conditions. If the Agency has no Operations account yet, Viatik opens one to receive released funding.`,
           amount: agreement.committed,
-          reversible: 'The Investor can pause the agreement; changes to its terms need an amendment.',
+          reversible:
+            'Cannot be undone. The Investor can pause the agreement; changes to its terms need an amendment.',
+          irreversible: true,
           policy:
             'Viatik Funding Agreements are operational funding policies, not legal equity or debt agreements.',
         }}
         confirmLabel="Accept agreement"
         phase={accept.phase}
         error={accept.error}
+        steps={acceptSteps}
         onConfirm={() => accept.run({ agreementId: agreement.id })}
         success={{
           title: 'Agreement accepted',

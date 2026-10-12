@@ -14,6 +14,7 @@ import type { FundingAgreement } from '@/domain/types'
 
 import { ButtonLink } from '@/components/app/button-link'
 import { useHref } from '@/components/app/role-context'
+import { useSigningSteps } from '@/components/app/signing-steps'
 
 /** Investor moves capital from the Portfolio Vault into an agreement's Funding Vault. */
 export function FundAgreementSheet({
@@ -31,6 +32,10 @@ export function FundAgreementSheet({
   const { state } = useViatikState()
   const href = useHref()
   const command = useCommand('fundAgreement')
+  const steps = useSigningSteps(command.phase, {
+    prepared: "Viatik checks the amount against the commitment and the ledger's rules.",
+    done: { label: 'Recorded on Monad', detail: 'Moved into the Funding Vault, ready for tranche releases.' },
+  })
   const capital = agreementCapital(state, agreement.id)
   const portfolioVault = state.vaults.find(
     (v) => v.portfolioId === agreement.portfolioId && v.kind === 'portfolio',
@@ -67,12 +72,14 @@ export function FundAgreementSheet({
         to: `${agencyLabel} Funding Vault`,
         reversible:
           'Funds stay in the Funding Vault until you release a tranche. Viatik has no way to move them back yet.',
+        irreversible: true,
         policy: `Funded capital cannot exceed the ${formatUsd(agreement.committed, { withCode: true })} commitment, nor what the tranches left can release.`,
       }}
       confirmLabel="Fund agreement"
       disabled={amount === null || invalid || max <= 0}
       phase={command.phase}
       error={command.error}
+      steps={steps}
       onConfirm={() => {
         if (!amount) return
         setFunded(amount)

@@ -9,6 +9,7 @@ import { ButtonLink } from '@/components/app/button-link'
 import { ChipSelect, FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
 import { useHref, useRole } from '@/components/app/role-context'
 import { useBottomBar } from '@/components/app/shell/app-shell'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Amount } from '@/components/viatik/amount'
@@ -77,6 +78,10 @@ function NewAgreement() {
   const router = useRouter()
   const params = useSearchParams()
   const create = useCommand('createAgreement', { silent: true })
+  const steps = useSigningSteps(create.phase, {
+    prepared: 'Viatik prepares the agreement, its tranches and its Funding Vault.',
+    done: { label: 'Created', detail: 'Recorded on Monad. The Agency can review and accept it.' },
+  })
   const agencies = state.agencies.filter((a) => a.portfolioId === portfolioId)
   const hasAgreement = (agencyId: string) =>
     state.agreements.some((g) => g.agencyId === agencyId && g.status !== 'cancelled')
@@ -602,7 +607,7 @@ function NewAgreement() {
           </Panel>
           {create.phase !== 'idle' ? (
             <Panel className="lg:col-span-2">
-              <PendingOperation phase={create.phase} error={create.error} />
+              <PendingOperation phase={create.phase} error={create.error} steps={steps} />
             </Panel>
           ) : null}
         </div>

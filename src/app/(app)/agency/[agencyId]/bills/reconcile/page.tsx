@@ -238,6 +238,7 @@ export default function ReconcilePage() {
             : 'Links the bill to its payment and invoice document.',
           amount: sheetPair?.payment.amount,
           reversible: 'Reconciliations stay in the audit trail.',
+          irreversible: true,
           policy: 'Every reconciliation references exactly one canonical payment.',
         }}
         confirmLabel="Reconcile payment"

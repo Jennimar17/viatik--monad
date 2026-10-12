@@ -9,6 +9,7 @@ import { FormField, PillInput, SimpleSelect, useChoice } from '@/components/app/
 import { CreateOperationsAccount, EmptySourceHint } from '@/components/app/money-setup'
 import { useHref, useRole } from '@/components/app/role-context'
 import { useBottomBar } from '@/components/app/shell/app-shell'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Amount } from '@/components/viatik/amount'
@@ -34,6 +35,10 @@ export default function TeamPaymentsPage() {
   const href = useHref()
   const router = useRouter()
   const send = useCommand('sendTeamPayments')
+  const steps = useSigningSteps(send.phase, {
+    prepared: "Viatik checks the payments against their source's limits and the ledger's rules.",
+    done: { label: 'Paid', detail: 'Recorded on Monad, with a receipt for each person.' },
+  })
 
   // Everyone in the Agency but you, Admins included: nobody pays themselves.
   const people = payablePeople(state, agencyId, userId)
@@ -281,6 +286,7 @@ export default function TeamPaymentsPage() {
         confirmLabel="Send team payments"
         phase={send.phase}
         error={send.error}
+        steps={steps}
         onConfirm={async () => {
           if (!sourceAccountId) return
           const payments = await send.run({

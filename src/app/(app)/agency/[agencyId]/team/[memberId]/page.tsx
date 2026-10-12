@@ -12,6 +12,7 @@ import { PaymentsTable } from '@/components/app/payments-table'
 import { requestRecipientLabel } from '@/components/app/request-parts'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import { Amount } from '@/components/viatik/amount'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
@@ -46,7 +47,12 @@ export default function MemberDetailPage() {
   const router = useRouter()
   const { can } = usePermissions()
   const revoke = useCommand('revokeMembership')
+  // Changing an allowance's amount stays in Viatik (Monad keeps only who has access): no signing steps.
   const edit = useCommand('assignAllowance')
+  const revokeSteps = useSigningSteps(revoke.phase, {
+    prepared: 'Viatik checks that you may change who has access to this Agency.',
+    done: { label: 'Recorded on Monad', detail: 'Their access ends now.' },
+  })
   const [revokeOpen, setRevokeOpen] = React.useState(false)
   // The allowance being edited is fixed when its sheet opens; the sheet reads the live record.
   const [editingId, setEditingId] = React.useState<string | null>(null)
@@ -354,6 +360,7 @@ export default function MemberDetailPage() {
         confirmVariant="destructive"
         phase={revoke.phase}
         error={revoke.error}
+        steps={revokeSteps}
         onConfirm={() => revoke.run({ membershipId: membership.id })}
         success={{ title: 'Access revoked', body: `${user.name} can no longer sign in to this Agency.` }}
       />

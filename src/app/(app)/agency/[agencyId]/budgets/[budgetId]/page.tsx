@@ -12,6 +12,7 @@ import { PaymentsTable } from '@/components/app/payments-table'
 import { providerKindLine } from '@/components/app/provider-parts'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -58,6 +59,25 @@ export default function BudgetDetailPage() {
   const assign = useCommand('assignAllowance')
   const fund = useCommand('allocateToBudget')
   const revoke = useCommand('revokeAllowance')
+  const pauseSteps = useSigningSteps(pause.phase, {
+    prepared: 'Viatik checks that you may pause or resume this budget.',
+    done: {
+      label: 'Recorded on Monad',
+      detail: resuming ? 'Spending can start again.' : 'Nothing new is spent until it resumes.',
+    },
+  })
+  const assignSteps = useSigningSteps(assign.phase, {
+    prepared: "Viatik checks the allowance against the budget's limits.",
+    done: { label: 'Recorded on Monad', detail: 'They can spend from this budget within their allowance.' },
+  })
+  const fundSteps = useSigningSteps(fund.phase, {
+    prepared: "Viatik checks the amount against the account's balance and the ledger's rules.",
+    done: { label: 'Recorded on Monad', detail: 'Moved into the budget.' },
+  })
+  const revokeSteps = useSigningSteps(revoke.phase, {
+    prepared: 'Viatik checks that you may change access to this budget.',
+    done: { label: 'Recorded on Monad', detail: 'Their access ends now.' },
+  })
 
   const budget = state.budgets.find((b) => b.id === budgetId && b.agencyId === agencyId)
   if (!budget) {
@@ -396,6 +416,7 @@ export default function BudgetDetailPage() {
         confirmVariant={resuming ? 'default' : 'destructive'}
         phase={pause.phase}
         error={pause.error}
+        steps={pauseSteps}
         onConfirm={() => pause.run({ budgetId: budget.id, paused: !resuming })}
         success={{
           title: resuming ? 'Budget resumed' : 'Budget paused',
@@ -422,6 +443,8 @@ export default function BudgetDetailPage() {
         disabled={!holderKey || !allowance || allowance > budget.periodLimit}
         phase={assign.phase}
         error={assign.error}
+        // Only a person's access is on Monad: an automation's stays in Viatik.
+        steps={holderKey && holderFromKey(holderKey).kind === 'member' ? assignSteps : undefined}
         onConfirm={() =>
           holderKey &&
           allowance &&
@@ -482,6 +505,7 @@ export default function BudgetDetailPage() {
         disabled={!fundAmount || fundAmount > sourceAvailable}
         phase={fund.phase}
         error={fund.error}
+        steps={fundSteps}
         onConfirm={() =>
           fundAmount && fund.run({ budgetId: budget.id, amount: fundAmount, direction: 'allocate' })
         }
@@ -531,6 +555,7 @@ export default function BudgetDetailPage() {
         confirmVariant="destructive"
         phase={revoke.phase}
         error={revoke.error}
+        steps={revoking?.holder.kind === 'member' ? revokeSteps : undefined}
         onConfirm={() => revokeId && revoke.run({ allowanceId: revokeId })}
         success={{ title: 'Access revoked', body: 'The allowance is no longer active.' }}
       />
