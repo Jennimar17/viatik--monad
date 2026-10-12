@@ -29,7 +29,7 @@ import { pseudoAddress } from '@/domain/ids'
 import { agencyTypeLabel, categoryLabel } from '@/domain/labels'
 import { formatUsd } from '@/domain/money'
 import { roleLabel } from '@/domain/permissions'
-import { activeAgreement, governingAgreement, userName } from '@/domain/queries'
+import { agencyAgreementSummary, agencyTeamSize, governingAgreement, userName } from '@/domain/queries'
 import { agreementStatus } from '@/domain/status'
 import { networkInfo } from '@/domain/verification'
 import { publicEnv } from '@/lib/env'
@@ -219,10 +219,10 @@ function Settings() {
   }
 
   if (agency) {
-    const agreement = activeAgreement(state, agency.id)
-    const team = state.memberships.filter(
-      (m) => m.scope.kind === 'agency' && m.scope.agencyId === agency.id && m.status === 'active',
-    )
+    // A Member's scoped state has no agreements and only their own membership: these read what
+    // their Agency carries instead.
+    const agreement = agencyAgreementSummary(state, agency.id)
+    const teamSize = agencyTeamSize(state, agency.id)
     tabs.push({
       value: 'agency',
       label: 'Agency',
@@ -261,7 +261,7 @@ function Settings() {
                     'No active agreement'
                   ),
                 },
-                { label: 'Team', value: pluralize(team.length, 'person', 'people') },
+                { label: 'Team', value: pluralize(teamSize, 'person', 'people') },
               ]}
             />
             <p className="text-xs text-pretty text-subtle">
@@ -443,7 +443,8 @@ function Settings() {
       label: role === 'member' ? 'Decisions on my requests' : 'Requests that need my decision',
     },
     { key: 'payments', label: role === 'member' ? 'Payments I receive' : 'Completed payments' },
-    { key: 'releases', label: 'Funding releases and milestones' },
+    // No funding notification ever goes to a Member.
+    ...(role === 'member' ? [] : [{ key: 'releases' as const, label: 'Funding releases and milestones' }]),
     { key: 'weekly', label: 'Weekly summary' },
   ]
 

@@ -2,6 +2,7 @@ import { cents, clampToZero, sum, type Cents } from './money'
 import { budgetUsage, committedAt } from './selectors'
 import type {
   Actor,
+  AgreementStatus,
   AllowanceHolder,
   Bill,
   Evidence,
@@ -125,6 +126,32 @@ export function exceptionThresholdOf(state: ViatikState, agencyId: Id): Cents | 
   return (
     governingAgreement(state, agencyId)?.spendingPolicy.exceptionThreshold ??
     state.agencies.find((a) => a.id === agencyId)?.exceptionThreshold
+  )
+}
+
+/**
+ * The agreement an Agency's Settings name: the one shown to Admins and Investors, or, in a
+ * Member's scoped state (which has no agreements), the title and status the Agency carries.
+ */
+export function agencyAgreementSummary(
+  state: ViatikState,
+  agencyId: Id,
+): { title: string; status: AgreementStatus } | undefined {
+  const agreement = activeAgreement(state, agencyId)
+  if (agreement) return { title: agreement.title, status: agreement.status }
+  return state.agencies.find((a) => a.id === agencyId)?.fundingAgreement
+}
+
+/**
+ * How many people are active in an Agency. A Member's scoped state holds only their own
+ * membership, so the Agency carries the count there; everyone else counts the memberships.
+ */
+export function agencyTeamSize(state: ViatikState, agencyId: Id): number {
+  return (
+    state.agencies.find((a) => a.id === agencyId)?.teamSize ??
+    state.memberships.filter(
+      (m) => m.status === 'active' && m.scope.kind === 'agency' && m.scope.agencyId === agencyId,
+    ).length
   )
 }
 

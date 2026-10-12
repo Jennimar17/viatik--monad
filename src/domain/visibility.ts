@@ -11,7 +11,9 @@ import type { Agency, Id, Location, Movement, Receipt, User, ViatikState } from 
  * - Members see the budgets assigned to them and their personal records —
  *   never the Agency's full treasury. What a budget they hold paid another
  *   person shows as paid to "Team member", never who it was or its receipt.
- *   They read their Agency Admins' names, never the other Members'.
+ *   They read their Agency Admins' names, never the other Members'. Their
+ *   Agency carries the governing agreement's title and status and the team's
+ *   headcount, never the agreement's terms or who is in the team.
  */
 export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
   const memberships = state.memberships.filter((m) => m.userId === userId && m.status === 'active')
@@ -43,16 +45,25 @@ export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
 
   // A Member never sees the agreements, yet their requests follow the governing agreement's
   // exception threshold: their Agency carries it, so what they preview is what the server decides.
-  // Everyone else reads it from the agreement itself.
+  // It also carries that agreement's title and status and the Agency's headcount, for the
+  // Member's Settings: never its terms, nor who is in the team. Everyone else reads them from the
+  // agreements and memberships themselves.
   const agencies = state.agencies
     .filter((a) => anyAgencyIds.has(a.id))
     .map((a): Agency => {
       const agency: Agency = { ...a }
       delete agency.exceptionThreshold
-      const threshold = memberOnly(a.id)
-        ? governingAgreement(state, a.id)?.spendingPolicy.exceptionThreshold
-        : undefined
-      if (threshold !== undefined) agency.exceptionThreshold = threshold
+      delete agency.fundingAgreement
+      delete agency.teamSize
+      if (!memberOnly(a.id)) return agency
+      const governing = governingAgreement(state, a.id)
+      if (governing) {
+        agency.exceptionThreshold = governing.spendingPolicy.exceptionThreshold
+        agency.fundingAgreement = { title: governing.title, status: governing.status }
+      }
+      agency.teamSize = state.memberships.filter(
+        (m) => m.status === 'active' && m.scope.kind === 'agency' && m.scope.agencyId === a.id,
+      ).length
       return agency
     })
   const visiblePortfolioIds = new Set([...portfolioIds, ...agencies.map((a) => a.portfolioId)])

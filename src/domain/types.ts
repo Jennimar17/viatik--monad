@@ -78,6 +78,10 @@ export type Agency = {
   createdAt: ISODate
   /** Scoped states only: the governing agreement's exception threshold, for viewers who cannot see agreements. */
   exceptionThreshold?: Cents
+  /** Scoped states only (a Member's view): the governing agreement's title and status, never its terms. */
+  fundingAgreement?: { title: string; status: AgreementStatus }
+  /** Scoped states only (a Member's view): how many people are active in the Agency, never who. */
+  teamSize?: number
 }
 
 // ─── Funding ─────────────────────────────────────────────────────────────────

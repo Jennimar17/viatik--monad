@@ -36,6 +36,8 @@ import { paymentTypeLabel, receiptKindLabel, requestTypeLabel } from '@/domain/l
 import { describeBudgetPolicy, paysRequester } from '@/domain/policy'
 import {
   adminApprovals,
+  agencyAgreementSummary,
+  agencyTeamSize,
   governingAgreement,
   investorApprovals,
   isException,
@@ -3036,6 +3038,37 @@ async function memberPreview(t: Checker) {
     [w.state, w.view(U.maya), w.view(U.elena)].every((state) =>
       state.agencies.every((a) => a.exceptionThreshold === undefined),
     ),
+  )
+
+  // H5: a Member's Settings name the agreement that funds their Agency and how many people are in
+  // it, from what their Agency carries; never the agreement's terms, nor who is in the team.
+  const arcTeam = w.state.memberships.filter(
+    (m) => m.status === 'active' && m.scope.kind === 'agency' && m.scope.agencyId === ARC,
+  ).length
+  const danielArc = danielView.agencies.find((a) => a.id === ARC)
+  t.check(
+    "K1: Daniel's Agency carries the governing agreement's title and status, and its headcount",
+    danielArc?.fundingAgreement?.title === governingAgreement(w.state, ARC)?.title &&
+      danielArc?.fundingAgreement?.status === 'active' &&
+      danielArc?.teamSize === arcTeam &&
+      arcTeam > 1,
+    JSON.stringify({ agreement: danielArc?.fundingAgreement, team: danielArc?.teamSize, arcTeam }),
+  )
+  t.check(
+    'K1: the full state, Admins and Investors carry neither',
+    [w.state, w.view(U.maya), w.view(U.elena)].every((state) =>
+      state.agencies.every((a) => a.fundingAgreement === undefined && a.teamSize === undefined),
+    ),
+  )
+  t.check(
+    "K1: a Member's Settings show the same agreement and team as an Admin's",
+    JSON.stringify(agencyAgreementSummary(w.view(U.alex), ARC)) ===
+      JSON.stringify(agencyAgreementSummary(w.view(U.maya), ARC)) &&
+      agencyTeamSize(w.view(U.alex), ARC) === agencyTeamSize(w.view(U.maya), ARC),
+    JSON.stringify({
+      alex: [agencyAgreementSummary(w.view(U.alex), ARC), agencyTeamSize(w.view(U.alex), ARC)],
+      maya: [agencyAgreementSummary(w.view(U.maya), ARC), agencyTeamSize(w.view(U.maya), ARC)],
+    }),
   )
 
   const ask = (type: RequestType, amount: Cents, key: string): RequestPaymentInput => ({
