@@ -43,7 +43,8 @@ export type PolicyInput = {
 const fmt = (value: Cents) => formatUsd(value, { withCode: true })
 
 /** The approval rule of a budget without an automatic limit (its threshold is 0). */
-const EVERY_REQUEST = 'Every request needs approval from an Agency Admin.'
+/** What a budget without an automatic limit says: every request needs an Agency Admin. */
+export const EVERY_REQUEST = 'Every request needs approval from an Agency Admin.'
 
 /** What the requester is told to do about a per-operation limit; not said to anyone else. */
 const REDUCE_HINT = ' Reduce the amount or request a budget change.'
@@ -213,6 +214,14 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
 const ZERO_THRESHOLD = /^Requests above 0\.00 USD need approval from an Agency Admin\.$/
 
 /**
+ * A policy sentence stored before a budget without an automatic limit said so plainly ("Requests
+ * above 0.00 USD …"), as it reads today. Anything else is returned as it is.
+ */
+export function currentPolicyText(message: string): string {
+  return ZERO_THRESHOLD.test(message) ? EVERY_REQUEST : message
+}
+
+/**
  * A stored decision as it reads today. A request's decision is stored worded for its
  * requester ("your per-operation limit"): with `holderName`, it reads as `evaluatePolicy`
  * words it for someone else, such as the Admin or Investor reviewing it. Decisions stored
@@ -222,7 +231,7 @@ const ZERO_THRESHOLD = /^Requests above 0\.00 USD need approval from an Agency A
 export function policyForReader(decision: PolicyDecision, holderName?: string): PolicyDecision {
   const reword = (check: PolicyCheck): PolicyCheck => {
     let message = check.message
-    if (check.rule === 'approval_threshold' && ZERO_THRESHOLD.test(message)) message = EVERY_REQUEST
+    if (check.rule === 'approval_threshold') message = currentPolicyText(message)
     if (holderName && check.rule === 'holder_has_access') {
       message = message
         .replace(/^You have /, () => `${holderName} has `)
@@ -362,15 +371,27 @@ export function describeBudgetPolicy(
       ? options.exceptionThreshold
       : undefined
   const work = 'except payment for work, which an Agency Admin always reviews'
-  lines.push(
-    budget.approvalThreshold <= 0
-      ? 'Every payment needs an Agency Admin approval.'
-      : options.allowance && budget.approvalThreshold >= cap
-        ? investorAbove !== undefined
-          ? `Payments up to ${fmt(investorAbove)} are approved automatically, ${work}. Payments above ${fmt(investorAbove)} go to the Investor.`
-          : `Payments within these limits are approved automatically, ${work}.`
-        : `Payments up to ${fmt(budget.approvalThreshold)} are approved automatically. Anything above needs an Agency Admin.`,
-  )
+  const toInvestor = (limit: Cents) => ` Payments above ${fmt(limit)} go to the Investor.`
+  if (budget.approvalThreshold <= 0) {
+    lines.push(
+      investorAbove !== undefined
+        ? `Every payment up to ${fmt(investorAbove)} needs an Agency Admin approval.${toInvestor(investorAbove)}`
+        : 'Every payment needs an Agency Admin approval.',
+    )
+  } else if (investorAbove !== undefined && investorAbove <= budget.approvalThreshold) {
+    // The Investor's threshold is the lower one: nothing above it is approved automatically.
+    lines.push(
+      `Payments up to ${fmt(investorAbove)} are approved automatically, ${work}.${toInvestor(investorAbove)}`,
+    )
+  } else if (options.allowance && budget.approvalThreshold >= cap) {
+    lines.push(`Payments within these limits are approved automatically, ${work}.`)
+  } else {
+    lines.push(
+      `Payments up to ${fmt(budget.approvalThreshold)} are approved automatically, ${work}. Anything above needs an Agency Admin${
+        investorAbove !== undefined ? `, and above ${fmt(investorAbove)} the Investor decides` : ''
+      }.`,
+    )
+  }
   // The vendor list limits vendor payments only: money a person requests goes to their own Viatik balance.
   if (options.destinationNames && options.destinationNames.length > 0) {
     lines.push(`Vendor payments can only go to ${joinList(options.destinationNames)}.`)

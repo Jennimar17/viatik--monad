@@ -40,7 +40,13 @@ import {
   requestTypeLabel,
 } from '@/domain/labels'
 import { upgradeState } from '@/domain/migrate'
-import { describeBudgetPolicy, paysRequester, perPaymentCap, policyForReader } from '@/domain/policy'
+import {
+  currentPolicyText,
+  describeBudgetPolicy,
+  paysRequester,
+  perPaymentCap,
+  policyForReader,
+} from '@/domain/policy'
 import {
   adminApprovals,
   agencyAgreementSummary,
@@ -3181,18 +3187,41 @@ async function labelsAndSeed(t: Checker) {
     belowException.join(' | '),
   )
   const toolsLines = describeBudgetPolicy(tools, { allowance: alexOn(B.arcTools) })
+  const automatic = `Payments up to ${usdText(tools.approvalThreshold)} are approved automatically, except payment for work, which an Agency Admin always reviews. Anything above needs an Agency Admin`
   t.check(
     'J: with a cap above the automatic limit, the limit is named',
-    toolsLines.includes(
-      `Payments up to ${usdText(tools.approvalThreshold)} are approved automatically. Anything above needs an Agency Admin.`,
-    ),
+    toolsLines.includes(`${automatic}.`),
     toolsLines.join(' | '),
   )
   t.check(
     'J: without an allowance (an Admin reading the budget) the automatic limit is always named',
-    describeBudgetPolicy(tools).includes(
-      `Payments up to ${usdText(tools.approvalThreshold)} are approved automatically. Anything above needs an Agency Admin.`,
-    ),
+    describeBudgetPolicy(tools).includes(`${automatic}.`),
+  )
+  const between = cents(tools.approvalThreshold + usd(50))
+  const aboveBoth = describeBudgetPolicy(tools, { exceptionThreshold: between })
+  t.check(
+    "J: an exception threshold between the automatic limit and the cap is named after Admins'",
+    between < perPaymentCap(tools) &&
+      aboveBoth.includes(`${automatic}, and above ${usdText(between)} the Investor decides.`),
+    aboveBoth.join(' | '),
+  )
+  const belowAutomatic = describeBudgetPolicy(tools, { exceptionThreshold: usd(50) })
+  t.check(
+    'J: an exception threshold below the automatic limit becomes the automatic limit',
+    usd(50) < tools.approvalThreshold &&
+      belowAutomatic.includes(
+        `Payments up to ${usdText(usd(50))} are approved automatically, except payment for work, which an Agency Admin always reviews. Payments above ${usdText(usd(50))} go to the Investor.`,
+      ),
+    belowAutomatic.join(' | '),
+  )
+  const teamException = describeBudgetPolicy(team, { allowance: alexTeam, exceptionThreshold: usd(500) })
+  t.check(
+    'J: with no automatic limit, an exception threshold below the cap says who decides above it',
+    usd(500) < perPaymentCap(team, alexTeam) &&
+      teamException.includes(
+        `Every payment up to ${usdText(usd(500))} needs an Agency Admin approval. Payments above ${usdText(usd(500))} go to the Investor.`,
+      ),
+    teamException.join(' | '),
   )
   const overCap = preview(w, U.alex, {
     agencyId: ARC,
@@ -6424,9 +6453,15 @@ async function decisionReaders(t: Checker) {
     amount,
     category: 'team',
     purpose: 'Team offsite lunch',
-    idempotencyKey: 'smoke-o1-funds',
+    idempotencyKey: 'smoke-p1-funds',
   }
   const every = 'Every request needs approval from an Agency Admin.'
+  t.check(
+    "P: Verified details read an older stored sentence as today's, and leave others alone",
+    currentPolicyText('Requests above 0.00 USD need approval from an Agency Admin.') === every &&
+      currentPolicyText('Requests above 250.00 USD need approval from an Agency Admin.') ===
+        'Requests above 250.00 USD need approval from an Agency Admin.',
+  )
   const previewed = preview(w, requester, ask)
   t.check(
     'P1: the form says every request needs an Agency Admin',
@@ -6435,11 +6470,11 @@ async function decisionReaders(t: Checker) {
       previewed.reason.message === every,
     JSON.stringify(previewed.reason),
   )
-  const o1 = await w.run(requester, 'requestPayment', ask, 'O1 a Member asks Team payments for money', {
+  const p1 = await w.run(requester, 'requestPayment', ask, 'P1 a Member asks Team payments for money', {
     ops: ['requestPayment'],
   })
-  const stored = o1.result.decision
-  samePreview(t, 'O1', previewed, stored)
+  const stored = p1.result.decision
+  samePreview(t, 'P1', previewed, stored)
   t.check(
     'P1: the stored decision is worded for the requester',
     stored.checks.some((c) => c.rule === 'per_operation_limit' && c.message.startsWith('Within your ')),
@@ -6472,7 +6507,7 @@ async function decisionReaders(t: Checker) {
     messages.join(' | '),
   )
   t.check(
-    "P2: …but whose access and limits they are",
+    'P2: …but whose access and limits they are',
     messageOf('holder_has_access') === `${name} has spending access to this budget.` &&
       messageOf('per_operation_limit') === `Within ${name}'s per-operation limit of ${usdText(cap)}.` &&
       Boolean(messageOf('period_limit')?.startsWith(`Within ${name}'s monthly limit. `)),
@@ -6531,7 +6566,6 @@ async function decisionReaders(t: Checker) {
         .checks[0]?.message === above,
   )
 }
-
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
