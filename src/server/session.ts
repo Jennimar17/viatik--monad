@@ -1,6 +1,7 @@
 import type { LinkedAccount, User } from '@privy-io/node'
 import { eq, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
+import { wrapTime } from 'hono/timing'
 import { getAddress, isAddress } from 'viem'
 
 import { ID_TOKEN_HEADER, type SessionResponse } from '@/data/api-contract'
@@ -171,16 +172,16 @@ async function upsertUser(
 /** `POST /v1/session`: who the signed-in person is, as a product user. */
 export const session = new Hono<AppEnv>().post('/', requireAccount, async (c) => {
   const privyUserId = c.get('privyUserId')
-  const identity = await readIdentity(privyUserId, c.req.header(ID_TOKEN_HEADER))
+  const identity = await wrapTime(c, 'privy', readIdentity(privyUserId, c.req.header(ID_TOKEN_HEADER)))
   const profile = profileOf(identity)
-  const { row, isNew, previousAddress } = await upsertUser(privyUserId, profile)
+  const { row, isNew, previousAddress } = await wrapTime(c, 'db', upsertUser(privyUserId, profile))
 
   let address =
     profile.address ??
     (row.walletAddress && isAddress(row.walletAddress) ? getAddress(row.walletAddress) : null)
   if (!address) {
     try {
-      address = await ensureWallet(privyUserId)
+      address = await wrapTime(c, 'wallet', ensureWallet(privyUserId))
     } catch (error) {
       // The session still works; the client asks again shortly and the next request retries.
       console.error(`[api] ${c.get('requestId')} embedded account could not be created`, error)
@@ -189,7 +190,7 @@ export const session = new Hono<AppEnv>().post('/', requireAccount, async (c) =>
   // A Viatik account Viatik had not recorded for this person yet (just created, or first seen):
   // Alchemy starts watching it, so money sent to it is noticed. Best effort, never blocks sign-in.
   if (address && address.toLowerCase() !== previousAddress?.toLowerCase())
-    await watchAddressOnAlchemy(address, c.get('requestId'))
+    await wrapTime(c, 'alchemy', watchAddressOnAlchemy(address, c.get('requestId')))
 
   return c.json<SessionResponse>(
     {

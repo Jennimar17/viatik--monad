@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { Hono } from 'hono'
+import { timing } from 'hono/timing'
 
 import type { ApiErrorBody } from '@/data/api-contract'
 import { publicEnv, readServerEnv } from '@/lib/env'
@@ -44,6 +45,10 @@ async function ledgerHealth(requestId: string) {
  */
 export const app = new Hono<AppEnv>()
   .basePath('/api')
+  // A Server-Timing header on every answer (DevTools ▸ Network ▸ Timing): `total`, and the steps
+  // timed on the way, `auth` (Privy token) and `user` (account row) on signed-in routes, `sweep`,
+  // `version` and `state` on GET /v1/state, `privy`, `db`, `wallet` and `alchemy` on POST /v1/session.
+  .use('*', timing())
   .use('*', requestId)
   .get('/health', async (c) => {
     const env = readServerEnv()

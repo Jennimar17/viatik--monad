@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { createMiddleware } from 'hono/factory'
+import { endTime, startTime } from 'hono/timing'
 
 import { EXPECTED_USER_HEADER } from '@/data/api-contract'
 import { withVerifiedPerson } from '@/domain/identity'
@@ -16,11 +17,13 @@ import { ApiError } from './errors'
  * without one signs in again, which creates it.
  */
 export const requireUser = createMiddleware<AppEnv>(async (c, next) => {
+  startTime(c, 'user')
   const [user] = await getDb()
     .select()
     .from(users)
     .where(eq(users.privyId, c.get('privyUserId')))
     .limit(1)
+  endTime(c, 'user')
   if (!user) throw new ApiError(401, 'unauthenticated', 'Sign in again to continue.')
   const expected = c.req.header(EXPECTED_USER_HEADER)
   if (expected && expected !== user.id) {

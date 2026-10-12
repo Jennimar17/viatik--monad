@@ -15,6 +15,7 @@ import type { CommandInput, CommandName, CommandResult } from '@/domain/engine'
 import { newId } from '@/domain/ids'
 import { subjectFor } from '@/domain/permissions'
 import type { Evidence, Membership, User, ViatikState } from '@/domain/types'
+import { markLoadStep } from '@/lib/load-marks'
 
 import { apiFetch } from './api'
 import { canonical } from './canonical'
@@ -179,6 +180,11 @@ export function ViatikProvider({
   }, [shared, state, userId, queryClient])
 
   const loaded = Boolean(query.data)
+  // The first load's last step on the browser's timeline: the person's data is in, screens can render.
+  React.useEffect(() => {
+    if (loaded) markLoadStep('state')
+  }, [loaded])
+
   const resumedFor = React.useRef<string | null>(null)
   React.useEffect(() => {
     if (!loaded || !userId || !mode || resumedFor.current === userId) return

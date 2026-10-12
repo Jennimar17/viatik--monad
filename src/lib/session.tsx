@@ -17,6 +17,7 @@ import type { SessionResponse } from '@/data/api-contract'
 import { DataSourceError, type SendCall, type SessionMode } from '@/data/data-source'
 import { translateLedgerError } from '@/ledger/errors'
 
+import { markLoadStep } from './load-marks'
 import { accountsEnabled } from './privy'
 import { TimeoutError, withTimeout } from './timeout'
 
@@ -193,6 +194,14 @@ function AccountSessionProvider({ children }: { children: React.ReactNode }) {
   const wallet = embeddedAddress(user)
   const resolved = Boolean(data)
   const recordedAddress = data?.address ?? null
+
+  // The first load's steps on the browser's timeline: Privy restored, then the server answered.
+  React.useEffect(() => {
+    if (ready) markLoadStep('privy-ready')
+  }, [ready])
+  React.useEffect(() => {
+    if (resolved) markLoadStep('session')
+  }, [resolved])
 
   // Created on the server: refresh this browser's Privy user so signing
   // (sponsored settlement) can see the account. Up to three attempts per
