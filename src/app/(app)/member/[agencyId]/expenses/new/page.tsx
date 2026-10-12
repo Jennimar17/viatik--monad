@@ -29,6 +29,7 @@ import { categoryLabel } from '@/domain/labels'
 import { formatUsd, type Cents } from '@/domain/money'
 import type { SpendingCategory, ViatikState } from '@/domain/types'
 import { formatDate, fromDateInput } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 const ALL_CATEGORIES = Object.keys(categoryLabel) as SpendingCategory[]
 
@@ -211,7 +212,7 @@ function NewExpense() {
             options={open.map((s) => ({
               value: s.payment.id,
               label: `${advanceTitle(s)} · ${formatUsd(s.pending)} to justify`,
-              description: `Received ${formatDate(s.payment.completedAt ?? s.payment.scheduledFor)} · ${formatUsd(s.amount)}`,
+              description: `Received ${formatLocalDate(s.payment.completedAt ?? s.payment.scheduledFor)} · ${formatUsd(s.amount)}`,
             }))}
           />
         </FormField>

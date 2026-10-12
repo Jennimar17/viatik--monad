@@ -46,6 +46,7 @@ import type { Budget, Reminder, SpendingCategory } from '@/domain/types'
 import { networkInfo } from '@/domain/verification'
 import { publicEnv } from '@/lib/env'
 import { formatDate } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 const NO_BUDGET = 'none'
 const ALL_CATEGORIES = Object.keys(categoryLabel) as SpendingCategory[]
@@ -394,7 +395,7 @@ function PayOutside() {
                 options={previous.map((p) => ({
                   value: p.key,
                   label: p.payee,
-                  description: `${shortAddress(p.address)} · last paid ${formatDate(p.paidAt)}`,
+                  description: `${shortAddress(p.address)} · last paid ${formatLocalDate(p.paidAt)}`,
                 }))}
               />
             </FormField>

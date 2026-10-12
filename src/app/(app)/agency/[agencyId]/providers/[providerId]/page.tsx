@@ -52,7 +52,8 @@ import { formatUsd } from '@/domain/money'
 import { spendByMonth } from '@/domain/selectors'
 import { agentStatus, budgetStatus } from '@/domain/status'
 import { seriesColor } from '@/lib/chart-colors'
-import { formatDate, pluralize } from '@/lib/format'
+import { pluralize } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 const actionIcons: Record<ProviderStatusAction, React.ReactNode> = {
   pause: <PauseCircle className="size-4" />,
@@ -135,7 +136,7 @@ export default function ProviderDetailPage() {
           <>
             <StatusBadge status={providerStatus[provider.status]} size="md" />
             <span className="text-sm text-subtle">
-              {provider.settlementLabel} · added {formatDate(provider.addedAt)}
+              {provider.settlementLabel} · added {formatLocalDate(provider.addedAt)}
             </span>
           </>
         }
@@ -207,7 +208,7 @@ export default function ProviderDetailPage() {
         <KpiTile
           label="Paid this month"
           value={summary.paidThisMonth}
-          hint={summary.lastPaidAt ? `Last paid ${formatDate(summary.lastPaidAt)}` : 'Not paid yet'}
+          hint={summary.lastPaidAt ? `Last paid ${formatLocalDate(summary.lastPaidAt)}` : 'Not paid yet'}
         />
         <KpiTile
           label="Scheduled"
@@ -270,7 +271,7 @@ export default function ProviderDetailPage() {
                 ),
               },
               { label: 'Status', value: <StatusBadge status={providerStatus[provider.status]} /> },
-              { label: 'Added', value: formatDate(provider.addedAt) },
+              { label: 'Added', value: formatLocalDate(provider.addedAt) },
             ]}
           />
         </Panel>

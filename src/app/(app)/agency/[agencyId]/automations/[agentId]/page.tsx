@@ -29,6 +29,7 @@ import { agentSpentToday, committedAt, lastMonths } from '@/domain/selectors'
 import { agentStatus } from '@/domain/status'
 import type { AgentDecision, PaymentRequest } from '@/domain/types'
 import { formatDate, formatDateTime, fromDateInput, pluralize } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 const DAY = 86_400_000
 const DAYS_SHOWN = 14
@@ -283,7 +284,7 @@ export default function AgentDetailPage() {
                   label: 'Working balance limit',
                   value: formatUsd(agent.workingBalanceLimit, { withCode: true }),
                 },
-                { label: 'Created', value: formatDate(agent.createdAt) },
+                { label: 'Created', value: formatLocalDate(agent.createdAt) },
               ]}
             />
           </div>

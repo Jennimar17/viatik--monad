@@ -20,6 +20,7 @@ import { agreementCapital } from '@/domain/selectors'
 import { milestoneStatus, trancheStatusFor } from '@/domain/status'
 import type { FundingAgreement, Milestone, Tranche, ViatikState } from '@/domain/types'
 import { formatBytes, formatDate } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 import { cn } from '@/lib/utils'
 
 const tranchesOf = (state: ViatikState, agreementId: string) =>
@@ -75,7 +76,7 @@ export function trancheTimeline(
       ? state.milestones.find((m) => m.id === tranche.milestoneId)
       : undefined
     const date = tranche.releasedAt
-      ? `Released ${formatDate(tranche.releasedAt)}`
+      ? `Released ${formatLocalDate(tranche.releasedAt)}`
       : milestone
         ? `Milestone due ${formatDate(milestone.dueDate)}`
         : tranche.scheduledFor

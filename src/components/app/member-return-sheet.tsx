@@ -15,7 +15,7 @@ import { advancesOf, otherMoneyReturnable, returnableFor } from '@/domain/accoun
 import { formatUsd, ZERO, type Cents } from '@/domain/money'
 import { receiptFor } from '@/domain/queries'
 import type { Id } from '@/domain/types'
-import { formatDate } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 /** The select value for money that is not one of the person's open money for purchases. */
 const OTHER = 'other'
@@ -79,7 +79,7 @@ export function MemberReturnSheet({
     ...openAdvances.map((s) => ({
       value: s.payment.id,
       label: `${advanceTitle(s)} · ${formatUsd(s.pending)} pending`,
-      description: `Received ${formatDate(s.payment.completedAt ?? s.payment.scheduledFor)}`,
+      description: `Received ${formatLocalDate(s.payment.completedAt ?? s.payment.scheduledFor)}`,
     })),
     {
       value: OTHER,

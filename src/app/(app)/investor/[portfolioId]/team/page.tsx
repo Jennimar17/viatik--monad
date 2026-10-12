@@ -15,7 +15,8 @@ import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useCommand, useViatikState } from '@/data/react'
 import { roleLabel } from '@/domain/permissions'
 import { userName } from '@/domain/queries'
-import { formatDate, pluralize } from '@/lib/format'
+import { pluralize } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 export default function InvestorTeamPage() {
   const { state, userId } = useViatikState()
@@ -71,7 +72,7 @@ export default function InvestorTeamPage() {
                     {m.userId === userId ? <span className="text-subtle"> · you</span> : null}
                   </span>
                   <span className="truncate text-xs text-subtle">
-                    {user?.title} · {user?.email} · since {formatDate(m.createdAt)}
+                    {user?.title} · {user?.email} · since {formatLocalDate(m.createdAt)}
                   </span>
                 </span>
                 <Tag>{roleLabel[m.role]}</Tag>
@@ -105,7 +106,7 @@ export default function InvestorTeamPage() {
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate text-sm font-medium">{i.name}</span>
                     <span className="truncate text-xs text-subtle">
-                      {i.email} · {roleLabel[i.role]} · invited {formatDate(i.createdAt)} by{' '}
+                      {i.email} · {roleLabel[i.role]} · invited {formatLocalDate(i.createdAt)} by{' '}
                       {userName(state, i.invitedBy)}
                     </span>
                   </span>

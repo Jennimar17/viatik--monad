@@ -47,6 +47,7 @@ import { formatUsd } from '@/domain/money'
 import { governingAgreement, receiptFor } from '@/domain/queries'
 import { agreementBadge, agreementCapital, isFullyReleased } from '@/domain/selectors'
 import { formatDate } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 export default function AgreementDetailPage() {
   const { agreementId } = useParams<{ agreementId: string }>()
@@ -278,7 +279,7 @@ export default function AgreementDetailPage() {
                     <Panel
                       key={m.id}
                       title={m.title}
-                      description={m.submittedAt ? `Submitted ${formatDate(m.submittedAt)}` : undefined}
+                      description={m.submittedAt ? `Submitted ${formatLocalDate(m.submittedAt)}` : undefined}
                     >
                       <EvidenceList milestone={m} />
                     </Panel>

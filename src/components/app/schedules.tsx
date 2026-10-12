@@ -47,6 +47,7 @@ import { scheduleStatus } from '@/domain/status'
 import type { Id, ISODate, KeeperRun, Payment, Schedule, ViatikState } from '@/domain/types'
 import { formatDate, formatRelative } from '@/lib/format'
 import {
+  formatLocalDate,
   formatLocalDateTime,
   formatLocalTime,
   fromLocalInputs,
@@ -460,7 +461,7 @@ function ScheduleNote({
     return (
       <p className="text-xs text-subtle">
         Cancelled by {name(schedule.cancelledBy)}
-        {schedule.cancelledAt ? ` on ${formatDate(schedule.cancelledAt)}` : ''}. Nothing was paid
+        {schedule.cancelledAt ? ` on ${formatLocalDate(schedule.cancelledAt)}` : ''}. Nothing was paid
         {schedule.paymentIds.length > 0 ? ' after that' : ''}.
       </p>
     )
@@ -563,7 +564,7 @@ export function ScheduleList({
                     </span>
                     <span className="text-xs text-pretty text-subtle">
                       {scheduleCadenceLabel(schedule)} · scheduled by {userName(state, schedule.createdBy)} on{' '}
-                      {formatDate(schedule.createdAt)}
+                      {formatLocalDate(schedule.createdAt)}
                     </span>
                   </span>
                 </span>

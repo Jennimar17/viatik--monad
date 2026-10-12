@@ -38,6 +38,7 @@ import {
 } from '@/domain/selectors'
 import type { AgreementStatus, FundingAgreement, MilestoneStatus } from '@/domain/types'
 import { formatDate } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 /** Milestones the Agency can (re)submit evidence for. */
 const SUBMITTABLE: ReadonlySet<MilestoneStatus> = new Set(['not_started', 'in_progress', 'changes_requested'])
@@ -237,7 +238,7 @@ function AgencyFunding() {
                     <Panel
                       key={m.id}
                       title={m.title}
-                      description={m.submittedAt ? `Submitted ${formatDate(m.submittedAt)}` : undefined}
+                      description={m.submittedAt ? `Submitted ${formatLocalDate(m.submittedAt)}` : undefined}
                     >
                       <EvidenceList milestone={m} />
                     </Panel>
@@ -271,7 +272,7 @@ function AgencyFunding() {
                         <span className="flex min-w-0 flex-col">
                           <span className="text-sm font-medium">{t.name}</span>
                           <span className="text-xs text-subtle">
-                            {t.releasedAt ? `Released ${formatDate(t.releasedAt)}` : 'Released'}
+                            {t.releasedAt ? `Released ${formatLocalDate(t.releasedAt)}` : 'Released'}
                           </span>
                         </span>
                         <span className="flex items-center gap-3">

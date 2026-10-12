@@ -28,7 +28,7 @@ import { destinationName, memberBudgets } from '@/domain/queries'
 import { upcomingPayments } from '@/domain/schedules'
 import { requestStatusFor } from '@/domain/status'
 import { formatRelative, formatShortDate } from '@/lib/format'
-import { formatLocalDateTime } from '@/lib/local-time'
+import { formatLocalDate, formatLocalDateTime } from '@/lib/local-time'
 
 export default function MemberOverviewPage() {
   const { state, now, user, userId } = useViatikState()
@@ -204,7 +204,7 @@ export default function MemberOverviewPage() {
                 {
                   label: 'Last received',
                   value: lastReceived
-                    ? `+${formatUsd(lastReceived.amount)} · ${formatShortDate(lastReceived.completedAt ?? '')}`
+                    ? `+${formatUsd(lastReceived.amount)} · ${formatLocalDate(lastReceived.completedAt ?? '', { withYear: false })}`
                     : 'Nothing yet',
                   hint: lastReceived?.memo,
                 },

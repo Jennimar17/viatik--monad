@@ -53,7 +53,8 @@ import { agencyCapital, agreementBadge, budgetUsage, isFullyReleased, spendByMon
 import { agencyStatus, budgetStatus } from '@/domain/status'
 import type { FundingAgreement, SpendingCategory } from '@/domain/types'
 import { seriesColor, seriesKey } from '@/lib/chart-colors'
-import { formatDate, pluralize } from '@/lib/format'
+import { pluralize } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 export default function InvestorAgencyDetailPage() {
   // useSearchParams (the ?tab= deep link) needs a boundary for the static prerender.
@@ -455,7 +456,7 @@ function InvestorAgencyDetail() {
                         <PersonAvatar name={userName(state, m.userId)} size="sm" />
                         <span className="flex min-w-0 flex-1 flex-col">
                           <span className="truncate text-sm font-medium">{userName(state, m.userId)}</span>
-                          <span className="text-xs text-subtle">Since {formatDate(m.createdAt)}</span>
+                          <span className="text-xs text-subtle">Since {formatLocalDate(m.createdAt)}</span>
                         </span>
                         <Tag>{roleLabel[m.role]}</Tag>
                       </li>
@@ -469,7 +470,7 @@ function InvestorAgencyDetail() {
                         <span className="flex min-w-0 flex-1 flex-col">
                           <span className="truncate text-sm font-medium">{i.name}</span>
                           <span className="truncate text-xs text-subtle">
-                            {i.email} · invited {formatDate(i.createdAt)}
+                            {i.email} · invited {formatLocalDate(i.createdAt)}
                           </span>
                         </span>
                         <Tag>{roleLabel[i.role]}</Tag>

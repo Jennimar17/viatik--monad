@@ -35,7 +35,8 @@ import { cents, formatUsd, type Cents } from '@/domain/money'
 import { roleLabel } from '@/domain/permissions'
 import { holderSpentInPeriod, memberHeld, spendByMonth } from '@/domain/selectors'
 import { requestStatusFor } from '@/domain/status'
-import { formatDate, formatRelative, pluralize } from '@/lib/format'
+import { formatRelative, pluralize } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 export default function MemberDetailPage() {
   const { memberId } = useParams<{ memberId: string }>()
@@ -122,7 +123,7 @@ export default function MemberDetailPage() {
             <Tag>{roleLabel[membership.role]}</Tag>
             {removed ? <StatusBadge status={{ label: 'Removed', tone: 'neutral' }} size="md" /> : null}
             <span className="text-sm text-subtle">
-              Joined {formatDate(membership.createdAt)} · {user.timeZone.replace(/_/g, ' ')}
+              Joined {formatLocalDate(membership.createdAt)} · {user.timeZone.replace(/_/g, ' ')}
             </span>
           </>
         }
@@ -137,7 +138,7 @@ export default function MemberDetailPage() {
 
       {removed ? (
         <div className="rounded-xl border border-border bg-mist/5 px-4 py-3 text-sm text-muted-foreground">
-          Access removed{membership.revokedAt ? ` on ${formatDate(membership.revokedAt)}` : ''}. Their
+          Access removed{membership.revokedAt ? ` on ${formatLocalDate(membership.revokedAt)}` : ''}. Their
           allowances stopped and pending requests were cancelled. Payments already made are not affected.
         </div>
       ) : null}

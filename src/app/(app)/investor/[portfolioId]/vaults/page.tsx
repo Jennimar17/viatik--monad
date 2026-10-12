@@ -41,7 +41,8 @@ import type { Movement, Vault } from '@/domain/types'
 import { networkInfo } from '@/domain/verification'
 import { publicEnv } from '@/lib/env'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { formatDate, formatDateTime, formatMon, formatShortDate, pluralize, shortHash } from '@/lib/format'
+import { formatDateTime, formatMon, pluralize, shortHash } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 const VAULT_MOVEMENTS: ReadonlySet<Movement['kind']> = new Set([
   'deposit',
@@ -535,7 +536,10 @@ function yieldStatus(data: NetworkYield | undefined): StatusDescriptor {
   if (!data.available) return { label: 'Can’t be read right now', tone: 'neutral' }
   if (noWei(data.stakeWei)) return { label: 'No test stake right now', tone: 'neutral' }
   if (!data.validator.active) return { label: 'Not earning right now', tone: 'warning' }
-  return { label: `Earning since ${formatShortDate(data.activeFrom.at)}`, tone: 'success' }
+  return {
+    label: `Earning since ${formatLocalDate(data.activeFrom.at, { withYear: false })}`,
+    tone: 'success',
+  }
 }
 
 /**
@@ -606,7 +610,7 @@ function YieldAssetSheet({
                 { label: 'Rewards so far', value: formatMon(read.rewardsWei), hint: 'Unclaimed' },
                 {
                   label: 'Earning since',
-                  value: `Epoch ${read.activeFrom.epoch} · ${formatDate(read.activeFrom.at)}`,
+                  value: `Epoch ${read.activeFrom.epoch} · ${formatLocalDate(read.activeFrom.at)}`,
                 },
                 { label: 'Current epoch', value: String(read.epoch) },
                 {

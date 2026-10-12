@@ -26,6 +26,7 @@ import { formatUsd, sum, ZERO, type Cents } from '@/domain/money'
 import { receiptFor } from '@/domain/queries'
 import type { Expense, Id, ISODate } from '@/domain/types'
 import { formatRelative, formatShortDate, pluralize } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 import { cn } from '@/lib/utils'
 
 /**
@@ -354,7 +355,7 @@ export function AdvanceReceiptsAndReturns({
                     Returned to {agencyName}
                   </span>
                   <span className="truncate text-xs text-subtle">
-                    {formatShortDate(movement.createdAt)} · Unused
+                    {formatLocalDate(movement.createdAt, { withYear: false })} · Unused
                   </span>
                 </span>
                 <Amount value={movement.amount} size="sm" />

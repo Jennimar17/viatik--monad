@@ -12,7 +12,7 @@ import { shortAddress } from '@/domain/address'
 import { cents } from '@/domain/money'
 import { receiptFor } from '@/domain/queries'
 import type { Location, Movement, ViatikState } from '@/domain/types'
-import { formatShortDate } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 import { sameAddress } from './member-own-account'
 
@@ -149,7 +149,7 @@ export function MemberBalanceMovements({
                   {line.title}
                 </span>
                 <span className="truncate text-xs text-subtle">
-                  {line.detail} · {formatShortDate(movement.createdAt)}
+                  {line.detail} · {formatLocalDate(movement.createdAt, { withYear: false })}
                 </span>
               </span>
               <Amount

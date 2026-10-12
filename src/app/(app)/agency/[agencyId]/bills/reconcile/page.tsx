@@ -17,6 +17,7 @@ import { destinationName, receiptFor, recipientName } from '@/domain/queries'
 import { daysBetween } from '@/domain/selectors'
 import type { Bill, Payment } from '@/domain/types'
 import { formatDate } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 import { cn } from '@/lib/utils'
 
 /** Match score: same vendor and amount, close dates. Deterministic, no AI. */
@@ -181,7 +182,7 @@ export default function ReconcilePage() {
                             {recipientName(state, p.recipient)}
                           </span>
                           <span className="truncate text-xs text-subtle">
-                            {p.memo} · {formatDate(p.completedAt ?? p.scheduledFor)}
+                            {p.memo} · {formatLocalDate(p.completedAt ?? p.scheduledFor)}
                           </span>
                         </span>
                         <span className="flex flex-col items-end gap-1">

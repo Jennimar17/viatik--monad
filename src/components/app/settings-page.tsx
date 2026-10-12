@@ -33,8 +33,8 @@ import { agencyAgreementSummary, agencyTeamSize, governingAgreement, userName } 
 import { agreementStatus } from '@/domain/status'
 import { networkInfo } from '@/domain/verification'
 import { publicEnv } from '@/lib/env'
-import { formatDate, pluralize, shortHash } from '@/lib/format'
-import { localTimeZone } from '@/lib/local-time'
+import { pluralize, shortHash } from '@/lib/format'
+import { formatLocalDate, localTimeZone } from '@/lib/local-time'
 import { useSession } from '@/lib/session'
 import { timeZoneOptions } from '@/lib/time-zones'
 
@@ -150,7 +150,7 @@ function Settings() {
                 <span className="truncate font-medium">{user?.email}</span>
                 <span className="text-xs text-subtle">
                   {roleLabel[role]}
-                  {user ? ` · since ${formatDate(user.createdAt)}` : ''}
+                  {user ? ` · since ${formatLocalDate(user.createdAt)}` : ''}
                 </span>
               </div>
             </div>
@@ -295,7 +295,7 @@ function Settings() {
                 { label: 'Display currency', value: portfolio.baseCurrency },
                 { label: 'Time zone', value: portfolio.timeZone.replace(/_/g, ' ') },
                 { label: 'Agencies', value: pluralize(agencies.length, 'agency', 'agencies') },
-                { label: 'Created', value: formatDate(portfolio.createdAt) },
+                { label: 'Created', value: formatLocalDate(portfolio.createdAt) },
               ]}
             />
           </div>

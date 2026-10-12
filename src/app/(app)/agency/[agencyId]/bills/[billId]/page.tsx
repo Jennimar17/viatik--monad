@@ -42,7 +42,7 @@ import { accountBalance, budgetUsage } from '@/domain/selectors'
 import { scheduleState } from '@/domain/schedules'
 import { billStatus, scheduleStatus } from '@/domain/status'
 import { dueLabel, formatDate, formatDateTime } from '@/lib/format'
-import { formatLocalDateTime, fromLocalInputs } from '@/lib/local-time'
+import { formatLocalDate, formatLocalDateTime, fromLocalInputs } from '@/lib/local-time'
 import { cn } from '@/lib/utils'
 
 const NO_BUDGET = 'none'
@@ -226,7 +226,7 @@ export default function BillDetailPage() {
                 { label: 'Payment destination', value: vendor?.settlementLabel },
                 {
                   label: 'Added by',
-                  value: `${userName(state, bill.createdBy)} · ${formatDate(bill.createdAt)}`,
+                  value: `${userName(state, bill.createdBy)} · ${formatLocalDate(bill.createdAt)}`,
                 },
                 ...(bill.notes ? [{ label: 'Notes', value: bill.notes }] : []),
               ]}

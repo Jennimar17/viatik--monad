@@ -18,7 +18,7 @@ import { formatUsd } from '@/domain/money'
 import { accountName, budgetName, isOutsidePayment, receiptFor } from '@/domain/queries'
 import { networkInfo } from '@/domain/verification'
 import { publicEnv } from '@/lib/env'
-import { formatDate } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 /**
  * Attach the invoice of a payment made outside Viatik (`addPaymentProof`). One
@@ -105,7 +105,7 @@ export function AddInvoiceSheet({
         onClosed?.()
       }}
       title="Add invoice"
-      description={`${payee} · paid ${formatDate(paidAt(payment))}`}
+      description={`${payee} · paid ${formatLocalDate(paidAt(payment))}`}
       summary={{
         what: `The invoice is attached to the ${amount} paid to ${payee} outside Viatik. Its fingerprint is recorded once and the Investor can see it.`,
         amount: payment.amount,

@@ -19,6 +19,7 @@ import { useViatikState } from '@/data/react'
 import { useEvidenceReader } from '@/data/use-evidence-reader'
 import { cents, formatUsd } from '@/domain/money'
 import { formatDate } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 import { cn } from '@/lib/utils'
 
 export type { EvidenceReadProposal }
@@ -174,7 +175,7 @@ export function KimiReader({
                     Kimi read this sample {words.document} before the demo was published.
                   </p>
                   <p className="text-xs text-pretty text-subtle">
-                    Recorded with {recording.model} on {formatDate(recording.recordedAt)}. The demo sends
+                    Recorded with {recording.model} on {formatLocalDate(recording.recordedAt)}. The demo sends
                     nothing to Kimi.
                   </p>
                 </>
@@ -332,7 +333,9 @@ function ProposalCard({
           </p>
           <p className="text-xs text-subtle">
             {proposal.confidence >= 0.8 ? 'A clear reading' : 'An unsure reading: check each detail'} ·{' '}
-            {recorded ? `Recorded reading from Kimi (${model}) · ${formatDate(recorded.recordedAt)}` : model}
+            {recorded
+              ? `Recorded reading from Kimi (${model}) · ${formatLocalDate(recorded.recordedAt)}`
+              : model}
           </p>
         </div>
       </div>

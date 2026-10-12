@@ -13,7 +13,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/viatik/layout'
 import { StatusBadge } from '@/components/viatik/status'
-import { formatDate } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 type PasskeyAccount = Extract<LinkedAccountWithMetadata, { type: 'passkey' }>
 
@@ -41,7 +41,7 @@ function deviceLabel(passkey: PasskeyAccount) {
   return browser && os ? `${browser} on ${os}` : (browser ?? os ?? 'Passkey')
 }
 
-const at = (date: Date | null) => (date ? formatDate(new Date(date).toISOString()) : '—')
+const at = (date: Date | null) => (date ? formatLocalDate(new Date(date).toISOString()) : '—')
 
 /**
  * Real sign-in methods of a Privy account. A passkey is added to an account
