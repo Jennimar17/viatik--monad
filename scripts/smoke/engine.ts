@@ -5794,6 +5794,48 @@ async function fundingCap(t: Checker) {
     JSON.stringify(before),
   )
 
+  // N0. The engine funds less than the ledger checks, so the server holds the agreement while a
+  // funding of it, or a rejection of one of its milestones, waits to be signed.
+  const elenaFunds = prepare(w, U.elena, 'fundAgreement', { agreementId: ARC_AGREEMENT, amount: usd(1_000) })
+  const marcusFunds = prepare(w, U.marcus, 'fundAgreement', {
+    agreementId: ARC_AGREEMENT,
+    amount: usd(1_000),
+  })
+  const fundingOpen = elenaFunds.open()
+  t.check(
+    "N0: Marcus's funding of the agreement waits for Elena's",
+    sharesAny(marcusFunds.held, fundingOpen) && marcusFunds.held.has(`agreement:${ARC_AGREEMENT}`),
+    [...marcusFunds.held].join(', '),
+  )
+  const rejection = prepare(w, U.elena, 'requestMilestoneChanges', {
+    milestoneId: DEMO.milestones.arc2,
+    note: 'The prototype misses the agreed scope.',
+    reject: true,
+  })
+  t.check(
+    'N0: …and so does a rejection of one of its milestones, both ways',
+    sharesAny(rejection.held, fundingOpen) && sharesAny(marcusFunds.held, rejection.open()),
+    [...rejection.held].join(', '),
+  )
+  const changes = prepare(w, U.elena, 'requestMilestoneChanges', {
+    milestoneId: DEMO.milestones.arc2,
+    note: 'Please add the test plan.',
+  })
+  t.check(
+    'N0: a request for changes, which leaves the cap as it was, does not wait',
+    !sharesAny(changes.held, fundingOpen),
+    [...changes.held].join(', '),
+  )
+  const lumenFunds = prepare(w, U.marcus, 'fundAgreement', {
+    agreementId: DEMO.agreements.lumen,
+    amount: usd(1_000),
+  })
+  t.check(
+    "N0: a funding of Lumen's agreement does not wait for one of Arc's",
+    !sharesAny(lumenFunds.held, fundingOpen) && !sharesAny(elenaFunds.held, lumenFunds.open()),
+    [...lumenFunds.held].join(', '),
+  )
+
   // N1. Elena rejects the milestone of Tranche 2, under review.
   await w.run(
     U.elena,
