@@ -1369,6 +1369,17 @@ export function addBill(tx: Tx, input: AddBillInput): Bill {
   if (destination.agencyId !== input.agencyId)
     throw new DomainError('forbidden', 'This vendor belongs to another Agency.')
   requirePayable(destination)
+  // Paid from a budget, a bill comes out of the budget's own account, and the budget must pay this vendor.
+  const budget = input.budgetId ? tx.find('budgets', input.budgetId, 'Budget') : undefined
+  if (budget && budget.agencyId !== input.agencyId)
+    throw new DomainError('forbidden', 'The budget belongs to another Agency.')
+  if (
+    budget &&
+    budget.allowedDestinationIds.length > 0 &&
+    !budget.allowedDestinationIds.includes(destination.id)
+  ) {
+    throw new DomainError('policy_rejected', 'This payment destination is not approved for this budget.')
+  }
   // A bill's invoice documents one purchase: it cannot also be a member's receipt or another invoice.
   requireUnusedReceipts(tx, input.agencyId, [input.document])
   const bill: Bill = {
@@ -1380,8 +1391,8 @@ export function addBill(tx: Tx, input: AddBillInput): Bill {
     dueDate: input.dueDate,
     amount: input.amount,
     category: input.category,
-    accountId: input.accountId,
-    budgetId: input.budgetId,
+    accountId: budget ? budget.sourceAccountId : input.accountId,
+    budgetId: budget?.id,
     status: 'to_pay',
     document: evidenceFrom(input.document, tx.userId, tx.now),
     notes: input.notes?.trim() || undefined,

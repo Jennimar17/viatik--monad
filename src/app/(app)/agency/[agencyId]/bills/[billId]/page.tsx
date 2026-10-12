@@ -37,7 +37,7 @@ import { StatusBadge } from '@/components/viatik/status'
 import { useCommand, useViatikState } from '@/data/react'
 import { categoryLabel } from '@/domain/labels'
 import { formatUsd, ZERO } from '@/domain/money'
-import { accountName, billState, budgetName, receiptFor, userName } from '@/domain/queries'
+import { accountName, billState, budgetName, budgetsForVendor, receiptFor, userName } from '@/domain/queries'
 import { accountBalance, budgetUsage } from '@/domain/selectors'
 import { scheduleState } from '@/domain/schedules'
 import { billStatus, scheduleStatus } from '@/domain/status'
@@ -104,9 +104,13 @@ export default function BillDetailPage() {
   const reconciliation = state.reconciliations.find((r) => r.billId === bill.id)
   const status = billState(bill, now)
   const accounts = state.accounts.filter((a) => a.agencyId === agencyId && a.status === 'active')
-  const budgets = state.budgets.filter(
-    (b) => b.agencyId === agencyId && b.status === 'active' && b.allowedCategories.includes(bill.category),
-  )
+  // Only budgets that can pay this vendor: the others refuse it when it is paid.
+  const budgets = vendor
+    ? budgetsForVendor(state, agencyId, vendor, bill.category)
+    : state.budgets.filter(
+        (b) =>
+          b.agencyId === agencyId && b.status === 'active' && b.allowedCategories.includes(bill.category),
+      )
   const chosenBudget = budgets.find((b) => b.id === budgetId)
   const available = chosenBudget
     ? budgetUsage(state, chosenBudget, now).available

@@ -1,17 +1,21 @@
 import { cents, clampToZero, sum, type Cents } from './money'
-import { budgetUsage, committedAt } from './selectors'
+import { accountBalance, budgetUsage, committedAt } from './selectors'
 import type {
+  Account,
   Actor,
   AgreementStatus,
   AllowanceHolder,
   Bill,
+  Budget,
   Evidence,
   FundingAgreement,
   Id,
   Payment,
+  PaymentDestination,
   PaymentRecipient,
   PaymentRequest,
   RequestDestination,
+  SpendingCategory,
   Vault,
   ViatikState,
 } from './types'
@@ -202,6 +206,39 @@ export function adminApprovals(state: ViatikState, agencyId: Id) {
     mine: pending.filter((r) => !isException(state, r)),
     withInvestor: pending.filter((r) => isException(state, r)),
   }
+}
+
+/**
+ * The active budgets of an Agency that can pay a vendor's bill in a category: they allow the
+ * category and, when they keep a vendor list, name the vendor (paying it refuses the others).
+ */
+export function budgetsForVendor(
+  state: ViatikState,
+  agencyId: Id,
+  vendor: Pick<PaymentDestination, 'id'>,
+  category: SpendingCategory,
+): Budget[] {
+  return state.budgets.filter(
+    (b) =>
+      b.agencyId === agencyId &&
+      b.status === 'active' &&
+      b.allowedCategories.includes(category) &&
+      (b.allowedDestinationIds.length === 0 || b.allowedDestinationIds.includes(vendor.id)),
+  )
+}
+
+/**
+ * The account a new bill is paid from when no budget pays it, never an empty one while another
+ * holds money: the Vendors account, else the Operations account, else the one holding the most.
+ */
+export function defaultBillAccount(state: ViatikState, agencyId: Id): Account | undefined {
+  const accounts = state.accounts.filter((a) => a.agencyId === agencyId && a.status === 'active')
+  const funded = (a: Account) => accountBalance(state, a.id) > 0
+  return (
+    accounts.find((a) => a.template === 'vendors' && funded(a)) ??
+    accounts.find((a) => a.template === 'operations' && funded(a)) ??
+    [...accounts].sort((a, b) => accountBalance(state, b.id) - accountBalance(state, a.id))[0]
+  )
 }
 
 export function billState(bill: Bill, now: string): Bill['status'] | 'overdue' {

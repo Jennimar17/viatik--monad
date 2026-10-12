@@ -38,6 +38,8 @@ import {
   adminApprovals,
   agencyAgreementSummary,
   agencyTeamSize,
+  budgetsForVendor,
+  defaultBillAccount,
   governingAgreement,
   investorApprovals,
   isException,
@@ -142,6 +144,9 @@ export default async function engine(t: Checker) {
   )
   await t.scenario('K6. The server holds the files and bills of operations waiting to be signed', () =>
     filesAndBillsHeld(t),
+  )
+  await t.scenario('K7. Bills paid from a budget: the budgets that can pay the vendor', () =>
+    billsFromBudgets(t),
   )
   await t.scenario("L. The seed's demo story, as the read models show it, and going on", () => seedStory(t))
 }
@@ -4255,6 +4260,113 @@ async function filesAndBillsHeld(t: Checker) {
     { billId: bill.id },
     'invalid_state',
     "K6 Maya's payment of the bill, run again once it is reconciled (its confirmation would not fit)",
+  )
+}
+
+// ─── K7. Bills paid from a budget ────────────────────────────────────────────
+
+/**
+ * K7. Add bill offers the budgets that can pay the vendor (and picks it when only one can), never
+ * starts on an empty account, and a bill paid from a budget keeps the budget's own account.
+ */
+async function billsFromBudgets(t: Checker) {
+  const w = new World(t, 'engine-k7')
+  const vendorOf = (id: Id) =>
+    must(
+      w.state.destinations.find((d) => d.id === id),
+      `vendor ${id}`,
+    )
+  const fitting = (id: Id) =>
+    budgetsForVendor(w.state, ARC, vendorOf(id), vendorOf(id).category)
+      .map((b) => b.id)
+      .sort()
+  checkSame(t, 'K7 Vertex Cloud: only Tools and software can pay it, so it is picked', fitting(D.vertex), [
+    B.arcTools,
+  ])
+  const canvasly = fitting(D.canvasly)
+  t.check(
+    'K7 Canvasly: Tools and software and an open budget for software can, so none is picked',
+    canvasly.length > 1 && canvasly.includes(B.arcTools) && canvasly.includes(B.arcPurchases),
+    canvasly.join(', '),
+  )
+  checkSame(t, 'K7 Atlas Legal: no budget can pay it', fitting(D.atlas), [])
+  t.check(
+    'K7 a budget whose vendor list does not name the vendor is left out',
+    !budgetsForVendor(w.state, ARC, vendorOf(D.vertex), 'travel').some((b) => b.id === B.arcTravel),
+  )
+
+  // Never an empty account by default.
+  const start = must(defaultBillAccount(w.state, ARC), 'the default account')
+  t.check(
+    'K7 the default account holds money',
+    accountBalance(w.state, start.id) > 0 ||
+      w.state.accounts.every((a) => a.agencyId !== ARC || accountBalance(w.state, a.id) === 0),
+    `${start.name}: ${accountBalance(w.state, start.id)}`,
+  )
+  if (accountBalance(w.state, ACC.arcVendors) === 0)
+    t.check('K7 an empty Vendors account is not the default', start.id !== ACC.arcVendors)
+  await w.gather(U.maya, ACC.arcVendors, usd(50))
+  t.check(
+    'K7 the Vendors account is the default once it holds money',
+    defaultBillAccount(w.state, ARC)?.id === ACC.arcVendors,
+  )
+
+  // The engine: a bill paid from a budget is stored with the budget's account.
+  const bill = (n: number, budgetId?: Id) => ({
+    agencyId: ARC,
+    destinationId: D.vertex,
+    number: `K7-00${n}`,
+    issueDate: dayBefore(w.now, 2),
+    dueDate: dayBefore(w.now, -10),
+    amount: usd(15),
+    category: 'cloud' as const,
+    accountId: ACC.arcOperations,
+    ...(budgetId ? { budgetId } : {}),
+    document: file(`k7-vertex-${n}.pdf`),
+  })
+  const fromTools = await w.run(
+    U.maya,
+    'addBill',
+    bill(1, B.arcTools),
+    'K7 Maya adds a Vertex bill on Tools and software',
+    { ops: [] },
+  )
+  t.check(
+    "K7 it keeps the budget and the budget's own account, not the one sent",
+    fromTools.result.budgetId === B.arcTools && fromTools.result.accountId === ACC.arcVendors,
+    `${fromTools.result.budgetId} / ${fromTools.result.accountId}`,
+  )
+  w.refuse(
+    U.maya,
+    'addBill',
+    bill(2, B.arcTravel),
+    'policy_rejected',
+    'K7 a bill on a budget whose vendor list does not name the vendor',
+  )
+  w.refuse(U.maya, 'addBill', bill(3, B.lumenInfra), 'forbidden', 'K7 a bill on a budget of another Agency')
+  const plain = await w.run(U.maya, 'addBill', bill(4), 'K7 Maya adds a Vertex bill with no budget', {
+    ops: [],
+  })
+  t.check(
+    'K7 with no budget it keeps the account chosen',
+    plain.result.budgetId === undefined && plain.result.accountId === ACC.arcOperations,
+  )
+  await w.fund(U.maya, B.arcTools, usd(15))
+  const paid = await w.run(
+    U.maya,
+    'payBill',
+    { billId: fromTools.result.id },
+    'K7 Maya pays the bill from Tools and software',
+    { ops: ['pay'] },
+  )
+  const vendors = must(
+    w.state.accounts.find((a) => a.id === ACC.arcVendors),
+    'the Vendors account',
+  )
+  t.check(
+    'K7 its receipt names the account the money came from',
+    paid.receipts.some((r) => r.fromLabel === `${vendors.name} · ${budgetOf(w.state, B.arcTools).name}`),
+    paid.receipts.map((r) => r.fromLabel).join(', '),
   )
 }
 
