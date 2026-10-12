@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Figma invoice (sample)</title>
+    <!-- Sample invoice for the Viatik demo, not issued by Figma. Rendered once to public/demo/kimi/figma-invoice.pdf and read by Kimi. -->
+    <style>
+      @page {
+        size: A4;
+        margin: 22mm 18mm;
+      }
+      body {
+        margin: 0;
+        color: #1b1b1f;
+        font:
+          11pt/1.5 Arial,
+          Helvetica,
+          sans-serif;
+      }
+      h1 {
+        font-size: 20pt;
+        margin: 0 0 4pt;
+      }
+      .muted {
+        color: #5c5c66;
+      }
+      .sample {
+        margin: 6pt 0 18pt;
+        padding: 6pt 9pt;
+        border: 1px solid #c9c9d1;
+        font-size: 9.5pt;
+        color: #5c5c66;
+      }
+      .grid {
+        display: flex;
+        justify-content: space-between;
+        gap: 24pt;
+        margin-bottom: 18pt;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 6pt;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 6pt 4pt;
+        border-bottom: 1px solid #dedee4;
+        vertical-align: top;
+      }
+      th:last-child,
+      td:last-child {
+        text-align: right;
+      }
+      .totals {
+        width: 46%;
+        margin-left: auto;
+        margin-top: 10pt;
+      }
+      .totals div {
+        display: flex;
+        justify-content: space-between;
+        padding: 3pt 0;
+      }
+      .grand {
+        font-weight: bold;
+        font-size: 12.5pt;
+        border-top: 1px solid #1b1b1f;
+        margin-top: 4pt;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Figma, Inc.</h1>
+    <div class="muted">San Francisco, CA, USA</div>
+    <div class="sample">Sample made for the Viatik demo. Not issued by Figma.</div>
+
+    <div class="grid">
+      <div>
+        <strong>Invoice</strong><br />
+        Invoice number: INV-ARC-2026-1001<br />
+        Invoice date: Oct 1, 2026<br />
+        Date paid: Oct 1, 2026
+      </div>
+      <div>
+        <strong>Bill to</strong><br />
+        Arc Studio<br />
+        Maya Chen
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th>Period</th>
+          <th>Qty</th>
+          <th>Unit price</th>
+          <th>Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Figma Professional — editor seat, monthly</td>
+          <td>Oct 1 – Oct 31, 2026</td>
+          <td>3</td>
+          <td>15.00 USD</td>
+          <td>45.00 USD</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="totals">
+      <div><span>Subtotal</span><span>45.00 USD</span></div>
+      <div><span>Tax</span><span>0.00 USD</span></div>
+      <div class="grand"><span>Total</span><span>45.00 USD</span></div>
+      <div><span>Paid</span><span>45.00 USD</span></div>
+    </div>
+
+    <p>Payment method: USD stablecoin transfer to 0xbC04…6DA5 (Monad Testnet)</p>
+    <p>Billed monthly. Next charge: Nov 1, 2026</p>
+  </body>
+</html>

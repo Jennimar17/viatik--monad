@@ -359,6 +359,8 @@ function ReadInvoice({
         file={file}
         agencyId={agencyId}
         purpose="invoice"
+        sample="figma-invoice"
+        onSampleFile={(sample) => setFiles([sample])}
         useLabel="Add it to this payment"
         canUse={(proposal) => Boolean(proposal.match)}
         usedText="Add invoice opened for the payment Kimi proposed. Check it there before you attach the file."

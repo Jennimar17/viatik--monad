@@ -129,7 +129,8 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024
 /** The types the private evidence store accepts. */
 const FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/heic']
 
-const newKey = () =>
+/** A key for a file that joins a form's list (`DraftFile.key`). */
+export const newKey = () =>
   globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`
 
 /**
