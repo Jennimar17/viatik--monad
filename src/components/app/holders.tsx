@@ -32,6 +32,18 @@ export function holderOptions(state: ViatikState, agencyId: Id, taken: Allowance
   return [...people, ...agents].filter((option) => !takenKeys.has(option.value as HolderKey))
 }
 
+/** A person's role in an Agency (an allowance can be held by an Admin too), for lists of holders. */
+export function personRoleLabel(state: ViatikState, agencyId: Id, userId: Id): string {
+  const membership = state.memberships.find(
+    (m) =>
+      m.userId === userId &&
+      m.status === 'active' &&
+      m.scope.kind === 'agency' &&
+      m.scope.agencyId === agencyId,
+  )
+  return membership ? roleLabel[membership.role] : 'No longer in the Agency'
+}
+
 export function HolderAvatar({
   state,
   holder,

@@ -78,6 +78,10 @@ export type Agency = {
   createdAt: ISODate
   /** Scoped states only: the governing agreement's exception threshold, for viewers who cannot see agreements. */
   exceptionThreshold?: Cents
+  /** Scoped states only (a Member's view): the governing agreement's title and status, never its terms. */
+  fundingAgreement?: { title: string; status: AgreementStatus }
+  /** Scoped states only (a Member's view): how many people are active in the Agency, never who. */
+  teamSize?: number
 }
 
 // ─── Funding ─────────────────────────────────────────────────────────────────
@@ -269,7 +273,10 @@ export type PaymentDestination = {
   name: string
   kind: 'vendor' | 'service' | 'contractor'
   category: SpendingCategory
-  /** Generic, country-neutral settlement label. */
+  /**
+   * The payment reference: an optional note for people (e.g. a customer number), empty when
+   * not set. Never sent to the ledger and not read by any rule.
+   */
   settlementLabel: string
   website?: string
   /** Paused and archived destinations cannot be paid; `approved` ones can. */
@@ -685,6 +692,9 @@ export type Activity = {
 /** A notification screens react to, besides showing it (absent on ordinary ones). */
 export type NotificationKind = 'funds_arrived'
 
+/** What a notification asks its recipients to decide. */
+export type NotificationSubject = { kind: 'request' | 'milestone' | 'tranche' | 'agreement'; id: Id }
+
 export type Notification = {
   id: Id
   userId: Id
@@ -695,6 +705,8 @@ export type Notification = {
   readAt?: ISODate
   /** `funds_arrived`: money reached the person's Viatik account (from Alchemy), so its balance is read again. */
   kind?: NotificationKind
+  /** Absent on the ones that only tell. Once someone decides it, it is read for everyone it went to. */
+  subject?: NotificationSubject
 }
 
 export type Invitation = {

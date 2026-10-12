@@ -24,11 +24,11 @@ import { useViatikState } from '@/data/react'
 import { budgetPeriodUnit, categoryLabel } from '@/domain/labels'
 import { formatUsd, min, sum } from '@/domain/money'
 import { describeBudgetPolicy } from '@/domain/policy'
-import { destinationName, memberBudgets } from '@/domain/queries'
+import { destinationName, exceptionThresholdOf, memberBudgets } from '@/domain/queries'
 import { upcomingPayments } from '@/domain/schedules'
 import { requestStatusFor } from '@/domain/status'
 import { formatRelative, formatShortDate } from '@/lib/format'
-import { formatLocalDateTime } from '@/lib/local-time'
+import { formatLocalDate, formatLocalDateTime } from '@/lib/local-time'
 
 export default function MemberOverviewPage() {
   const { state, now, user, userId } = useViatikState()
@@ -204,7 +204,7 @@ export default function MemberOverviewPage() {
                 {
                   label: 'Last received',
                   value: lastReceived
-                    ? `+${formatUsd(lastReceived.amount)} · ${formatShortDate(lastReceived.completedAt ?? '')}`
+                    ? `+${formatUsd(lastReceived.amount)} · ${formatLocalDate(lastReceived.completedAt ?? '', { withYear: false })}`
                     : 'Nothing yet',
                   hint: lastReceived?.memo,
                 },
@@ -309,6 +309,7 @@ export default function MemberOverviewPage() {
                   destinationNames: main.budget.allowedDestinationIds.map((id) => destinationName(state, id)),
                   categoryLabels: categoryLabel,
                   allowance: main.allowance,
+                  exceptionThreshold: exceptionThresholdOf(state, agencyId),
                 }).slice(1),
               ]}
             />

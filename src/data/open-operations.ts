@@ -13,6 +13,12 @@ const STORAGE_KEY = 'viatik:open-operations'
 /** The server keeps an operation's key for a day; older entries cannot be confirmed anymore. */
 const KEEP_MS = 24 * 60 * 60 * 1000
 
+/**
+ * Commands that never wait for a signature (they move nothing). An entry for one was left by an
+ * empty answer read as unsettled: there is nothing to confirm, so it is dropped.
+ */
+const NEVER_SIGNED: ReadonlySet<string> = new Set(['markNotificationsRead'])
+
 let memory: OpenOperation[] = []
 
 function read(): OpenOperation[] {
@@ -23,7 +29,9 @@ function read(): OpenOperation[] {
   } catch {
     // Unavailable: what this tab wrote is still in memory.
   }
-  return all.filter((operation) => Date.now() - Date.parse(operation.at) < KEEP_MS)
+  return all.filter(
+    (operation) => Date.now() - Date.parse(operation.at) < KEEP_MS && !NEVER_SIGNED.has(operation.name),
+  )
 }
 
 function write(all: OpenOperation[]) {

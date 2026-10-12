@@ -29,6 +29,7 @@ import { agentSpentToday, committedAt, lastMonths } from '@/domain/selectors'
 import { agentStatus } from '@/domain/status'
 import type { AgentDecision, PaymentRequest } from '@/domain/types'
 import { formatDate, formatDateTime, fromDateInput, pluralize } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 const DAY = 86_400_000
 const DAYS_SHOWN = 14
@@ -99,10 +100,10 @@ export default function AgentDetailPage() {
   })
   const hasSpend = days.some((d) => d.spent > 0)
   const month = lastMonths(now, 1)[0]
-  const monthTotal = sum(
-    requests.filter((r) => month && committedAt(r) >= month.start && committedAt(r) < month.end),
-    (r) => r.amount,
+  const thisMonth = requests.filter(
+    (r) => month && committedAt(r) >= month.start && committedAt(r) < month.end,
   )
+  const monthTotal = sum(thisMonth, (r) => r.amount)
   const denied = decisions.filter((d) => d.outcome === 'rejected').length
   const agencyDestinations = state.destinations.filter(
     (d) =>
@@ -230,7 +231,7 @@ export default function AgentDetailPage() {
           hint={`Daily cap ${formatUsd(agent.dailyCap, { withCode: true })}`}
           emphasis
         />
-        <KpiTile label="This month" value={monthTotal} hint={pluralize(requests.length, 'payment')} />
+        <KpiTile label="This month" value={monthTotal} hint={pluralize(thisMonth.length, 'payment')} />
         <KpiTile
           label="Decisions logged"
           value={<span className="font-display text-2xl leading-none">{decisions.length}</span>}
@@ -283,7 +284,7 @@ export default function AgentDetailPage() {
                   label: 'Working balance limit',
                   value: formatUsd(agent.workingBalanceLimit, { withCode: true }),
                 },
-                { label: 'Created', value: formatDate(agent.createdAt) },
+                { label: 'Created', value: formatLocalDate(agent.createdAt) },
               ]}
             />
           </div>

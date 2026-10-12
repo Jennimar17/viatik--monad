@@ -1,9 +1,9 @@
 import { parseAddress, shortAddress } from '../address'
 import { evidenceSetHash } from '../evidence'
 import { newId } from '../ids'
-import { cents, sum, type Cents } from '../money'
+import { cents, min, sum, type Cents } from '../money'
 import { activeOperationsAccount } from '../queries'
-import { agreementCapital, vaultBalance } from '../selectors'
+import { agreementCapital, isFullyReleased, vaultBalance } from '../selectors'
 import { assertTransition, canTransitionMilestone, canTransitionTranche } from '../status'
 import type {
   Agency,
@@ -282,6 +282,7 @@ export function createAgreement(tx: Tx, input: CreateAgreementInput): FundingAgr
     'New funding agreement',
     `${agreement.title} (${usdText(agreement.committed)}) is ready for your acceptance.`,
     `/agency/${agency.id}/funding?agreement=${agreement.id}`,
+    { subject: { kind: 'agreement', id: agreement.id } },
   )
   return agreement
 }
@@ -292,6 +293,7 @@ export function acceptAgreement(tx: Tx, input: { agreementId: Id }) {
   if (agreement.status !== 'pending_acceptance')
     throw new DomainError('invalid_state', 'This agreement is not waiting for acceptance.')
   agreement.status = 'active'
+  tx.resolve({ kind: 'agreement', id: agreement.id })
   const agency = tx.find('agencies', agreement.agencyId, 'Agency')
   if (agency.status === 'onboarding') agency.status = 'active'
   tx.activity(
@@ -453,9 +455,26 @@ export function fundAgreement(tx: Tx, input: { agreementId: Id; amount: Cents })
   }
   const capital = agreementCapital(tx.state, agreement.id)
   if (capital.funded + input.amount > agreement.committed) {
+    // What can still be added: within the commitment and what the tranches left can release.
+    const addable = min(capital.unfunded, capital.fundable)
     throw new DomainError(
       'limit_exceeded',
-      `Funded capital cannot exceed the ${usdText(agreement.committed)} commitment. You can add up to ${usdText(capital.unfunded)}.`,
+      `Funded capital cannot exceed the ${usdText(agreement.committed)} commitment. ${
+        addable > 0
+          ? `You can add up to ${usdText(addable)}.`
+          : 'Nothing more can be funded under this agreement.'
+      }`,
+    )
+  }
+  // Only a release moves money out of a Funding Vault: capital beyond what the tranches still to
+  // release need would stay there for good (a rejected tranche never releases). The ledger only
+  // checks the commitment, so the engine is the stricter of the two.
+  if (input.amount > capital.fundable) {
+    throw new DomainError(
+      'limit_exceeded',
+      capital.fundable <= 0
+        ? 'Every tranche left is already funded. Nothing more can be funded under this agreement.'
+        : `Only ${usdText(capital.fundable)} more can be funded: that is what the tranches left still need.`,
     )
   }
   const portfolioVault = tx.state.vaults.find(
@@ -572,6 +591,7 @@ export function submitMilestoneEvidence(
     'Milestone ready for review',
     `${agency.name} submitted evidence for "${milestone.title}".`,
     `/investor/${agreement.portfolioId}/funding/${agreement.id}/milestones/${milestone.id}`,
+    { subject: { kind: 'milestone', id: milestone.id } },
   )
   return milestone
 }
@@ -625,6 +645,7 @@ export function requestTranche(
     'Tranche requested',
     `${tranche.name} of ${agreement.title} was requested.`,
     `/investor/${agreement.portfolioId}/approvals`,
+    { subject: { kind: 'tranche', id: tranche.id } },
   )
   return tranche
 }
@@ -721,6 +742,8 @@ export function releaseTranche(tx: Tx, input: { trancheId: Id; checkedCriteria?:
     receiptId: receipt.id,
     destinationAccountId: destination.id,
   })
+  tx.resolve({ kind: 'tranche', id: tranche.id })
+  if (milestone) tx.resolve({ kind: 'milestone', id: milestone.id })
 
   // The next tranche becomes available and its milestone opens.
   const nextTranche = tx.state.tranches.find(
@@ -732,6 +755,9 @@ export function releaseTranche(tx: Tx, input: { trancheId: Id; checkedCriteria?:
     ? tx.state.milestones.find((m) => m.id === nextTranche.milestoneId)
     : undefined
   if (nextMilestone && nextMilestone.status === 'not_started') nextMilestone.status = 'in_progress'
+  // Nothing left to release: the Agency is told this was the last one. The agreement's status does
+  // not change (no state on Monad ends an agreement); screens show it as Completed.
+  const last = isFullyReleased(tx.state, agreement.id)
 
   tx.activity(
     'tranche_released',
@@ -745,8 +771,10 @@ export function releaseTranche(tx: Tx, input: { trancheId: Id; checkedCriteria?:
   )
   tx.notify(
     tx.holders('agency_admin', { agencyId: agency.id }),
-    'Funding released',
-    `${usdText(tranche.amount)} is now available in the ${agency.name} ${destination.name} account.`,
+    last ? 'Final tranche released' : 'Funding released',
+    `${usdText(tranche.amount)} is now available in the ${agency.name} ${destination.name} account.${
+      last ? ` That was the last tranche of ${agreement.title}.` : ''
+    }`,
     `/agency/${agency.id}/accounts/${destination.id}`,
   )
   return { tranche, receipt, destination }
@@ -766,6 +794,8 @@ export function requestMilestoneChanges(tx: Tx, input: { milestoneId: Id; note: 
   milestone.status = outcome
   milestone.decision = { outcome, note, checkedCriteria: [], decidedAt: tx.now, decidedBy: tx.userId }
   tranche.status = input.reject ? 'rejected' : 'available'
+  tx.resolve({ kind: 'milestone', id: milestone.id })
+  tx.resolve({ kind: 'tranche', id: tranche.id })
   tx.activity(
     'milestone_changes_requested',
     input.reject ? `Rejected ${milestone.title}` : `Requested changes to ${milestone.title}`,

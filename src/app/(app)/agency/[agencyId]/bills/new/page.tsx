@@ -6,6 +6,7 @@ import * as React from 'react'
 
 import { FormField, PillInput, SimpleSelect, useChoice } from '@/components/app/form-controls'
 import { AddDestinationButton, CreateOperationsAccount } from '@/components/app/money-setup'
+import { providerKindLine } from '@/components/app/provider-parts'
 import { useHref, useRole } from '@/components/app/role-context'
 import { useBottomBar } from '@/components/app/shell/app-shell'
 import { Button } from '@/components/ui/button'
@@ -22,7 +23,9 @@ import { PageHeader, Panel } from '@/components/viatik/layout'
 import { PendingOperation } from '@/components/viatik/operation'
 import { useCommand, useEvidenceFiles, useViatikState } from '@/data/react'
 import { categoryLabel } from '@/domain/labels'
-import type { Cents } from '@/domain/money'
+import { formatUsd, type Cents } from '@/domain/money'
+import { accountName, budgetsForVendor, defaultBillAccount } from '@/domain/queries'
+import { accountBalance, budgetUsage } from '@/domain/selectors'
 import type { PaymentDestination, SpendingCategory } from '@/domain/types'
 import { fromDateInput } from '@/lib/format'
 
@@ -46,17 +49,25 @@ export default function NewBillPage() {
   const [dueDate, setDueDate] = React.useState('')
   const [amount, setAmount] = React.useState<Cents | null>(null)
   const [category, setCategory] = React.useState<SpendingCategory>('software')
+  // Never an empty account by default: Vendors or Operations while it holds money, else the fullest.
   const [accountId, setAccountId] = useChoice(
     accounts.map((a) => a.id),
-    accounts.find((a) => a.template === 'vendors')?.id ?? accounts[0]?.id,
+    defaultBillAccount(state, agencyId)?.id,
   )
   const [budgetId, setBudgetId] = React.useState(NO_BUDGET)
   const [notes, setNotes] = React.useState('')
   const [touched, setTouched] = React.useState(false)
 
-  const budgets = state.budgets.filter(
-    (b) => b.agencyId === agencyId && b.status === 'active' && b.allowedCategories.includes(category),
-  )
+  // Once the vendor is chosen, only the budgets that can pay it; before, those that allow the category.
+  const selectedVendor = destinations.find((d) => d.id === destinationId)
+  const budgets = selectedVendor
+    ? budgetsForVendor(state, agencyId, selectedVendor, category)
+    : state.budgets.filter(
+        (b) => b.agencyId === agencyId && b.status === 'active' && b.allowedCategories.includes(category),
+      )
+  const budget = budgets.find((b) => b.id === budgetId)
+  // A bill paid from a budget comes out of the budget's own account.
+  const sourceAccountId = budget ? budget.sourceAccountId : accountId
   const busy = add.phase !== 'idle' && add.phase !== 'failed' && add.phase !== 'completed'
   const document = files[0]
 
@@ -70,14 +81,17 @@ export default function NewBillPage() {
         ? 'The due date cannot be before the issue date.'
         : undefined,
     amount: amount ? undefined : 'Enter the amount.',
-    account: accountId ? undefined : 'Choose the account that pays it.',
+    account: sourceAccountId ? undefined : 'Choose the account that pays it.',
   }
   const valid = !Object.values(errors).some(Boolean)
 
-  // The bill takes the vendor's category, whether picked from the list or just added.
+  // The bill takes the vendor's category, whether picked from the list or just added, and the
+  // budget that pays that vendor when exactly one can (with several, the Admin chooses).
   const selectVendor = (vendor: PaymentDestination) => {
     setDestinationId(vendor.id)
     setCategory(vendor.category)
+    const fits = budgetsForVendor(state, agencyId, vendor, vendor.category)
+    setBudgetId((fits.length === 1 ? fits[0]?.id : undefined) ?? NO_BUDGET)
   }
   const chooseVendor = (id: string) => {
     const vendor = destinations.find((d) => d.id === id)
@@ -88,7 +102,7 @@ export default function NewBillPage() {
     setTouched(true)
     const issue = fromDateInput(issueDate)
     const due = fromDateInput(dueDate)
-    if (!valid || !document || !destinationId || !amount || !accountId || !issue || !due) return
+    if (!valid || !document || !destinationId || !amount || !sourceAccountId || !issue || !due) return
     const bill = await add.run({
       agencyId,
       destinationId,
@@ -97,8 +111,8 @@ export default function NewBillPage() {
       dueDate: due,
       amount,
       category,
-      accountId,
-      budgetId: budgetId === NO_BUDGET ? undefined : budgetId,
+      accountId: sourceAccountId,
+      budgetId: budget?.id,
       document: toEvidence(document),
       notes: notes.trim() || undefined,
     })
@@ -153,7 +167,7 @@ export default function NewBillPage() {
                 options={destinations.map((d) => ({
                   value: d.id,
                   label: d.name,
-                  description: d.settlementLabel,
+                  description: providerKindLine(d),
                 }))}
                 placeholder="Choose a vendor"
                 empty="No vendors yet"
@@ -211,40 +225,56 @@ export default function NewBillPage() {
               }))}
             />
           </FormField>
-          <FormField
-            label="Account"
-            htmlFor={accounts.length > 0 ? 'account' : undefined}
-            error={touched ? errors.account : undefined}
-          >
-            {accounts.length === 0 ? (
-              <CreateOperationsAccount
-                agencyId={agencyId}
-                description="Bills are paid from an Agency account."
-                onCreated={setAccountId}
-              />
-            ) : (
-              <SimpleSelect
-                id="account"
-                value={accountId}
-                onValueChange={setAccountId}
-                options={accounts.map((a) => ({ value: a.id, label: a.name }))}
-              />
-            )}
-          </FormField>
+          {budget ? null : (
+            <FormField
+              label="Account"
+              htmlFor={accounts.length > 0 ? 'account' : undefined}
+              error={touched ? errors.account : undefined}
+            >
+              {accounts.length === 0 ? (
+                <CreateOperationsAccount
+                  agencyId={agencyId}
+                  description="Bills are paid from an Agency account."
+                  onCreated={setAccountId}
+                />
+              ) : (
+                <SimpleSelect
+                  id="account"
+                  value={accountId}
+                  onValueChange={setAccountId}
+                  options={accounts.map((a) => ({
+                    value: a.id,
+                    label: a.name,
+                    description: `${formatUsd(accountBalance(state, a.id))} available`,
+                  }))}
+                />
+              )}
+            </FormField>
+          )}
           <FormField
             label="Budget"
             htmlFor="budget"
             optional
             className="sm:col-span-2"
-            hint="Budgets that allow this category. Paying from a budget applies its rules."
+            hint={
+              budget
+                ? `Paid from ${accountName(state, budget.sourceAccountId)}, under ${budget.name}’s rules.`
+                : selectedVendor
+                  ? 'Budgets that can pay this vendor. Paying from a budget applies its rules.'
+                  : 'Budgets that allow this category. Paying from a budget applies its rules.'
+            }
           >
             <SimpleSelect
               id="budget"
-              value={budgetId}
+              value={budget ? budget.id : NO_BUDGET}
               onValueChange={setBudgetId}
               options={[
                 { value: NO_BUDGET, label: 'No budget' },
-                ...budgets.map((b) => ({ value: b.id, label: b.name })),
+                ...budgets.map((b) => ({
+                  value: b.id,
+                  label: b.name,
+                  description: `${formatUsd(budgetUsage(state, b, now).available)} available`,
+                })),
               ]}
             />
           </FormField>

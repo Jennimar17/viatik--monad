@@ -29,21 +29,14 @@ import { pseudoAddress } from '@/domain/ids'
 import { agencyTypeLabel, categoryLabel } from '@/domain/labels'
 import { formatUsd } from '@/domain/money'
 import { roleLabel } from '@/domain/permissions'
-import { activeAgreement, governingAgreement, userName } from '@/domain/queries'
+import { agencyAgreementSummary, agencyTeamSize, governingAgreement, userName } from '@/domain/queries'
 import { agreementStatus } from '@/domain/status'
 import { networkInfo } from '@/domain/verification'
 import { publicEnv } from '@/lib/env'
-import { formatDate, pluralize, shortHash } from '@/lib/format'
+import { pluralize, shortHash } from '@/lib/format'
+import { formatLocalDate, localTimeZone } from '@/lib/local-time'
 import { useSession } from '@/lib/session'
 import { timeZoneOptions } from '@/lib/time-zones'
-
-const LOCALES = [
-  { value: 'en-US', label: 'English (United States) · 1,234.56' },
-  { value: 'en-GB', label: 'English (United Kingdom) · 1,234.56' },
-  { value: 'de-DE', label: 'German formatting · 1.234,56' },
-  { value: 'fr-FR', label: 'French formatting · 1 234,56' },
-  { value: 'es-ES', label: 'Spanish formatting · 1.234,56' },
-]
 
 /** Per-device choices that have no server side yet: notification switches, passkey, developer mode. */
 type Preferences = {
@@ -118,8 +111,12 @@ function Settings() {
   const [name, setName] = React.useState(user?.name ?? '')
   const [jobTitle, setJobTitle] = React.useState(user?.title ?? '')
   const [timeZone, setTimeZone] = React.useState(user?.timeZone ?? 'UTC')
-  const [locale, setLocale] = React.useState(user?.locale ?? 'en-US')
   const [destinationOpen, setDestinationOpen] = React.useState(false)
+  // Times in Viatik follow this device's clock; the profile's zone is what the team sees. Accounts
+  // created by signing in or by an invitation start in UTC: offer this device's zone instead.
+  const deviceZone = localTimeZone()
+  const deviceZoneLabel = deviceZone.replace(/_/g, ' ')
+  const suggestDeviceZone = user?.timeZone === 'UTC' && timeZone === 'UTC' && deviceZone !== 'UTC'
 
   const agency = agencyId ? state.agencies.find((a) => a.id === agencyId) : undefined
   const portfolio = state.portfolios.find((p) => p.id === portfolioId)
@@ -132,14 +129,12 @@ function Settings() {
   const dirty =
     name.trim() !== (user?.name ?? '') ||
     jobTitle.trim() !== (user?.title ?? '') ||
-    timeZone !== user?.timeZone ||
-    locale !== user?.locale
+    timeZone !== user?.timeZone
 
   const discard = () => {
     setName(user?.name ?? '')
     setJobTitle(user?.title ?? '')
     setTimeZone(user?.timeZone ?? 'UTC')
-    setLocale(user?.locale ?? 'en-US')
   }
 
   const tabs: PageTab[] = [
@@ -147,10 +142,7 @@ function Settings() {
       value: 'profile',
       label: 'Profile',
       content: (
-        <Panel
-          title="Your profile"
-          description="Dates and amounts follow your locale. Amounts are always shown in USD."
-        >
+        <Panel title="Your profile" description="Amounts are shown in US dollars.">
           <div className="flex flex-col gap-5">
             <div className="flex items-center gap-4">
               <PersonAvatar name={name.trim() || user?.name || 'You'} size="lg" />
@@ -158,7 +150,7 @@ function Settings() {
                 <span className="truncate font-medium">{user?.email}</span>
                 <span className="text-xs text-subtle">
                   {roleLabel[role]}
-                  {user ? ` · since ${formatDate(user.createdAt)}` : ''}
+                  {user ? ` · since ${formatLocalDate(user.createdAt)}` : ''}
                 </span>
               </div>
             </div>
@@ -173,7 +165,30 @@ function Settings() {
                   onChange={(e) => setJobTitle(e.target.value)}
                 />
               </FormField>
-              <FormField label="Time zone" htmlFor="profile-tz">
+              <FormField
+                label="Time zone"
+                htmlFor="profile-tz"
+                hint={
+                  <>
+                    {/* An Agency's team pages show its people's zones; nothing shows an Investor's. */}
+                    {role === 'investor' ? '' : 'Shown to your team. '}Times in Viatik follow this device’s
+                    clock ({deviceZoneLabel}).
+                    {suggestDeviceZone ? (
+                      <>
+                        {' '}
+                        <Button
+                          variant="link"
+                          size="sm"
+                          className="h-auto p-0 text-xs"
+                          onClick={() => setTimeZone(deviceZone)}
+                        >
+                          Use {deviceZoneLabel}
+                        </Button>
+                      </>
+                    ) : null}
+                  </>
+                }
+              >
                 <SimpleSelect
                   id="profile-tz"
                   value={timeZone}
@@ -181,22 +196,12 @@ function Settings() {
                   options={timeZoneOptions(timeZone)}
                 />
               </FormField>
-              <FormField label="Number and date format" htmlFor="profile-locale">
-                <SimpleSelect
-                  id="profile-locale"
-                  value={locale}
-                  onValueChange={setLocale}
-                  options={LOCALES}
-                />
-              </FormField>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 size="pill-sm"
                 disabled={!dirty || name.trim().length < 2 || profile.isPending}
-                onClick={() =>
-                  void profile.run({ name: name.trim(), title: jobTitle.trim(), timeZone, locale })
-                }
+                onClick={() => void profile.run({ name: name.trim(), title: jobTitle.trim(), timeZone })}
               >
                 {profile.isPending ? 'Saving…' : 'Save changes'}
               </Button>
@@ -219,10 +224,10 @@ function Settings() {
   }
 
   if (agency) {
-    const agreement = activeAgreement(state, agency.id)
-    const team = state.memberships.filter(
-      (m) => m.scope.kind === 'agency' && m.scope.agencyId === agency.id && m.status === 'active',
-    )
+    // A Member's scoped state has no agreements and only their own membership: these read what
+    // their Agency carries instead.
+    const agreement = agencyAgreementSummary(state, agency.id)
+    const teamSize = agencyTeamSize(state, agency.id)
     tabs.push({
       value: 'agency',
       label: 'Agency',
@@ -261,7 +266,7 @@ function Settings() {
                     'No active agreement'
                   ),
                 },
-                { label: 'Team', value: pluralize(team.length, 'person', 'people') },
+                { label: 'Team', value: pluralize(teamSize, 'person', 'people') },
               ]}
             />
             <p className="text-xs text-pretty text-subtle">
@@ -292,7 +297,7 @@ function Settings() {
                 { label: 'Display currency', value: portfolio.baseCurrency },
                 { label: 'Time zone', value: portfolio.timeZone.replace(/_/g, ' ') },
                 { label: 'Agencies', value: pluralize(agencies.length, 'agency', 'agencies') },
-                { label: 'Created', value: formatDate(portfolio.createdAt) },
+                { label: 'Created', value: formatLocalDate(portfolio.createdAt) },
               ]}
             />
           </div>
@@ -376,11 +381,11 @@ function Settings() {
       },
       {
         value: 'destinations',
-        label: 'Payment destinations',
+        label: 'Providers',
         count: destinations.length,
         content: (
           <Panel
-            title="Payment destinations"
+            title="Providers"
             description="Vendors, services and contractors the Agency can pay. Budgets can restrict payments to a subset."
             action={
               <div className="flex flex-wrap justify-end gap-2">
@@ -389,7 +394,7 @@ function Settings() {
                 </ButtonLink>
                 {can('send_payment') ? (
                   <Button size="pill-sm" onClick={() => setDestinationOpen(true)}>
-                    <Plus data-icon="inline-start" /> Add destination
+                    <Plus data-icon="inline-start" /> Add provider
                   </Button>
                 ) : null}
               </div>
@@ -398,7 +403,7 @@ function Settings() {
             {destinations.length === 0 ? (
               <EmptyState
                 compact
-                title="No payment destinations yet"
+                title="No providers yet"
                 description="Add the vendors and services the Agency pays."
               />
             ) : (
@@ -419,7 +424,8 @@ function Settings() {
                           {d.name}
                         </Link>
                         <span className="truncate text-xs text-subtle">
-                          {destinationKindLabel[d.kind]} · {categoryLabel[d.category]} · {d.settlementLabel}
+                          {destinationKindLabel[d.kind]} · {categoryLabel[d.category]}
+                          {d.settlementLabel ? ` · ${d.settlementLabel}` : null}
                         </span>
                       </span>
                       <span className="hidden text-xs text-subtle sm:block">
@@ -443,7 +449,8 @@ function Settings() {
       label: role === 'member' ? 'Decisions on my requests' : 'Requests that need my decision',
     },
     { key: 'payments', label: role === 'member' ? 'Payments I receive' : 'Completed payments' },
-    { key: 'releases', label: 'Funding releases and milestones' },
+    // No funding notification ever goes to a Member.
+    ...(role === 'member' ? [] : [{ key: 'releases' as const, label: 'Funding releases and milestones' }]),
     { key: 'weekly', label: 'Weekly summary' },
   ]
 
@@ -566,10 +573,9 @@ function Settings() {
                   { label: 'Network', value: `${network.name} · chain ${network.chainId}` },
                   {
                     label: 'Settlement asset',
-                    value:
-                      publicEnv.NEXT_PUBLIC_MONAD_NETWORK === 'testnet'
-                        ? 'TestUSD (6 decimals), standing in for USDC on testnet'
-                        : 'USDC (6 decimals)',
+                    value: network.asset.standsInFor
+                      ? `${network.asset.detail}, standing in for ${network.asset.standsInFor} on testnet`
+                      : network.asset.detail,
                   },
                   {
                     label: realAccount ? 'Your account' : 'Your account (demo)',

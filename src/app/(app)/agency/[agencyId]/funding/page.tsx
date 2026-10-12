@@ -15,6 +15,7 @@ import {
 import { PageTabs } from '@/components/app/page-tabs'
 import { trancheRequestRecord, useReceiptDrawer } from '@/components/app/receipt-details'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import { Amount } from '@/components/viatik/amount'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
@@ -27,12 +28,18 @@ import { OrgAvatar } from '@/components/viatik/people'
 import { StatusBadge, Tag } from '@/components/viatik/status'
 import { VerifiedDetailsButton } from '@/components/viatik/verified-details-drawer'
 import { useCommand, useViatikState } from '@/data/react'
-import { releaseModelLabel } from '@/domain/labels'
+import { agencyNextTranche, releaseModelLabel } from '@/domain/labels'
 import { agreementsOf, receiptFor } from '@/domain/queries'
-import { agreementCapital } from '@/domain/selectors'
-import { agreementStatus } from '@/domain/status'
+import {
+  agreementBadge,
+  agreementCapital,
+  agreementDisplayStatus,
+  isFullyReleased,
+  trancheIsOver,
+} from '@/domain/selectors'
 import type { AgreementStatus, FundingAgreement, MilestoneStatus } from '@/domain/types'
 import { formatDate } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 /** Milestones the Agency can (re)submit evidence for. */
 const SUBMITTABLE: ReadonlySet<MilestoneStatus> = new Set(['not_started', 'in_progress', 'changes_requested'])
@@ -54,6 +61,10 @@ function AgencyFunding() {
   const href = useHref()
   const { can } = usePermissions()
   const accept = useCommand('acceptAgreement')
+  const acceptSteps = useSigningSteps(accept.phase, {
+    prepared: 'Viatik checks that you may accept this agreement for the Agency.',
+    done: { label: 'Recorded on Monad', detail: 'The agreement is active.' },
+  })
   const receipts = useReceiptDrawer()
   const [acceptOpen, setAcceptOpen] = React.useState(false)
   const requested = useSearchParams().get('agreement')
@@ -83,6 +94,8 @@ function AgencyFunding() {
   }
 
   const pending = agreement.status === 'pending_acceptance'
+  const settled = isFullyReleased(state, agreement.id)
+  const anyRejected = state.tranches.some((t) => t.agreementId === agreement.id && t.status === 'rejected')
   const releases = state.tranches
     .filter((t) => t.agreementId === agreement.id && t.status === 'released')
     .sort((a, b) => a.index - b.index)
@@ -107,7 +120,7 @@ function AgencyFunding() {
         description={agreement.purpose}
         meta={
           <>
-            <StatusBadge status={agreementStatus[agreement.status]} size="md" />
+            <StatusBadge status={agreementBadge(state, agreement)} size="md" />
             <span className="text-sm text-subtle">
               {formatDate(agreement.startDate)} – {formatDate(agreement.endDate)}
             </span>
@@ -127,6 +140,15 @@ function AgencyFunding() {
           {investor} sent you this agreement. Review the terms and accept it to start receiving funding.
         </div>
       ) : null}
+      {settled ? (
+        <div className="rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm text-pretty">
+          {anyRejected
+            ? 'No tranche of this agreement is left to release.'
+            : `${investor} released every tranche of this agreement.`}{' '}
+          The money is in your accounts: keep operating with it, or return what you don’t need with Return to
+          Investor.
+        </div>
+      ) : null}
 
       <Panel>
         <AgreementProgress state={state} agreement={agreement} />
@@ -140,7 +162,11 @@ function AgencyFunding() {
             content: (
               <Panel
                 title="Release schedule"
-                description="Submit evidence for a milestone to request its tranche."
+                description={
+                  agreement.releaseModel === 'milestone'
+                    ? 'Submit evidence for a milestone to request its tranche.'
+                    : 'The Investor releases each tranche; no request is needed. You can request one to choose the account it lands in.'
+                }
               >
                 <MilestoneTimelineFor
                   state={state}
@@ -217,7 +243,7 @@ function AgencyFunding() {
                     <Panel
                       key={m.id}
                       title={m.title}
-                      description={m.submittedAt ? `Submitted ${formatDate(m.submittedAt)}` : undefined}
+                      description={m.submittedAt ? `Submitted ${formatLocalDate(m.submittedAt)}` : undefined}
                     >
                       <EvidenceList milestone={m} />
                     </Panel>
@@ -235,7 +261,11 @@ function AgencyFunding() {
                   <EmptyState
                     compact
                     title="No tranches released yet"
-                    description="Releases appear here once the Investor approves a milestone."
+                    description={
+                      agreement.releaseModel === 'milestone'
+                        ? 'Releases appear here once the Investor approves a milestone.'
+                        : 'Releases appear here once the Investor releases a tranche.'
+                    }
                   />
                 ) : (
                   <ul className="flex flex-col">
@@ -247,7 +277,7 @@ function AgencyFunding() {
                         <span className="flex min-w-0 flex-col">
                           <span className="text-sm font-medium">{t.name}</span>
                           <span className="text-xs text-subtle">
-                            {t.releasedAt ? `Released ${formatDate(t.releasedAt)}` : 'Released'}
+                            {t.releasedAt ? `Released ${formatLocalDate(t.releasedAt)}` : 'Released'}
                           </span>
                         </span>
                         <span className="flex items-center gap-3">
@@ -278,21 +308,20 @@ function AgencyFunding() {
         summary={{
           what: `You accept ${agreement.title} and its conditions: tranches, milestones, spending policy, and return conditions. If the Agency has no Operations account yet, Viatik opens one to receive released funding.`,
           amount: agreement.committed,
-          reversible: 'The Investor can pause the agreement; changes to its terms need an amendment.',
+          reversible:
+            'Cannot be undone. The Investor can pause the agreement; changes to its terms need an amendment.',
+          irreversible: true,
           policy:
             'Viatik Funding Agreements are operational funding policies, not legal equity or debt agreements.',
         }}
         confirmLabel="Accept agreement"
         phase={accept.phase}
         error={accept.error}
+        steps={acceptSteps}
         onConfirm={() => accept.run({ agreementId: agreement.id })}
         success={{
           title: 'Agreement accepted',
-          body: `${investor} was notified. Released funding lands in your Operations account. ${
-            agreement.releaseModel === 'milestone'
-              ? 'Submit evidence for the first milestone to request its tranche.'
-              : 'You can request the first tranche now.'
-          }`,
+          body: `${investor} was notified. Released funding lands in your Operations account unless you choose another when you request it. ${agencyNextTranche[agreement.releaseModel]}`,
         }}
       />
       {receipts.drawer}
@@ -308,10 +337,13 @@ function AgreementList({ agencyId }: { agencyId: string }) {
   const agreements = state.agreements.filter((a) => a.agencyId === agencyId)
   const investorOf = (a: FundingAgreement) =>
     state.portfolios.find((p) => p.id === a.portfolioId)?.name ?? 'Investor'
+  // The next tranche that can still be released: a rejected or cancelled one never will be.
   const nextTranche = (a: FundingAgreement) =>
     state.tranches
-      .filter((t) => t.agreementId === a.id && t.status !== 'released' && t.status !== 'cancelled')
+      .filter((t) => t.agreementId === a.id && !trancheIsOver(t))
       .sort((x, y) => x.index - y.index)[0]
+  const anyRejected = (a: FundingAgreement) =>
+    state.tranches.some((t) => t.agreementId === a.id && t.status === 'rejected')
 
   const columns: ColumnDef<FundingAgreement, unknown>[] = [
     {
@@ -371,7 +403,9 @@ function AgreementList({ agencyId }: { agencyId: string }) {
           <span className="text-sm text-muted-foreground">
             {next
               ? `${next.name}${next.scheduledFor ? ` · ${formatDate(next.scheduledFor)}` : ''}`
-              : 'All released'}
+              : anyRejected(row.original)
+                ? 'Nothing left to release'
+                : 'All released'}
           </span>
         )
       },
@@ -379,7 +413,7 @@ function AgreementList({ agencyId }: { agencyId: string }) {
     {
       id: 'status',
       header: 'Status',
-      cell: ({ row }) => <StatusBadge status={agreementStatus[row.original.status]} />,
+      cell: ({ row }) => <StatusBadge status={agreementBadge(state, row.original)} />,
     },
   ]
 
@@ -408,7 +442,7 @@ function AgreementList({ agencyId }: { agencyId: string }) {
                 <span className="text-sm font-medium">{a.title}</span>
                 <span className="text-xs text-subtle">From {investorOf(a)}</span>
               </span>
-              <StatusBadge status={agreementStatus[a.status]} />
+              <StatusBadge status={agreementBadge(state, a)} />
             </div>
             <CapitalBar committed={capital.committed} funded={capital.funded} released={capital.released} />
           </div>
@@ -417,10 +451,12 @@ function AgreementList({ agencyId }: { agencyId: string }) {
     />
   )
 
+  // By the status the badge shows: an agreement with every tranche released is listed as Closed.
   const byStatus = (predicate: (status: AgreementStatus) => boolean) =>
-    agreements.filter((a) => predicate(a.status))
+    agreements.filter((a) => predicate(agreementDisplayStatus(state, a)))
   const active = byStatus((s) => s === 'active')
   const pending = byStatus((s) => s === 'pending_acceptance')
+  const closed = byStatus((s) => CLOSED.has(s))
 
   return (
     <div className="flex flex-col gap-8">
@@ -434,7 +470,7 @@ function AgreementList({ agencyId }: { agencyId: string }) {
           { value: 'active', label: 'Active', count: active.length, content: table(active) },
           { value: 'pending', label: 'Pending acceptance', count: pending.length, content: table(pending) },
           { value: 'paused', label: 'Paused', content: table(byStatus((s) => s === 'paused')) },
-          { value: 'closed', label: 'Closed', content: table(byStatus((s) => CLOSED.has(s))) },
+          { value: 'closed', label: 'Closed', count: closed.length, content: table(closed) },
         ]}
       />
     </div>

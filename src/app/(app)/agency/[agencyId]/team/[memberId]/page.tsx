@@ -12,6 +12,7 @@ import { PaymentsTable } from '@/components/app/payments-table'
 import { requestRecipientLabel } from '@/components/app/request-parts'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import { Amount } from '@/components/viatik/amount'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
@@ -35,7 +36,8 @@ import { cents, formatUsd, type Cents } from '@/domain/money'
 import { roleLabel } from '@/domain/permissions'
 import { holderSpentInPeriod, memberHeld, spendByMonth } from '@/domain/selectors'
 import { requestStatusFor } from '@/domain/status'
-import { formatDate, formatRelative, pluralize } from '@/lib/format'
+import { formatRelative, pluralize } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 export default function MemberDetailPage() {
   const { memberId } = useParams<{ memberId: string }>()
@@ -45,7 +47,12 @@ export default function MemberDetailPage() {
   const router = useRouter()
   const { can } = usePermissions()
   const revoke = useCommand('revokeMembership')
+  // Changing an allowance's amount stays in Viatik (Monad keeps only who has access): no signing steps.
   const edit = useCommand('assignAllowance')
+  const revokeSteps = useSigningSteps(revoke.phase, {
+    prepared: 'Viatik checks that you may change who has access to this Agency.',
+    done: { label: 'Recorded on Monad', detail: 'Their access ends now.' },
+  })
   const [revokeOpen, setRevokeOpen] = React.useState(false)
   // The allowance being edited is fixed when its sheet opens; the sheet reads the live record.
   const [editingId, setEditingId] = React.useState<string | null>(null)
@@ -116,13 +123,13 @@ export default function MemberDetailPage() {
             <PersonAvatar name={user.name} size="lg" /> {user.name}
           </span>
         }
-        description={`${user.title} · ${user.email}`}
+        description={[user.title, user.email].filter(Boolean).join(' · ')}
         meta={
           <>
             <Tag>{roleLabel[membership.role]}</Tag>
             {removed ? <StatusBadge status={{ label: 'Removed', tone: 'neutral' }} size="md" /> : null}
             <span className="text-sm text-subtle">
-              Joined {formatDate(membership.createdAt)} · {user.timeZone.replace(/_/g, ' ')}
+              Joined {formatLocalDate(membership.createdAt)} · {user.timeZone.replace(/_/g, ' ')}
             </span>
           </>
         }
@@ -137,7 +144,7 @@ export default function MemberDetailPage() {
 
       {removed ? (
         <div className="rounded-xl border border-border bg-mist/5 px-4 py-3 text-sm text-muted-foreground">
-          Access removed{membership.revokedAt ? ` on ${formatDate(membership.revokedAt)}` : ''}. Their
+          Access removed{membership.revokedAt ? ` on ${formatLocalDate(membership.revokedAt)}` : ''}. Their
           allowances stopped and pending requests were cancelled. Payments already made are not affected.
         </div>
       ) : null}
@@ -353,6 +360,7 @@ export default function MemberDetailPage() {
         confirmVariant="destructive"
         phase={revoke.phase}
         error={revoke.error}
+        steps={revokeSteps}
         onConfirm={() => revoke.run({ membershipId: membership.id })}
         success={{ title: 'Access revoked', body: `${user.name} can no longer sign in to this Agency.` }}
       />

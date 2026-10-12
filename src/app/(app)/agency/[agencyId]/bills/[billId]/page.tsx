@@ -37,12 +37,12 @@ import { StatusBadge } from '@/components/viatik/status'
 import { useCommand, useViatikState } from '@/data/react'
 import { categoryLabel } from '@/domain/labels'
 import { formatUsd, ZERO } from '@/domain/money'
-import { accountName, billState, budgetName, receiptFor, userName } from '@/domain/queries'
+import { accountName, billState, budgetName, budgetsForVendor, receiptFor, userName } from '@/domain/queries'
 import { accountBalance, budgetUsage } from '@/domain/selectors'
 import { scheduleState } from '@/domain/schedules'
 import { billStatus, scheduleStatus } from '@/domain/status'
 import { dueLabel, formatDate, formatDateTime } from '@/lib/format'
-import { formatLocalDateTime, fromLocalInputs } from '@/lib/local-time'
+import { formatLocalDate, formatLocalDateTime, fromLocalInputs } from '@/lib/local-time'
 import { cn } from '@/lib/utils'
 
 const NO_BUDGET = 'none'
@@ -104,9 +104,13 @@ export default function BillDetailPage() {
   const reconciliation = state.reconciliations.find((r) => r.billId === bill.id)
   const status = billState(bill, now)
   const accounts = state.accounts.filter((a) => a.agencyId === agencyId && a.status === 'active')
-  const budgets = state.budgets.filter(
-    (b) => b.agencyId === agencyId && b.status === 'active' && b.allowedCategories.includes(bill.category),
-  )
+  // Only budgets that can pay this vendor: the others refuse it when it is paid.
+  const budgets = vendor
+    ? budgetsForVendor(state, agencyId, vendor, bill.category)
+    : state.budgets.filter(
+        (b) =>
+          b.agencyId === agencyId && b.status === 'active' && b.allowedCategories.includes(bill.category),
+      )
   const chosenBudget = budgets.find((b) => b.id === budgetId)
   const available = chosenBudget
     ? budgetUsage(state, chosenBudget, now).available
@@ -219,10 +223,10 @@ export default function BillDetailPage() {
                   label: 'Budget',
                   value: bill.budgetId ? budgetName(state, bill.budgetId) : 'Paid from the account',
                 },
-                { label: 'Payment destination', value: vendor?.settlementLabel },
+                { label: 'Payment reference', value: vendor?.settlementLabel || 'Not set' },
                 {
                   label: 'Added by',
-                  value: `${userName(state, bill.createdBy)} · ${formatDate(bill.createdAt)}`,
+                  value: `${userName(state, bill.createdBy)} · ${formatLocalDate(bill.createdAt)}`,
                 },
                 ...(bill.notes ? [{ label: 'Notes', value: bill.notes }] : []),
               ]}
@@ -304,7 +308,7 @@ export default function BillDetailPage() {
           from: chosenBudget
             ? `${accountName(state, chosenBudget.sourceAccountId)} · ${chosenBudget.name}`
             : accountName(state, accountId ?? undefined),
-          to: `${vendorName} · ${vendor?.settlementLabel ?? 'Payment destination'}`,
+          to: vendorName,
           reversible: payingNow
             ? 'Cannot be undone once completed. A refund would be a new payment from the vendor.'
             : 'You, another Agency Admin or the Investor can pause or cancel it until it is paid. Once paid, it cannot be undone.',
@@ -428,6 +432,7 @@ export default function BillDetailPage() {
           what: `Links ${vendorName} bill ${bill.number}, its payment, and the invoice document into one record with a verifiable receipt.`,
           amount: bill.amount,
           reversible: 'Reconciliations are part of the audit trail and are not deleted.',
+          irreversible: true,
           policy: 'Every reconciliation references exactly one canonical payment.',
         }}
         confirmLabel="Reconcile payment"

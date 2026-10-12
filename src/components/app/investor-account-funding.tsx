@@ -362,7 +362,8 @@ export function InvestorAccountFunding({
               value={amount}
               onChange={setAmount}
               invalid={Boolean(amountError)}
-              available={account ? most : undefined}
+              // What the account holds; the per-transfer cap is the hint below.
+              available={account ? held : undefined}
               disabled={settlement === 'monad' ? !account || transferring : transferring}
             />
             {account && held > 0 ? (
@@ -571,7 +572,7 @@ function NetworkDetails({
 }) {
   const network = networkInfo(publicEnv.NEXT_PUBLIC_MONAD_NETWORK)
   const items = [
-    { label: 'Asset', value: 'TestUSD (6 decimals, no value)' },
+    { label: 'Asset', value: network.asset.detail },
     ...(monad
       ? [
           {

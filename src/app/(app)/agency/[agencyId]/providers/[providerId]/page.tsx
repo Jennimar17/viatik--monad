@@ -46,13 +46,21 @@ import { KpiTile } from '@/components/viatik/finance'
 import { HairlineGrid, KeyValueList, PageHeader, Panel } from '@/components/viatik/layout'
 import { OrgAvatar } from '@/components/viatik/people'
 import { StatusBadge } from '@/components/viatik/status'
+import { getDataSource } from '@/data'
 import { useViatikState } from '@/data/react'
 import { categoryLabel } from '@/domain/labels'
 import { formatUsd } from '@/domain/money'
 import { spendByMonth } from '@/domain/selectors'
 import { agentStatus, budgetStatus } from '@/domain/status'
+import { networkInfo } from '@/domain/verification'
 import { seriesColor } from '@/lib/chart-colors'
-import { formatDate, pluralize } from '@/lib/format'
+import { publicEnv } from '@/lib/env'
+import { pluralize } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
+
+const NETWORK = publicEnv.NEXT_PUBLIC_MONAD_NETWORK
+/** The network provider payments settle on, and its asset as Verified details names it (TestUSD on testnet). */
+const NETWORK_INFO = networkInfo(NETWORK)
 
 const actionIcons: Record<ProviderStatusAction, React.ReactNode> = {
   pause: <PauseCircle className="size-4" />,
@@ -63,7 +71,7 @@ const actionIcons: Record<ProviderStatusAction, React.ReactNode> = {
 
 export default function ProviderDetailPage() {
   const { providerId } = useParams<{ providerId: string }>()
-  const { state, now } = useViatikState()
+  const { state, now, mode } = useViatikState()
   const { scopeId: agencyId } = useRole()
   const href = useHref()
   const { can } = usePermissions()
@@ -82,6 +90,8 @@ export default function ProviderDetailPage() {
   }
 
   const canManage = can('send_payment')
+  // The demo's own data and ledger: nothing it pays leaves Viatik.
+  const simulated = !mode || getDataSource(mode).kind === 'mock'
   const summary = providerSummary(state, provider, now)
   const actions = providerStatusActions(provider.status)
   // A stopped provider's way back is the main action; pausing and archiving sit in the menu.
@@ -134,9 +144,7 @@ export default function ProviderDetailPage() {
         meta={
           <>
             <StatusBadge status={providerStatus[provider.status]} size="md" />
-            <span className="text-sm text-subtle">
-              {provider.settlementLabel} · added {formatDate(provider.addedAt)}
-            </span>
+            <span className="text-sm text-subtle">Added {formatLocalDate(provider.addedAt)}</span>
           </>
         }
         actions={
@@ -207,7 +215,7 @@ export default function ProviderDetailPage() {
         <KpiTile
           label="Paid this month"
           value={summary.paidThisMonth}
-          hint={summary.lastPaidAt ? `Last paid ${formatDate(summary.lastPaidAt)}` : 'Not paid yet'}
+          hint={summary.lastPaidAt ? `Last paid ${formatLocalDate(summary.lastPaidAt)}` : 'Not paid yet'}
         />
         <KpiTile
           label="Scheduled"
@@ -247,12 +255,12 @@ export default function ProviderDetailPage() {
             />
           )}
         </Panel>
-        <Panel title="Details">
+        <Panel title="Details" contentClassName="gap-4">
           <KeyValueList
             items={[
               { label: 'Type', value: destinationKindLabel[provider.kind] },
               { label: 'Category', value: categoryLabel[provider.category] },
-              { label: 'Settlement method', value: provider.settlementLabel },
+              { label: 'Payment reference', value: provider.settlementLabel || 'Not set' },
               {
                 label: 'Website',
                 value: website ? (
@@ -270,9 +278,27 @@ export default function ProviderDetailPage() {
                 ),
               },
               { label: 'Status', value: <StatusBadge status={providerStatus[provider.status]} /> },
-              { label: 'Added', value: formatDate(provider.addedAt) },
+              { label: 'Added', value: formatLocalDate(provider.addedAt) },
             ]}
           />
+          <p className="text-xs text-pretty text-subtle">
+            {simulated ? (
+              'Payments to it are recorded under this provider. This is a demo: nothing leaves Viatik.'
+            ) : (
+              <>
+                Payments to it are recorded on Monad under this provider. On {NETWORK_INFO.name}, the{' '}
+                {NETWORK_INFO.asset.symbol} goes to Viatik’s {NETWORK === 'testnet' ? 'test ' : ''}payout
+                account; to pay the provider’s own address, use{' '}
+                <Link
+                  href={href('accounts/pay-outside')}
+                  className="text-foreground underline-offset-4 hover:underline"
+                >
+                  Pay outside Viatik
+                </Link>
+                .
+              </>
+            )}
+          </p>
         </Panel>
       </div>
 

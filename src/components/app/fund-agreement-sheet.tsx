@@ -14,6 +14,7 @@ import type { FundingAgreement } from '@/domain/types'
 
 import { ButtonLink } from '@/components/app/button-link'
 import { useHref } from '@/components/app/role-context'
+import { useSigningSteps } from '@/components/app/signing-steps'
 
 /** Investor moves capital from the Portfolio Vault into an agreement's Funding Vault. */
 export function FundAgreementSheet({
@@ -25,22 +26,30 @@ export function FundAgreementSheet({
   agreement: FundingAgreement
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** The amount to start from (for example, what a release is short of); everything fundable otherwise. */
+  /** The amount to start from: what a release is short of. Without it the amount starts empty. */
   suggested?: Cents
 }) {
   const { state } = useViatikState()
   const href = useHref()
   const command = useCommand('fundAgreement')
+  const steps = useSigningSteps(command.phase, {
+    prepared: "Viatik checks the amount against the commitment and the ledger's rules.",
+    done: { label: 'Recorded on Monad', detail: 'Moved into the Funding Vault, ready for tranche releases.' },
+  })
   const capital = agreementCapital(state, agreement.id)
   const portfolioVault = state.vaults.find(
     (v) => v.portfolioId === agreement.portfolioId && v.kind === 'portfolio',
   )
   const vaultAvailable = portfolioVault ? vaultBalance(state, portfolioVault.id) : ZERO
-  const max = min(capital.unfunded, vaultAvailable)
-  // undefined = untouched, so the amount defaults to everything that can be funded.
+  // Never more than the tranches still to release need: more could never leave the Funding Vault.
+  const max = min(capital.fundable, vaultAvailable)
+  // When the Portfolio Vault holds less than is left to fund, `max` is what it holds.
+  const fillLabel = `${max === capital.fundable ? 'Fund everything left' : 'Fund all the Portfolio Vault holds'} (${formatUsd(max, { withCode: true })})`
+  // undefined = untouched: the suggested amount if there is one, else empty. Real money moves on
+  // confirm, so the Investor types the amount or picks the button that fills in `max` on purpose.
   const [draft, setDraft] = React.useState<Cents | null | undefined>(undefined)
-  const amount = draft === undefined ? (suggested ? min(suggested, max) : max) : draft
-  // What was confirmed: after the state refreshes, `max` (and so the default amount) drops to what is left.
+  const amount = draft === undefined ? (suggested ? min(suggested, max) : null) : draft
+  // What was confirmed: after the state refreshes, `max` (and so the suggested amount) drops to what is left.
   const [funded, setFunded] = React.useState<Cents | null>(null)
   const agencyLabel = state.agencies.find((a) => a.id === agreement.agencyId)?.name ?? 'Agency'
   const invalid = amount !== null && (amount <= 0 || amount > max)
@@ -63,12 +72,14 @@ export function FundAgreementSheet({
         to: `${agencyLabel} Funding Vault`,
         reversible:
           'Funds stay in the Funding Vault until you release a tranche. Viatik has no way to move them back yet.',
-        policy: `Funded capital cannot exceed the ${formatUsd(agreement.committed, { withCode: true })} commitment.`,
+        irreversible: true,
+        policy: `Funded capital cannot exceed the ${formatUsd(agreement.committed, { withCode: true })} commitment, nor what the tranches left can release.`,
       }}
       confirmLabel="Fund agreement"
       disabled={amount === null || invalid || max <= 0}
       phase={command.phase}
       error={command.error}
+      steps={steps}
       onConfirm={() => {
         if (!amount) return
         setFunded(amount)
@@ -82,6 +93,14 @@ export function FundAgreementSheet({
       <div className="flex flex-col gap-2">
         <Label htmlFor="fund-amount">Amount</Label>
         <MoneyInput id="fund-amount" value={amount} onChange={setDraft} invalid={invalid} available={max} />
+        {suggested !== undefined ? (
+          <p className="text-xs text-subtle">Suggested: what this release is short of.</p>
+        ) : null}
+        {max > 0 ? (
+          <Button variant="link" size="sm" className="h-auto w-fit px-0" onClick={() => setDraft(max)}>
+            {fillLabel}
+          </Button>
+        ) : null}
         {max > 0 && suggested !== undefined && vaultAvailable < suggested ? (
           <p className="text-sm text-pretty text-muted-foreground">
             Your Portfolio Vault holds {formatUsd(vaultAvailable, { withCode: true })}, which is{' '}
@@ -94,8 +113,12 @@ export function FundAgreementSheet({
         ) : null}
         {max <= 0 ? (
           <p className="text-sm text-muted-foreground">
-            {capital.unfunded <= 0 ? 'This agreement is fully funded.' : 'Your Portfolio Vault is empty.'}{' '}
-            {capital.unfunded > 0 ? (
+            {capital.unfunded <= 0
+              ? 'This agreement is fully funded.'
+              : capital.fundable <= 0
+                ? 'Every tranche left is already funded.'
+                : 'Your Portfolio Vault is empty.'}{' '}
+            {capital.fundable > 0 ? (
               <ButtonLink href={href('vaults/add-funds')} variant="link" size="sm" className="h-auto px-0">
                 Add funds
               </ButtonLink>
@@ -103,7 +126,7 @@ export function FundAgreementSheet({
           </p>
         ) : (
           <p className="text-xs text-subtle">
-            Up to {formatUsd(capital.unfunded, { withCode: true })} left to fund ·{' '}
+            Up to {formatUsd(capital.fundable, { withCode: true })} left to fund ·{' '}
             {formatUsd(vaultAvailable, { withCode: true })} in the Portfolio Vault
           </p>
         )}

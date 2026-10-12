@@ -1,16 +1,28 @@
+import { calendarDaysUntil } from './days'
 import { cents, clampToZero, sum, type Cents } from './money'
-import { budgetUsage, committedAt } from './selectors'
+import {
+  accountBalance,
+  agreementDisplayStatus,
+  budgetUsage,
+  committedAt,
+  isFullyReleased,
+} from './selectors'
 import type {
+  Account,
   Actor,
+  AgreementStatus,
   AllowanceHolder,
   Bill,
+  Budget,
   Evidence,
   FundingAgreement,
   Id,
   Payment,
+  PaymentDestination,
   PaymentRecipient,
   PaymentRequest,
   RequestDestination,
+  SpendingCategory,
   Vault,
   ViatikState,
 } from './types'
@@ -49,6 +61,20 @@ export function findEvidence(state: ViatikState, evidenceId: Id): Evidence | und
   }
   for (const payment of state.payments) if (payment.proof?.id === evidenceId) return payment.proof
   return undefined
+}
+
+/**
+ * Who an Agency Admin can pay from Send payment and Pay team: everyone active in the Agency but
+ * themselves. Nobody pays themselves: they request payment for work, which another Admin reviews.
+ */
+export function payablePeople(state: ViatikState, agencyId: Id, actorUserId: Id) {
+  return state.memberships.filter(
+    (m) =>
+      m.scope.kind === 'agency' &&
+      m.scope.agencyId === agencyId &&
+      m.status === 'active' &&
+      m.userId !== actorUserId,
+  )
 }
 
 /** The account released funding and returned money land in by default: the Agency's active Operations account. */
@@ -94,12 +120,15 @@ export function activeAgreement(state: ViatikState, agencyId: Id): FundingAgreem
 
 /**
  * Every agreement of an Agency that is still in play (not cancelled): the ones waiting for the
- * Agency's acceptance first, then active, paused and the rest. Screens that show an Agency's
- * funding list all of them; `activeAgreement` is for the places that need exactly one.
+ * Agency's acceptance first, then active, paused and the rest (those with every tranche released
+ * among them). Screens that show an Agency's funding list all of them; `activeAgreement` is for
+ * the places that need exactly one.
  */
 export function agreementsOf(state: ViatikState, agencyId: Id): FundingAgreement[] {
-  const rank = (a: FundingAgreement) =>
-    a.status === 'pending_acceptance' ? 0 : a.status === 'active' ? 1 : a.status === 'paused' ? 2 : 3
+  const rank = (a: FundingAgreement) => {
+    const status = agreementDisplayStatus(state, a)
+    return status === 'pending_acceptance' ? 0 : status === 'active' ? 1 : status === 'paused' ? 2 : 3
+  }
   return state.agreements
     .filter((a) => a.agencyId === agencyId && a.status !== 'cancelled')
     .sort((a, b) => rank(a) - rank(b))
@@ -125,6 +154,49 @@ export function exceptionThresholdOf(state: ViatikState, agencyId: Id): Cents | 
   return (
     governingAgreement(state, agencyId)?.spendingPolicy.exceptionThreshold ??
     state.agencies.find((a) => a.id === agencyId)?.exceptionThreshold
+  )
+}
+
+/**
+ * The agreement that funds an Agency, as Settings name it for every role: a running (active or
+ * paused) one with a tranche still to release, else the governing one, else `activeAgreement`
+ * (a pending one included). Running ones are taken in `agreementsOf` order (active before
+ * paused), as the Investor's Agency header picks them.
+ */
+export function agencyFundingAgreement(state: ViatikState, agencyId: Id): FundingAgreement | undefined {
+  return (
+    agreementsOf(state, agencyId).find(
+      (a) => (a.status === 'active' || a.status === 'paused') && !isFullyReleased(state, a.id),
+    ) ??
+    governingAgreement(state, agencyId) ??
+    activeAgreement(state, agencyId)
+  )
+}
+
+/**
+ * The agreement an Agency's Settings name (`agencyFundingAgreement`), or, in a Member's scoped
+ * state (which has no agreements), the title and status the Agency carries, picked the same way.
+ * The status is the one screens show: Completed once every tranche is released.
+ */
+export function agencyAgreementSummary(
+  state: ViatikState,
+  agencyId: Id,
+): { title: string; status: AgreementStatus } | undefined {
+  const agreement = agencyFundingAgreement(state, agencyId)
+  if (agreement) return { title: agreement.title, status: agreementDisplayStatus(state, agreement) }
+  return state.agencies.find((a) => a.id === agencyId)?.fundingAgreement
+}
+
+/**
+ * How many people are active in an Agency. A Member's scoped state holds only their own
+ * membership, so the Agency carries the count there; everyone else counts the memberships.
+ */
+export function agencyTeamSize(state: ViatikState, agencyId: Id): number {
+  return (
+    state.agencies.find((a) => a.id === agencyId)?.teamSize ??
+    state.memberships.filter(
+      (m) => m.status === 'active' && m.scope.kind === 'agency' && m.scope.agencyId === agencyId,
+    ).length
   )
 }
 
@@ -163,8 +235,51 @@ export function adminApprovals(state: ViatikState, agencyId: Id) {
   }
 }
 
-export function billState(bill: Bill, now: string): Bill['status'] | 'overdue' {
-  if ((bill.status === 'to_pay' || bill.status === 'scheduled') && bill.dueDate < now) return 'overdue'
+/**
+ * The active budgets of an Agency that can pay a vendor's bill in a category: they allow the
+ * category and, when they keep a vendor list, name the vendor (paying it refuses the others).
+ */
+export function budgetsForVendor(
+  state: ViatikState,
+  agencyId: Id,
+  vendor: Pick<PaymentDestination, 'id'>,
+  category: SpendingCategory,
+): Budget[] {
+  return state.budgets.filter(
+    (b) =>
+      b.agencyId === agencyId &&
+      b.status === 'active' &&
+      b.allowedCategories.includes(category) &&
+      (b.allowedDestinationIds.length === 0 || b.allowedDestinationIds.includes(vendor.id)),
+  )
+}
+
+/**
+ * The account a new bill is paid from when no budget pays it, never an empty one while another
+ * holds money: the Vendors account, else the Operations account, else the one holding the most.
+ */
+export function defaultBillAccount(state: ViatikState, agencyId: Id): Account | undefined {
+  const accounts = state.accounts.filter((a) => a.agencyId === agencyId && a.status === 'active')
+  const funded = (a: Account) => accountBalance(state, a.id) > 0
+  return (
+    accounts.find((a) => a.template === 'vendors' && funded(a)) ??
+    accounts.find((a) => a.template === 'operations' && funded(a)) ??
+    [...accounts].sort((a, b) => accountBalance(state, b.id) - accountBalance(state, a.id))[0]
+  )
+}
+
+/**
+ * A bill to pay or scheduled is overdue once its due day has passed on the viewer's clock (this
+ * device's time zone), not during the day itself: it says "Due today" then. `timeZone` replaces
+ * the device's (tests).
+ */
+export function billState(
+  bill: Bill,
+  now: string,
+  { timeZone }: { timeZone?: string } = {},
+): Bill['status'] | 'overdue' {
+  const open = bill.status === 'to_pay' || bill.status === 'scheduled'
+  if (open && calendarDaysUntil(bill.dueDate, now, timeZone) < 0) return 'overdue'
   return bill.status
 }
 

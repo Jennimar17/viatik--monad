@@ -130,7 +130,8 @@ export function InvitationLink({
       {demo ? (
         <p className="text-sm text-pretty text-muted-foreground">
           This is a demo link: it only works in this browser. Open it in a new tab to accept as{' '}
-          {invitation.name}. Invitations from a real account work on any device.
+          {invitation.name}. Accepting switches the demo to {invitation.name} in every tab of this
+          browser; switch back from Viewing as. Invitations from a real account work on any device.
         </p>
       ) : (
         <p className="text-sm text-pretty text-muted-foreground">

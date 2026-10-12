@@ -4,10 +4,17 @@ import { ApprovalSheet } from '@/components/viatik/approval-sheet'
 import { useCommand, useViatikState } from '@/data/react'
 import { formatUsd, subtract, add } from '@/domain/money'
 import { accountName, agencyName, receiptFor } from '@/domain/queries'
-import { agreementCapital } from '@/domain/selectors'
+import { agreementCapital, isLastTranche } from '@/domain/selectors'
 
 import { FundShortfall } from '@/components/app/fund-agreement-sheet'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
+import { useSigningSteps, type SigningLabels } from '@/components/app/signing-steps'
+
+/** Prepared → Approved → Released, for a tranche release the Investor signs on Monad. */
+export const RELEASE_STEPS: SigningLabels = {
+  prepared: "Viatik checks the release against the funded capital and the ledger's rules.",
+  done: { label: 'Released', detail: 'Recorded on Monad and in the Agency’s account.' },
+}
 
 /**
  * The Investor releases a tranche that has no milestone to review: one the Agency requested, or one
@@ -29,6 +36,7 @@ export function ReleaseTrancheSheet({
 }) {
   const { state } = useViatikState()
   const release = useCommand('releaseTranche')
+  const steps = useSigningSteps(release.phase, RELEASE_STEPS)
   const tranche = state.tranches.find((t) => t.id === trancheId)
   const agreement = state.agreements.find((a) => a.id === tranche?.agreementId)
   const agency = agreement ? agencyName(state, agreement.agencyId) : 'the Agency'
@@ -39,6 +47,8 @@ export function ReleaseTrancheSheet({
         (a) => a.agencyId === agreement?.agencyId && a.template === 'operations' && a.status === 'active',
       )?.name ?? 'Operations')
   const receipt = receiptFor(state, tranche?.receiptId)
+  // Only the other tranches count, so the success copy holds once this one is released.
+  const last = tranche ? isLastTranche(state, tranche) : false
   const short =
     tranche &&
     capital &&
@@ -73,11 +83,14 @@ export function ReleaseTrancheSheet({
       disabled={!tranche || short !== undefined}
       phase={release.phase}
       error={release.error}
+      steps={steps}
       onConfirm={() => tranche && release.run({ trancheId: tranche.id })}
       success={{
         title: 'Funding released',
         body: tranche
-          ? `${formatUsd(tranche.amount, { withCode: true })} is now available in the ${agency} ${destination} account.`
+          ? `${formatUsd(tranche.amount, { withCode: true })} is now available in the ${agency} ${destination} account.${
+              last ? ` That was the last tranche: ${agreement?.title ?? 'the agreement'} is complete.` : ''
+            }`
           : '',
         actions: <ReceiptDetailsButton receipt={receipt} />,
       }}

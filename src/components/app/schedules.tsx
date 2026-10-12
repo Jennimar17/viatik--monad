@@ -47,6 +47,7 @@ import { scheduleStatus } from '@/domain/status'
 import type { Id, ISODate, KeeperRun, Payment, Schedule, ViatikState } from '@/domain/types'
 import { formatDate, formatRelative } from '@/lib/format'
 import {
+  formatLocalDate,
   formatLocalDateTime,
   formatLocalTime,
   fromLocalInputs,
@@ -327,7 +328,8 @@ export function WhenToPayField({
           <p className="flex gap-2 text-xs text-pretty text-subtle">
             <Info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
             <span>
-              Times are in your time zone ({zone}). {paidAtText(timing)}, if the money is still there.
+              Times are on this device’s clock ({zone.replace(/_/g, ' ')}). {paidAtText(timing)}, if the money
+              is still there.
               {timing === 'demo' ? ' In this demo nothing runs on a timer.' : ''} You can pause or cancel it
               until then.
             </span>
@@ -459,7 +461,7 @@ function ScheduleNote({
     return (
       <p className="text-xs text-subtle">
         Cancelled by {name(schedule.cancelledBy)}
-        {schedule.cancelledAt ? ` on ${formatDate(schedule.cancelledAt)}` : ''}. Nothing was paid
+        {schedule.cancelledAt ? ` on ${formatLocalDate(schedule.cancelledAt)}` : ''}. Nothing was paid
         {schedule.paymentIds.length > 0 ? ' after that' : ''}.
       </p>
     )
@@ -562,7 +564,7 @@ export function ScheduleList({
                     </span>
                     <span className="text-xs text-pretty text-subtle">
                       {scheduleCadenceLabel(schedule)} · scheduled by {userName(state, schedule.createdBy)} on{' '}
-                      {formatDate(schedule.createdAt)}
+                      {formatLocalDate(schedule.createdAt)}
                     </span>
                   </span>
                 </span>

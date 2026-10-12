@@ -13,7 +13,8 @@ import { useViatikState } from '@/data/react'
 import { categoryLabel } from '@/domain/labels'
 import type { Cents } from '@/domain/money'
 import type { PaymentDestination } from '@/domain/types'
-import { formatDate, pluralize } from '@/lib/format'
+import { pluralize } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 import { providerKindLine, providerKindOptions, providerStatus, providerSummary } from './provider-parts'
 import { useHref } from './role-context'
@@ -73,11 +74,11 @@ export function ProvidersTable({
       ),
     },
     {
-      id: 'settlement',
-      header: 'Settlement method',
+      id: 'reference',
+      header: 'Payment reference',
       enableSorting: false,
       cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">{row.original.provider.settlementLabel}</span>
+        <span className="text-sm text-muted-foreground">{row.original.provider.settlementLabel || '—'}</span>
       ),
     },
     {
@@ -106,7 +107,7 @@ export function ProvidersTable({
         <span className="flex flex-col items-end">
           <Amount value={row.original.totalPaid} size="sm" />
           <span className="text-xs text-subtle">
-            {row.original.lastPaidAt ? `Last ${formatDate(row.original.lastPaidAt)}` : 'Not paid yet'}
+            {row.original.lastPaidAt ? `Last ${formatLocalDate(row.original.lastPaidAt)}` : 'Not paid yet'}
           </span>
         </span>
       ),

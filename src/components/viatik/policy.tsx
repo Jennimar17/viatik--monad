@@ -1,5 +1,6 @@
 import { Check, CircleAlert, ShieldCheck, ShieldX, TriangleAlert } from 'lucide-react'
 
+import { EVERY_REQUEST } from '@/domain/policy'
 import { cn } from '@/lib/utils'
 
 /** One rule the policy checked, in plain English. */
@@ -85,6 +86,14 @@ function verdictTitle(decision: PolicyDecision, perspective: 'requester' | 'revi
     }
     if (decision.reason?.rule === 'work_review' && reviewer) {
       return 'Payment for work — always reviewed by an Agency Admin'
+    }
+    // A budget without an automatic limit has no limit to be above.
+    if (
+      decision.reason?.rule === 'approval_threshold' &&
+      decision.reason.message === EVERY_REQUEST &&
+      reviewer
+    ) {
+      return 'Every request needs an Agency Admin'
     }
   }
   return reviewer ? reviewerTitle[decision.outcome] : outcomeCopy[decision.outcome].title

@@ -14,9 +14,9 @@ import { publicEnv } from '@/lib/env'
 import { Amount } from './amount'
 import { VerifiedDetailsList } from './operation'
 
-const NETWORK = publicEnv.NEXT_PUBLIC_MONAD_NETWORK
-/** The asset operations settle in: TestUSD stands in for USDC on testnet. */
-const SETTLEMENT_ASSET = `${NETWORK === 'testnet' ? 'TestUSD' : 'USDC'} on ${networkInfo(NETWORK).name}`
+const NETWORK = networkInfo(publicEnv.NEXT_PUBLIC_MONAD_NETWORK)
+/** The asset operations settle in, as the network names it (TestUSD on testnet). */
+const SETTLEMENT_ASSET = `${NETWORK.asset.symbol} on ${NETWORK.name}`
 
 export type VerifiedRecord = {
   /** e.g. "RCT-0042 · Vertex Cloud invoice". */
@@ -59,9 +59,14 @@ export function VerifiedDetailsDrawer({
               </span>
               <Amount value={record.amount} size="lg" />
             </div>
-            <span className="flex items-center gap-1.5 text-xs text-sage">
-              <ShieldCheck className="size-4" aria-hidden="true" /> {SETTLEMENT_ASSET}
-            </span>
+            {/* A simulated record settled nothing: no asset, no check. */}
+            {record.details.simulated ? (
+              <span className="text-xs text-subtle">Simulated</span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-xs text-sage">
+                <ShieldCheck className="size-4" aria-hidden="true" /> {SETTLEMENT_ASSET}
+              </span>
+            )}
           </div>
           <VerifiedDetailsList details={record.details} />
         </div>

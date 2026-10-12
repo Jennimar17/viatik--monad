@@ -33,10 +33,11 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
           <SessionData>
             <TooltipProvider delay={300}>
               {children}
+              {/* In the demo, its pill shares the corner: `--toast-clearance` lifts toasts above it. */}
               <Toaster
                 position="bottom-right"
-                offset={{ bottom: 24, right: 24 }}
-                mobileOffset={{ bottom: 88 }}
+                offset={{ bottom: 'max(24px, var(--toast-clearance, 0px))', right: 24 }}
+                mobileOffset={{ bottom: 'max(88px, var(--toast-clearance, 0px))' }}
               />
             </TooltipProvider>
           </SessionData>

@@ -6,11 +6,13 @@ import { useParams, useRouter } from 'next/navigation'
 import * as React from 'react'
 
 import { FormField, SimpleSelect } from '@/components/app/form-controls'
-import { HolderAvatar, holderFromKey, holderOptions } from '@/components/app/holders'
+import { HolderAvatar, holderFromKey, holderOptions, personRoleLabel } from '@/components/app/holders'
 import { AddDestinationButton, EmptySourceHint } from '@/components/app/money-setup'
 import { PaymentsTable } from '@/components/app/payments-table'
+import { providerKindLine } from '@/components/app/provider-parts'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -29,7 +31,7 @@ import { PolicySummary } from '@/components/viatik/policy'
 import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useCommand, useViatikState } from '@/data/react'
 import { budgetPeriodLabel, budgetPeriodUnit, categoryLabel } from '@/domain/labels'
-import { formatUsd, usd, ZERO, type Cents } from '@/domain/money'
+import { formatUsd, ZERO, type Cents } from '@/domain/money'
 import { describeBudgetPolicy } from '@/domain/policy'
 import { accountName, actorName, destinationName, holderName } from '@/domain/queries'
 import { accountBalance, budgetUsage, holderSpentInPeriod, isHold, spendByMonth } from '@/domain/selectors'
@@ -51,12 +53,31 @@ export default function BudgetDetailPage() {
   const [resuming, setResuming] = React.useState(false)
   const [revokeId, setRevokeId] = React.useState<string | null>(null)
   const [holderKey, setHolderKey] = React.useState<string | null>(null)
-  const [allowance, setAllowance] = React.useState<Cents | null>(usd(500))
+  const [allowance, setAllowance] = React.useState<Cents | null>(null)
   const [fundAmount, setFundAmount] = React.useState<Cents | null>(null)
   const pause = useCommand('setBudgetPaused')
   const assign = useCommand('assignAllowance')
   const fund = useCommand('allocateToBudget')
   const revoke = useCommand('revokeAllowance')
+  const pauseSteps = useSigningSteps(pause.phase, {
+    prepared: 'Viatik checks that you may pause or resume this budget.',
+    done: {
+      label: 'Recorded on Monad',
+      detail: resuming ? 'Spending can start again.' : 'Nothing new is spent until it resumes.',
+    },
+  })
+  const assignSteps = useSigningSteps(assign.phase, {
+    prepared: "Viatik checks the allowance against the budget's limits.",
+    done: { label: 'Recorded on Monad', detail: 'They can spend from this budget within their allowance.' },
+  })
+  const fundSteps = useSigningSteps(fund.phase, {
+    prepared: "Viatik checks the amount against the account's balance and the ledger's rules.",
+    done: { label: 'Recorded on Monad', detail: 'Moved into the budget.' },
+  })
+  const revokeSteps = useSigningSteps(revoke.phase, {
+    prepared: 'Viatik checks that you may change access to this budget.',
+    done: { label: 'Recorded on Monad', detail: 'Their access ends now.' },
+  })
 
   const budget = state.budgets.find((b) => b.id === budgetId && b.agencyId === agencyId)
   if (!budget) {
@@ -248,7 +269,7 @@ export default function BudgetDetailPage() {
           <EmptyState
             compact
             title="No spending access yet"
-            description="Assign a Member or an AI Agent to let them spend from this budget."
+            description="Assign a person or an AI Agent to let them spend from this budget."
           />
         ) : (
           <ul className="flex flex-col">
@@ -265,8 +286,10 @@ export default function BudgetDetailPage() {
                     <span className="flex min-w-0 flex-col">
                       <span className="truncate text-sm font-medium">{name}</span>
                       <span className="text-xs text-subtle">
-                        {a.holder.kind === 'member' ? 'Member' : 'AI Agent'} ·{' '}
-                        {formatUsd(a.periodLimit, { withCode: true })} per {unit}
+                        {a.holder.kind === 'member'
+                          ? personRoleLabel(state, budget.agencyId, a.holder.userId)
+                          : 'AI Agent'}{' '}
+                        · {formatUsd(a.periodLimit, { withCode: true })} per {unit}
                         {a.perOperationLimit ? ` · max ${formatUsd(a.perOperationLimit)} each` : ''}
                       </span>
                     </span>
@@ -339,7 +362,9 @@ export default function BudgetDetailPage() {
                 return (
                   <li key={id} className="flex items-center justify-between gap-3 text-sm">
                     <span>{destination?.name ?? 'Payment destination'}</span>
-                    <span className="text-xs text-subtle">{destination?.settlementLabel}</span>
+                    <span className="text-xs text-subtle">
+                      {destination ? providerKindLine(destination) : null}
+                    </span>
                   </li>
                 )
               })}
@@ -391,6 +416,7 @@ export default function BudgetDetailPage() {
         confirmVariant={resuming ? 'default' : 'destructive'}
         phase={pause.phase}
         error={pause.error}
+        steps={pauseSteps}
         onConfirm={() => pause.run({ budgetId: budget.id, paused: !resuming })}
         success={{
           title: resuming ? 'Budget resumed' : 'Budget paused',
@@ -404,7 +430,7 @@ export default function BudgetDetailPage() {
         onClosed={() => {
           assign.reset()
           setHolderKey(null)
-          setAllowance(usd(500))
+          setAllowance(null)
         }}
         title="Assign allowance"
         summary={{
@@ -417,6 +443,8 @@ export default function BudgetDetailPage() {
         disabled={!holderKey || !allowance || allowance > budget.periodLimit}
         phase={assign.phase}
         error={assign.error}
+        // Only a person's access is on Monad: an automation's stays in Viatik.
+        steps={holderKey && holderFromKey(holderKey).kind === 'member' ? assignSteps : undefined}
         onConfirm={() =>
           holderKey &&
           allowance &&
@@ -434,12 +462,13 @@ export default function BudgetDetailPage() {
               value={holderKey}
               onValueChange={setHolderKey}
               options={candidates}
-              placeholder="Choose a Member or AI Agent"
+              placeholder="Choose a person or an AI Agent"
             />
           </FormField>
           <FormField
             label={`Allowance per ${unit}`}
             htmlFor="allowance"
+            hint={`Up to ${formatUsd(budget.periodLimit, { withCode: true })} per ${unit}.`}
             error={
               allowance && allowance > budget.periodLimit
                 ? `Cannot exceed the ${formatUsd(budget.periodLimit, { withCode: true })} period limit.`
@@ -476,6 +505,7 @@ export default function BudgetDetailPage() {
         disabled={!fundAmount || fundAmount > sourceAvailable}
         phase={fund.phase}
         error={fund.error}
+        steps={fundSteps}
         onConfirm={() =>
           fundAmount && fund.run({ budgetId: budget.id, amount: fundAmount, direction: 'allocate' })
         }
@@ -525,6 +555,7 @@ export default function BudgetDetailPage() {
         confirmVariant="destructive"
         phase={revoke.phase}
         error={revoke.error}
+        steps={revoking?.holder.kind === 'member' ? revokeSteps : undefined}
         onConfirm={() => revokeId && revoke.run({ allowanceId: revokeId })}
         success={{ title: 'Access revoked', body: 'The allowance is no longer active.' }}
       />

@@ -5,6 +5,7 @@ import Link from '@/components/viatik/link'
 import { useParams } from 'next/navigation'
 
 import { ButtonLink } from '@/components/app/button-link'
+import { providerKindLine } from '@/components/app/provider-parts'
 import { requestRecipientLabel } from '@/components/app/request-parts'
 import { useHref, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
@@ -18,7 +19,7 @@ import { useViatikState } from '@/data/react'
 import { budgetPeriodLabel, budgetPeriodUnit, categoryLabel } from '@/domain/labels'
 import { formatUsd, sum } from '@/domain/money'
 import { describeBudgetPolicy } from '@/domain/policy'
-import { destinationName, memberBudgets } from '@/domain/queries'
+import { destinationName, exceptionThresholdOf, memberBudgets } from '@/domain/queries'
 import { committedAt, lastMonths } from '@/domain/selectors'
 import { budgetStatus, requestStatusFor } from '@/domain/status'
 import type { RequestStatus } from '@/domain/types'
@@ -61,6 +62,7 @@ export default function MemberBudgetDetailPage() {
     destinationNames: budget.allowedDestinationIds.map((id) => destinationName(state, id)),
     categoryLabels: categoryLabel,
     allowance,
+    exceptionThreshold: exceptionThresholdOf(state, agencyId),
   })
 
   return (
@@ -134,7 +136,9 @@ export default function MemberBudgetDetailPage() {
                 return (
                   <li key={id} className="flex items-center justify-between gap-3 text-sm">
                     <span>{destination?.name ?? 'Payment destination'}</span>
-                    <span className="text-xs text-subtle">{destination?.settlementLabel}</span>
+                    <span className="text-xs text-subtle">
+                      {destination ? providerKindLine(destination) : null}
+                    </span>
                   </li>
                 )
               })}

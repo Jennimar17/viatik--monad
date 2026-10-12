@@ -80,16 +80,22 @@ export const admin = new Hono<AppEnv>().post('/seed', async (c) => {
 async function seed(ledgerOff: boolean, requestId: string, c: Context<AppEnv>, lease: string) {
   const env = readServerEnv()
   const state = createDemoState(new Date().toISOString())
+  // The story's people who signed in under their story id (DEMO_ACCOUNTS) show the email they sign
+  // in with, as their next visit would set it (`withVerifiedPerson`), not the story's.
+  const ids = state.users.map((u) => u.id)
+  const rows = await getDb()
+    .select({ id: users.id, email: users.email, wallet: users.walletAddress })
+    .from(users)
+    .where(inArray(users.id, ids))
+  for (const row of rows) {
+    const person = state.users.find((u) => u.id === row.id)
+    if (person && row.email) person.email = row.email
+  }
   const monad = ledgerOff ? null : getMonadLedger()
   let ledger: WorldLedger | null = null
   let genesisBlock = 0
   if (monad) {
     // The accounts of the story's people who signed in; everyone else gets a placeholder.
-    const ids = state.users.map((u) => u.id)
-    const rows = await getDb()
-      .select({ id: users.id, wallet: users.walletAddress })
-      .from(users)
-      .where(inArray(users.id, ids))
     const accounts: Record<Id, Address> = {}
     for (const row of rows) if (row.wallet) accounts[row.id] = row.wallet as Address
     // Each person DEMO_ACCOUNTS binds must be in the story and have signed in under their story id.

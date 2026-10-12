@@ -9,6 +9,7 @@ import { ButtonLink } from '@/components/app/button-link'
 import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
 import { useHref, useRole } from '@/components/app/role-context'
 import { useBottomBar } from '@/components/app/shell/app-shell'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
 import { EmptyState } from '@/components/viatik/feedback'
@@ -34,6 +35,10 @@ function Transfer() {
   const router = useRouter()
   const params = useSearchParams()
   const transfer = useCommand('transferFunds')
+  const steps = useSigningSteps(transfer.phase, {
+    prepared: "Viatik checks the transfer against the account's balance and the ledger's rules.",
+    done: { label: 'Recorded on Monad', detail: 'Moved between the Agency’s accounts.' },
+  })
   const accounts = state.accounts.filter((a) => a.agencyId === agencyId && a.status === 'active')
   const [fromId, setFromId] = React.useState<string | null>(
     params.get('from') ?? accounts.find((a) => a.template === 'operations')?.id ?? accounts[0]?.id ?? null,
@@ -180,6 +185,7 @@ function Transfer() {
         confirmLabel="Transfer funds"
         phase={transfer.phase}
         error={transfer.error}
+        steps={steps}
         onConfirm={() =>
           amount &&
           from &&

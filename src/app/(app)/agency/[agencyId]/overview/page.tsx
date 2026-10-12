@@ -73,15 +73,18 @@ export default function AgencyOverviewPage() {
   const investor = agreements[0]
     ? state.portfolios.find((p) => p.id === agreements[0]!.portfolioId)?.name
     : undefined
-  const upcoming = agreements
-    .filter((a) => a.status === 'active' || a.status === 'paused')
-    .flatMap((a) => {
-      const tranche = state.tranches
-        .filter((t) => t.agreementId === a.id)
-        .sort((x, y) => x.index - y.index)
-        .find((t) => t.status !== 'released' && t.status !== 'cancelled' && t.status !== 'rejected')
-      return tranche ? [{ agreement: a, tranche }] : []
-    })
+  const running = agreements.filter((a) => a.status === 'active' || a.status === 'paused')
+  // A rejected tranche is over without being released: with one, not every tranche was released.
+  const anyRejected = running.some((a) =>
+    state.tranches.some((t) => t.agreementId === a.id && t.status === 'rejected'),
+  )
+  const upcoming = running.flatMap((a) => {
+    const tranche = state.tranches
+      .filter((t) => t.agreementId === a.id)
+      .sort((x, y) => x.index - y.index)
+      .find((t) => t.status !== 'released' && t.status !== 'cancelled' && t.status !== 'rejected')
+    return tranche ? [{ agreement: a, tranche }] : []
+  })
   const next = upcoming.find((u) => u.tranche.status === 'under_review') ?? upcoming[0]
   const agreement = next?.agreement
   const nextTranche = next?.tranche
@@ -367,7 +370,7 @@ export default function AgencyOverviewPage() {
                     ? `Submit evidence for “${nextMilestone.title}” to request this tranche. Due ${formatDate(nextMilestone.dueDate)}.`
                     : nextTranche.scheduledFor
                       ? `Planned for ${formatDate(nextTranche.scheduledFor)}. The Investor releases it.`
-                      : 'Request this tranche when you are ready.'}
+                      : `${investor ?? 'Your Investor'} releases it when they decide. You can also request it.`}
               </p>
               <ButtonLink
                 href={href(`funding?agreement=${nextTranche.agreementId}`)}
@@ -381,11 +384,21 @@ export default function AgencyOverviewPage() {
           ) : (
             <EmptyState
               compact
-              title={awaiting.length > 0 ? 'Accept an agreement to start' : 'No active funding agreement'}
+              title={
+                awaiting.length > 0
+                  ? 'Accept an agreement to start'
+                  : running.length > 0
+                    ? anyRejected
+                      ? 'Nothing left to release'
+                      : 'Every tranche released'
+                    : 'No active funding agreement'
+              }
               description={
                 awaiting.length > 0
                   ? 'Its tranches and milestones appear here once you accept it.'
-                  : 'Once an Investor creates and activates an agreement, its tranches and milestones will appear here.'
+                  : running.length > 0
+                    ? `${anyRejected ? 'No tranche' : `${investor ?? 'Your Investor'} released every tranche`}${running.length === 1 ? ` of ${running[0]!.title}` : ''}${anyRejected ? ' is left to release' : ''}. The money is in your accounts: keep operating with it, or return what you don’t need with Return to Investor.`
+                    : 'Once an Investor creates and activates an agreement, its tranches and milestones will appear here.'
               }
             />
           )}

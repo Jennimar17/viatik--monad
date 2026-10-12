@@ -32,28 +32,53 @@ import {
 import { attachmentsHash } from '@/domain/evidence'
 import { DEMO } from '@/domain/fixtures'
 import { cents, clampToZero, formatUsd, sum, usd, type Cents } from '@/domain/money'
-import { paymentTypeLabel, receiptKindLabel, requestTypeLabel } from '@/domain/labels'
-import { describeBudgetPolicy, paysRequester } from '@/domain/policy'
+import {
+  agencyNextTranche,
+  paymentTypeLabel,
+  receiptKindLabel,
+  releaseModelLabel,
+  requestTypeLabel,
+} from '@/domain/labels'
+import { upgradeState } from '@/domain/migrate'
+import {
+  currentPolicyText,
+  describeBudgetPolicy,
+  paysRequester,
+  perPaymentCap,
+  policyForReader,
+} from '@/domain/policy'
 import {
   adminApprovals,
+  agencyAgreementSummary,
+  agencyFundingAgreement,
+  agencyTeamSize,
+  agreementsOf,
+  budgetsForVendor,
+  defaultBillAccount,
+  exceptionThresholdOf,
   governingAgreement,
   investorApprovals,
   isException,
   isOutsidePayment,
+  payablePeople,
   userName,
 } from '@/domain/queries'
 import {
   accountBalance,
   agencyCapital,
+  agreementBadge,
   agreementCapital,
+  agreementDisplayStatus,
   budgetUsage,
   holderSpentInPeriod,
+  isFullyReleased,
   isGiveBack,
+  isLastTranche,
   memberHeld,
   portfolioCapital,
   vaultBalance,
 } from '@/domain/selectors'
-import { justificationStatus, proofStatus, reminderStatus } from '@/domain/status'
+import { justificationStatus, proofStatus, reminderStatus, trancheStatusFor } from '@/domain/status'
 import type {
   Budget,
   Evidence,
@@ -61,6 +86,8 @@ import type {
   ISODate,
   Location,
   Movement,
+  Notification,
+  NotificationSubject,
   PaymentRequest,
   PaymentType,
   PolicyDecision,
@@ -75,6 +102,7 @@ import { ledgerSnapshot } from '@/ledger/snapshot'
 import { heldByCommand, heldByOperation, sharesAny } from '@/server/conflicts'
 import { parseCommandInput } from '@/server/schemas'
 import { USDC } from '@/web3/addresses'
+import { MONAD_NETWORKS } from '@/web3/networks'
 
 import {
   bookedTotal,
@@ -140,7 +168,20 @@ export default async function engine(t: Checker) {
   await t.scenario('K6. The server holds the files and bills of operations waiting to be signed', () =>
     filesAndBillsHeld(t),
   )
+  await t.scenario('K7. Bills paid from a budget: the budgets that can pay the vendor', () =>
+    billsFromBudgets(t),
+  )
   await t.scenario("L. The seed's demo story, as the read models show it, and going on", () => seedStory(t))
+  await t.scenario("M. A funding agreement's lifecycle, to its last tranche and a second agreement", () =>
+    agreementLifecycle(t),
+  )
+  await t.scenario('N. Funding never exceeds what the tranches left can release', () => fundingCap(t))
+  await t.scenario('O. A notification that asks for a decision is read once someone decides', () =>
+    decidedNotifications(t),
+  )
+  await t.scenario('P. A stored decision, as the requester and the reviewer read it', () =>
+    decisionReaders(t),
+  )
 }
 
 // ─── A. Money for purchases ──────────────────────────────────────────────────
@@ -2849,6 +2890,162 @@ async function firstSmoke(t: Checker) {
     'I Maya restores it',
   )
   t.check('and restored', back.result.status === 'approved')
+
+  // Nobody pays themselves: an Admin requests payment for work, which another Admin reviews.
+  await w.gather(U.maya, ACC.arcOperations, usd(100))
+  const toSelf = {
+    agencyId: ARC,
+    type: 'team' as const,
+    recipient: { kind: 'member' as const, userId: U.maya },
+    accountId: ACC.arcOperations,
+    amount: usd(20),
+    category: 'team' as const,
+    memo: 'October team payment',
+  }
+  const selfMessage = w.refuse(U.maya, 'sendPayment', toSelf, 'forbidden', 'I an Admin cannot pay herself')
+  t.check(
+    'I it says another Agency Admin has to pay her',
+    selfMessage === 'You cannot pay yourself. Another Agency Admin has to pay you.',
+    selfMessage,
+  )
+  w.refuse(
+    U.maya,
+    'sendPayment',
+    { ...toSelf, scheduledFor: plusHours(w.now, 2) },
+    'forbidden',
+    'I nor schedule a payment to herself',
+  )
+  w.refuse(
+    U.maya,
+    'sendTeamPayments',
+    {
+      agencyId: ARC,
+      accountId: ACC.arcOperations,
+      memo: 'October team payment',
+      items: [
+        { userId: U.alex, amount: usd(10) },
+        { userId: U.maya, amount: usd(10) },
+      ],
+    },
+    'forbidden',
+    'I nor be part of a team payment (nobody in that batch is paid)',
+  )
+  const team = await w.run(
+    U.maya,
+    'sendTeamPayments',
+    {
+      agencyId: ARC,
+      accountId: ACC.arcOperations,
+      memo: 'October team payment',
+      items: [
+        { userId: U.alex, amount: usd(10) },
+        { userId: U.jordan, amount: usd(10) },
+      ],
+    },
+    'I Maya pays Alex and Jordan, another Agency Admin, in one batch',
+    { ops: ['pay', 'pay'] },
+  )
+  t.check(
+    'I the batch pays both, Admin included',
+    team.result.length === 2 && team.result.every((p) => p.batchId === team.result[0]?.batchId),
+  )
+  const arcPeople = w.state.memberships
+    .filter((m) => m.scope.kind === 'agency' && m.scope.agencyId === ARC && m.status === 'active')
+    .map((m) => m.userId)
+  checkSame(
+    t,
+    'I Send payment and Pay team list everyone active in the Agency but the Admin paying',
+    payablePeople(w.state, ARC, U.maya)
+      .map((m) => m.userId)
+      .sort(),
+    arcPeople.filter((id) => id !== U.maya).sort(),
+  )
+  t.check(
+    'I that includes the other Admin and the Members',
+    [U.jordan, U.alex, U.priya].every((id) =>
+      payablePeople(w.state, ARC, U.maya).some((m) => m.userId === id),
+    ),
+  )
+
+  // Providers: the payment reference is an optional note, and adding one only changes Viatik's records.
+  const acme = await w.run(
+    U.maya,
+    'addDestination',
+    {
+      agencyId: ARC,
+      name: 'Acme Tools',
+      kind: 'service',
+      category: 'software',
+      settlementLabel: ' Customer no. 77 ',
+    },
+    'I Maya adds a provider with a payment reference',
+    { ops: [] },
+  )
+  t.check(
+    'the Admin adds an approved provider, with its reference trimmed',
+    acme.result.status === 'approved' &&
+      acme.result.settlementLabel === 'Customer no. 77' &&
+      w.state.destinations.some((d) => d.id === acme.result.id),
+    JSON.stringify(acme.result),
+  )
+  const bare = await w.run(
+    U.maya,
+    'addDestination',
+    { agencyId: ARC, name: 'Bare Tools', kind: 'vendor', category: 'software' },
+    'I Maya adds a provider without a payment reference',
+    { ops: [] },
+  )
+  t.check('a provider needs no payment reference', bare.result.settlementLabel === '')
+  const blank = await w.run(
+    U.maya,
+    'addDestination',
+    { agencyId: ARC, name: 'Blank Tools', kind: 'vendor', category: 'software', settlementLabel: '   ' },
+    'I Maya adds a provider with a blank payment reference',
+  )
+  t.check('a blank payment reference is saved empty', blank.result.settlementLabel === '')
+  const cleared = await w.run(
+    U.maya,
+    'updateDestination',
+    { destinationId: acme.result.id, settlementLabel: '' },
+    'I Maya clears the payment reference',
+    { ops: [] },
+  )
+  t.check('the Admin clears a payment reference', cleared.result.settlementLabel === '')
+  const long = w.refuseRaw(
+    U.maya,
+    'updateDestination',
+    { destinationId: acme.result.id, settlementLabel: 'R'.repeat(81) },
+    'validation',
+    'I the engine refuses a payment reference longer than 80 characters',
+    { skipSchema: true },
+  )
+  t.check(
+    'the engine names the field a payment reference',
+    long === 'Payment reference must be 80 characters or fewer.',
+    long,
+  )
+  const provider = { agencyId: ARC, name: 'Long Tools', kind: 'vendor', category: 'software' }
+  w.refuseRaw(
+    U.maya,
+    'addDestination',
+    { ...provider, name: 'N'.repeat(81) },
+    'schema',
+    'I a provider name longer than 80 characters (API)',
+  )
+  w.refuseRaw(
+    U.maya,
+    'addDestination',
+    { ...provider, settlementLabel: 'R'.repeat(81) },
+    'schema',
+    'I a payment reference longer than 80 characters (API)',
+  )
+  w.refuseRaw(
+    U.maya,
+    'updateDestination',
+    { destinationId: acme.result.id, name: 'N'.repeat(81) },
+    'schema',
+    'I a new provider name longer than 80 characters (API)',
+  )
 }
 
 // ─── J. Labels, statuses, the seed, the schemas ──────────────────────────────
@@ -2864,6 +3061,15 @@ async function labelsAndSeed(t: Checker) {
     receiptKindLabel.outside_payment === 'Outside payment receipt' &&
       receiptKindLabel.capital_return === 'Capital return receipt',
   )
+  // Vault asset details, the Portfolio card and Verified details all read the asset from here.
+  t.check(
+    'J: the network names the settlement asset: TestUSD on testnet (for USDC), USDC on mainnet',
+    MONAD_NETWORKS.testnet.asset.symbol === 'TestUSD' &&
+      MONAD_NETWORKS.testnet.asset.standsInFor === 'USDC' &&
+      MONAD_NETWORKS.mainnet.asset.symbol === 'USDC' &&
+      MONAD_NETWORKS.mainnet.asset.standsInFor === undefined,
+    JSON.stringify([MONAD_NETWORKS.testnet.asset, MONAD_NETWORKS.mainnet.asset]),
+  )
   checkSame(t, 'J: invoice statuses', proofStatus, {
     missing: { label: 'Invoice pending', tone: 'warning' },
     attached: { label: 'Invoice attached', tone: 'success' },
@@ -2876,13 +3082,179 @@ async function labelsAndSeed(t: Checker) {
   ])
   checkSame(t, 'J: reminder statuses', Object.keys(reminderStatus).sort(), ['active', 'archived', 'paused'])
 
+  // What the Agency reads after accepting matches each release model: only a milestone needs a
+  // request (its evidence); otherwise the Investor releases, and sees the tranche ready to release.
+  checkSame(
+    t,
+    'J: every release model says what the Agency does next',
+    Object.keys(agencyNextTranche).sort(),
+    [...Object.keys(releaseModelLabel).sort()],
+  )
+  t.check(
+    'J: a Manual agreement never tells the Agency to request its first tranche now',
+    !agencyNextTranche.manual.includes('request the first tranche now') &&
+      agencyNextTranche.manual.startsWith('The Investor releases') &&
+      agencyNextTranche.milestone.startsWith('Submit evidence'),
+  )
+  t.check(
+    'J: an available tranche without a milestone reads "Ready to release" to the Investor only',
+    trancheStatusFor({ status: 'available', releaseCondition: 'manual' }, 'investor').label ===
+      'Ready to release' &&
+      trancheStatusFor({ status: 'available', releaseCondition: 'manual' }, 'agency').label ===
+        'Available to request' &&
+      trancheStatusFor({ status: 'available', releaseCondition: 'milestone' }, 'investor').label ===
+        'Available to request',
+  )
+
   const w = new World(t, 'engine-j')
+  // Nothing moves unreleased capital back by itself: the seeded terms do not promise it.
+  t.check(
+    'J: no seeded return condition promises an automatic return to the Portfolio Vault',
+    w.state.agreements.every(
+      (a) =>
+        !/returns to the Portfolio Vault (if|at)/.test(a.spendingPolicy.returnConditions) &&
+        a.spendingPolicy.returnConditions.length > 0,
+    ),
+    JSON.stringify(w.state.agreements.map((a) => a.spendingPolicy.returnConditions)),
+  )
   const tools = budgetOf(w.state, B.arcTools)
   const lines = describeBudgetPolicy(tools, { destinationNames: ['Vertex Cloud', 'Canvasly'] })
   t.check(
     "J: a budget's vendor list reads as limiting vendor payments only",
     lines.includes('Vendor payments can only go to Vertex Cloud and Canvasly.'),
     lines.join(' | '),
+  )
+
+  // A Member's own limits: one payment is capped by their allowance's per-payment limit when it is
+  // lower than the budget's, and the rules they read say so.
+  const alexOn = (budgetId: Id) =>
+    must(
+      w.state.allowances.find(
+        (a) =>
+          a.budgetId === budgetId &&
+          a.status === 'active' &&
+          a.holder.kind === 'member' &&
+          a.holder.userId === U.alex,
+      ),
+      `Alex's allowance on ${budgetId}`,
+    )
+  const team = budgetOf(w.state, B.arcTeam)
+  const alexTeam = alexOn(B.arcTeam)
+  t.check(
+    "J: Alex's cap on Team payments is his allowance's, below the budget's",
+    alexTeam.perOperationLimit !== undefined &&
+      alexTeam.perOperationLimit < team.perOperationLimit &&
+      perPaymentCap(team, alexTeam) === alexTeam.perOperationLimit,
+    `${perPaymentCap(team, alexTeam)}`,
+  )
+  t.check(
+    'J: an allowance with no cap of its own follows the budget’s',
+    perPaymentCap(tools, alexOn(B.arcTools)) === tools.perOperationLimit &&
+      perPaymentCap(tools) === tools.perOperationLimit,
+  )
+  const teamLines = describeBudgetPolicy(team, { allowance: alexTeam })
+  t.check(
+    'J: Alex reads his own per-payment cap, and that every payment is reviewed',
+    teamLines.includes(`A single payment cannot exceed ${usdText(perPaymentCap(team, alexTeam))}.`) &&
+      teamLines.includes('Every payment needs an Agency Admin approval.'),
+    teamLines.join(' | '),
+  )
+  const lowCap = describeBudgetPolicy(tools, { allowance: { perOperationLimit: usd(100) } })
+  t.check(
+    'J: with a cap at or below the automatic limit, everything within the limits approves itself but work',
+    lowCap.includes(`A single payment cannot exceed ${usdText(usd(100))}.`) &&
+      lowCap.includes(
+        'Payments within these limits are approved automatically, except payment for work, which an Agency Admin always reviews.',
+      ),
+    lowCap.join(' | '),
+  )
+  const belowException = describeBudgetPolicy(tools, {
+    allowance: { perOperationLimit: usd(100) },
+    exceptionThreshold: usd(60),
+  })
+  t.check(
+    "J: …and with the Investor's exception threshold below that cap, payments above it go to the Investor",
+    belowException.includes(
+      `Payments up to ${usdText(usd(60))} are approved automatically, except payment for work, which an Agency Admin always reviews. Payments above ${usdText(usd(60))} go to the Investor.`,
+    ) &&
+      same(
+        describeBudgetPolicy(tools, {
+          allowance: { perOperationLimit: usd(100) },
+          exceptionThreshold: usd(100),
+        }),
+        lowCap,
+      ),
+    belowException.join(' | '),
+  )
+  const toolsLines = describeBudgetPolicy(tools, { allowance: alexOn(B.arcTools) })
+  const automatic = `Payments up to ${usdText(tools.approvalThreshold)} are approved automatically, except payment for work, which an Agency Admin always reviews. Anything above needs an Agency Admin`
+  t.check(
+    'J: with a cap above the automatic limit, the limit is named',
+    toolsLines.includes(`${automatic}.`),
+    toolsLines.join(' | '),
+  )
+  t.check(
+    'J: without an allowance (an Admin reading the budget) the automatic limit is always named',
+    describeBudgetPolicy(tools).includes(`${automatic}.`),
+  )
+  const between = cents(tools.approvalThreshold + usd(50))
+  const aboveBoth = describeBudgetPolicy(tools, { exceptionThreshold: between })
+  t.check(
+    "J: an exception threshold between the automatic limit and the cap is named after Admins'",
+    between < perPaymentCap(tools) &&
+      aboveBoth.includes(`${automatic}, and above ${usdText(between)} the Investor decides.`),
+    aboveBoth.join(' | '),
+  )
+  const belowAutomatic = describeBudgetPolicy(tools, { exceptionThreshold: usd(50) })
+  t.check(
+    'J: an exception threshold below the automatic limit becomes the automatic limit',
+    usd(50) < tools.approvalThreshold &&
+      belowAutomatic.includes(
+        `Payments up to ${usdText(usd(50))} are approved automatically, except payment for work, which an Agency Admin always reviews. Payments above ${usdText(usd(50))} go to the Investor.`,
+      ),
+    belowAutomatic.join(' | '),
+  )
+  const teamException = describeBudgetPolicy(team, { allowance: alexTeam, exceptionThreshold: usd(500) })
+  t.check(
+    'J: with no automatic limit, an exception threshold below the cap says who decides above it',
+    usd(500) < perPaymentCap(team, alexTeam) &&
+      teamException.includes(
+        `Every payment up to ${usdText(usd(500))} needs an Agency Admin approval. Payments above ${usdText(usd(500))} go to the Investor.`,
+      ),
+    teamException.join(' | '),
+  )
+  const overCap = preview(w, U.alex, {
+    agencyId: ARC,
+    budgetId: B.arcTeam,
+    type: 'work',
+    amount: cents(perPaymentCap(team, alexTeam) + usd(1)),
+    category: 'team',
+    purpose: 'Design sprint',
+    idempotencyKey: 'smoke-j-over-cap',
+  })
+  t.check(
+    "J: the engine refuses Alex's request above his cap, naming the same number",
+    overCap.outcome === 'rejected' &&
+      overCap.reason?.rule === 'per_operation_limit' &&
+      Boolean(overCap.reason.message.includes(usdText(perPaymentCap(team, alexTeam)))),
+    `${overCap.outcome}: ${overCap.reason?.message}`,
+  )
+
+  // Verified details hide a simulated record's stand-in account, transaction, block and receipt
+  // hash, so every record the seed carries must say it is simulated.
+  const seededRecords = [
+    ...w.state.receipts.map((r) => [r.id, r.verified] as const),
+    ...w.state.payments.map((p) => [p.id, p.proofVerified] as const),
+    ...w.state.requests.map((r) => [r.id, r.ledger] as const),
+    ...w.state.tranches.map((tr) => [tr.id, tr.requestVerified] as const),
+    ...w.state.milestones.map((m) => [m.id, m.submissionVerified] as const),
+    ...w.state.schedules.flatMap((s) => [[s.id, s.ledger] as const, [s.id, s.changeLedger] as const]),
+  ].filter(([, details]) => details !== undefined)
+  const notSimulated = seededRecords.filter(([, details]) => details?.simulated !== true)
+  t.check(
+    'J: every seeded record with verified details is flagged simulated',
+    seededRecords.length > 0 && notSimulated.length === 0,
+    notSimulated.map(([id]) => id).join(', '),
   )
 
   // The seed is built the way the engine would have built it.
@@ -3002,6 +3374,79 @@ async function labelsAndSeed(t: Checker) {
     'validation',
     'J a merchant longer than 80 characters (receipt)',
   )
+  seededReferences(t)
+}
+
+/**
+ * The seeded providers' payment references read as references, and a world saved with the
+ * labels the seed used before (a card, an account) is relabelled on read: exact seeded values
+ * only, once.
+ */
+function seededReferences(t: Checker) {
+  const seed = new World(t, 'engine-j-references').state
+  const references = seed.destinations.map((d) => d.settlementLabel)
+  t.check(
+    'J: every seeded provider has a customer number as its payment reference',
+    references.length === 11 && references.every((r) => /^Customer no\. \w{4}$/.test(r)),
+    references.join(', '),
+  )
+  t.check(
+    'J: the upgrade leaves the seeded references as they are',
+    JSON.stringify(upgradeState(structuredClone(seed)).destinations) === JSON.stringify(seed.destinations),
+  )
+
+  const relabel = (labels: Partial<Record<keyof typeof D, string>>) => {
+    const world = structuredClone(seed)
+    for (const [key, label] of Object.entries(labels) as [keyof typeof D, string][]) {
+      const id = D[key]
+      must(
+        world.destinations.find((d) => d.id === id),
+        id,
+      ).settlementLabel = label
+    }
+    return world
+  }
+  // The labels every seeded provider had before.
+  const legacy = relabel({
+    vertex: 'USDC account •• 4821',
+    canvasly: 'Card on file •• 1107',
+    tasklane: 'Card on file •• 1107',
+    pagecraft: 'Card on file •• 1107',
+    pulse: 'USDC account •• 9f3a',
+    northwind: 'USDC account •• 7730',
+    atlas: 'USDC account •• 2204',
+    harbor: 'USDC account •• 5518',
+    stratus: 'USDC account •• 3190',
+    codepath: 'Card on file •• 6612',
+    sentinel: 'USDC account •• 8045',
+  })
+  const upgraded = upgradeState(structuredClone(legacy))
+  t.check(
+    'J: a world saved with the old seeded labels reads with the new references',
+    JSON.stringify(upgraded.destinations) === JSON.stringify(seed.destinations),
+    upgraded.destinations.map((d) => d.settlementLabel).join(', '),
+  )
+  const twice = upgradeState(structuredClone(upgraded))
+  t.check(
+    'J: upgrading the references again changes nothing',
+    JSON.stringify(twice) === JSON.stringify(upgraded),
+  )
+
+  // What an Admin typed, even close to a seeded label, is not a seeded value.
+  const typed = relabel({
+    vertex: 'Card on file •• 9999',
+    canvasly: 'card on file •• 1107',
+    tasklane: 'Card on file •• 1107 (team card)',
+    pagecraft: 'USDC account 4821',
+    pulse: 'constructor',
+    northwind: '',
+  })
+  const kept = upgradeState(structuredClone(typed))
+  t.check(
+    'J: only exact seeded values are relabelled; anything else an Admin typed stays',
+    JSON.stringify(kept.destinations) === JSON.stringify(typed.destinations),
+    kept.destinations.map((d) => d.settlementLabel).join(', '),
+  )
 }
 
 // ─── K. Review fixes ─────────────────────────────────────────────────────────
@@ -3036,6 +3481,38 @@ async function memberPreview(t: Checker) {
     [w.state, w.view(U.maya), w.view(U.elena)].every((state) =>
       state.agencies.every((a) => a.exceptionThreshold === undefined),
     ),
+  )
+
+  // H5: a Member's Settings name the agreement that funds their Agency and how many people are in
+  // it, from what their Agency carries; never the agreement's terms, nor who is in the team.
+  const arcTeam = w.state.memberships.filter(
+    (m) => m.status === 'active' && m.scope.kind === 'agency' && m.scope.agencyId === ARC,
+  ).length
+  const danielArc = danielView.agencies.find((a) => a.id === ARC)
+  t.check(
+    "K1: Daniel's Agency carries the title and status of the agreement that funds it, and its headcount",
+    danielArc?.fundingAgreement?.title === agencyFundingAgreement(w.state, ARC)?.title &&
+      agencyFundingAgreement(w.state, ARC)?.id === governingAgreement(w.state, ARC)?.id &&
+      danielArc?.fundingAgreement?.status === 'active' &&
+      danielArc?.teamSize === arcTeam &&
+      arcTeam > 1,
+    JSON.stringify({ agreement: danielArc?.fundingAgreement, team: danielArc?.teamSize, arcTeam }),
+  )
+  t.check(
+    'K1: the full state, Admins and Investors carry neither',
+    [w.state, w.view(U.maya), w.view(U.elena)].every((state) =>
+      state.agencies.every((a) => a.fundingAgreement === undefined && a.teamSize === undefined),
+    ),
+  )
+  t.check(
+    "K1: a Member's Settings show the same agreement and team as an Admin's",
+    JSON.stringify(agencyAgreementSummary(w.view(U.alex), ARC)) ===
+      JSON.stringify(agencyAgreementSummary(w.view(U.maya), ARC)) &&
+      agencyTeamSize(w.view(U.alex), ARC) === agencyTeamSize(w.view(U.maya), ARC),
+    JSON.stringify({
+      alex: [agencyAgreementSummary(w.view(U.alex), ARC), agencyTeamSize(w.view(U.alex), ARC)],
+      maya: [agencyAgreementSummary(w.view(U.maya), ARC), agencyTeamSize(w.view(U.maya), ARC)],
+    }),
   )
 
   const ask = (type: RequestType, amount: Cents, key: string): RequestPaymentInput => ({
@@ -4148,6 +4625,113 @@ async function filesAndBillsHeld(t: Checker) {
   )
 }
 
+// ─── K7. Bills paid from a budget ────────────────────────────────────────────
+
+/**
+ * K7. Add bill offers the budgets that can pay the vendor (and picks it when only one can), never
+ * starts on an empty account, and a bill paid from a budget keeps the budget's own account.
+ */
+async function billsFromBudgets(t: Checker) {
+  const w = new World(t, 'engine-k7')
+  const vendorOf = (id: Id) =>
+    must(
+      w.state.destinations.find((d) => d.id === id),
+      `vendor ${id}`,
+    )
+  const fitting = (id: Id) =>
+    budgetsForVendor(w.state, ARC, vendorOf(id), vendorOf(id).category)
+      .map((b) => b.id)
+      .sort()
+  checkSame(t, 'K7 Vertex Cloud: only Tools and software can pay it, so it is picked', fitting(D.vertex), [
+    B.arcTools,
+  ])
+  const canvasly = fitting(D.canvasly)
+  t.check(
+    'K7 Canvasly: Tools and software and an open budget for software can, so none is picked',
+    canvasly.length > 1 && canvasly.includes(B.arcTools) && canvasly.includes(B.arcPurchases),
+    canvasly.join(', '),
+  )
+  checkSame(t, 'K7 Atlas Legal: no budget can pay it', fitting(D.atlas), [])
+  t.check(
+    'K7 a budget whose vendor list does not name the vendor is left out',
+    !budgetsForVendor(w.state, ARC, vendorOf(D.vertex), 'travel').some((b) => b.id === B.arcTravel),
+  )
+
+  // Never an empty account by default.
+  const start = must(defaultBillAccount(w.state, ARC), 'the default account')
+  t.check(
+    'K7 the default account holds money',
+    accountBalance(w.state, start.id) > 0 ||
+      w.state.accounts.every((a) => a.agencyId !== ARC || accountBalance(w.state, a.id) === 0),
+    `${start.name}: ${accountBalance(w.state, start.id)}`,
+  )
+  if (accountBalance(w.state, ACC.arcVendors) === 0)
+    t.check('K7 an empty Vendors account is not the default', start.id !== ACC.arcVendors)
+  await w.gather(U.maya, ACC.arcVendors, usd(50))
+  t.check(
+    'K7 the Vendors account is the default once it holds money',
+    defaultBillAccount(w.state, ARC)?.id === ACC.arcVendors,
+  )
+
+  // The engine: a bill paid from a budget is stored with the budget's account.
+  const bill = (n: number, budgetId?: Id) => ({
+    agencyId: ARC,
+    destinationId: D.vertex,
+    number: `K7-00${n}`,
+    issueDate: dayBefore(w.now, 2),
+    dueDate: dayBefore(w.now, -10),
+    amount: usd(15),
+    category: 'cloud' as const,
+    accountId: ACC.arcOperations,
+    ...(budgetId ? { budgetId } : {}),
+    document: file(`k7-vertex-${n}.pdf`),
+  })
+  const fromTools = await w.run(
+    U.maya,
+    'addBill',
+    bill(1, B.arcTools),
+    'K7 Maya adds a Vertex bill on Tools and software',
+    { ops: [] },
+  )
+  t.check(
+    "K7 it keeps the budget and the budget's own account, not the one sent",
+    fromTools.result.budgetId === B.arcTools && fromTools.result.accountId === ACC.arcVendors,
+    `${fromTools.result.budgetId} / ${fromTools.result.accountId}`,
+  )
+  w.refuse(
+    U.maya,
+    'addBill',
+    bill(2, B.arcTravel),
+    'policy_rejected',
+    'K7 a bill on a budget whose vendor list does not name the vendor',
+  )
+  w.refuse(U.maya, 'addBill', bill(3, B.lumenInfra), 'forbidden', 'K7 a bill on a budget of another Agency')
+  const plain = await w.run(U.maya, 'addBill', bill(4), 'K7 Maya adds a Vertex bill with no budget', {
+    ops: [],
+  })
+  t.check(
+    'K7 with no budget it keeps the account chosen',
+    plain.result.budgetId === undefined && plain.result.accountId === ACC.arcOperations,
+  )
+  await w.fund(U.maya, B.arcTools, usd(15))
+  const paid = await w.run(
+    U.maya,
+    'payBill',
+    { billId: fromTools.result.id },
+    'K7 Maya pays the bill from Tools and software',
+    { ops: ['pay'] },
+  )
+  const vendors = must(
+    w.state.accounts.find((a) => a.id === ACC.arcVendors),
+    'the Vendors account',
+  )
+  t.check(
+    'K7 its receipt names the account the money came from',
+    paid.receipts.some((r) => r.fromLabel === `${vendors.name} · ${budgetOf(w.state, B.arcTools).name}`),
+    paid.receipts.map((r) => r.fromLabel).join(', '),
+  )
+}
+
 // ─── L. The seed's demo story ────────────────────────────────────────────────
 
 /**
@@ -5026,6 +5610,961 @@ function paymentTypeOf(request: PaymentRequest): PaymentType {
     if (request.type === 'work') return 'team'
   }
   return 'tool'
+}
+
+// ─── M. A funding agreement's lifecycle ──────────────────────────────────────
+
+/**
+ * Lumen's scheduled agreement is funded to its commitment and released to its last tranche: it
+ * then reads Completed everywhere, yet keeps its status (no state on Monad ends an agreement) and
+ * keeps governing Lumen's exception threshold, also once a second agreement is in force.
+ */
+async function agreementLifecycle(t: Checker) {
+  const w = new World(t, 'engine-m')
+  const LUMEN_AGREEMENT = DEMO.agreements.lumen
+  const lumenAgreement = () =>
+    must(
+      w.state.agreements.find((a) => a.id === LUMEN_AGREEMENT),
+      "Lumen's agreement",
+    )
+  const titled = (notifications: { userId: Id; title: string }[], title: string) =>
+    notifications.length > 0 && notifications.every((n) => n.userId === U.ren && n.title === title)
+
+  // M1. Elena funds what is left of the commitment.
+  const unfunded = agreementCapital(w.state, LUMEN_AGREEMENT).unfunded
+  t.check("M1: Lumen's commitment is not fully funded in the seed", unfunded > 0, String(unfunded))
+  const portfolioVault = DEMO.vaults.portfolio
+  if (vaultBalance(w.state, portfolioVault) < unfunded)
+    await w.run(
+      U.elena,
+      'addFunds',
+      { portfolioId: DEMO.portfolio, amount: unfunded, source: 'Treasury' },
+      'M1 setup: Elena adds funds',
+      { ops: ['deposit'] },
+    )
+  await w.run(
+    U.elena,
+    'fundAgreement',
+    { agreementId: LUMEN_AGREEMENT, amount: unfunded },
+    "M1 Elena funds the rest of Lumen's commitment",
+    { ops: ['fundAgreement'] },
+  )
+
+  // M2. Ren requests Tranche 3 into Operations, and Elena releases it: not the last one.
+  await w.run(
+    U.ren,
+    'requestTranche',
+    { trancheId: DEMO.tranches.lumen3, destinationAccountId: ACC.lumenOperations },
+    'M2 Ren requests Tranche 3',
+    { ops: ['requestTranche'] },
+  )
+  t.check(
+    'M2: Tranche 3 is not the last one to release',
+    !isLastTranche(
+      w.state,
+      must(
+        w.state.tranches.find((tr) => tr.id === DEMO.tranches.lumen3),
+        'Tranche 3',
+      ),
+    ),
+  )
+  const m2 = await w.run(
+    U.elena,
+    'releaseTranche',
+    { trancheId: DEMO.tranches.lumen3 },
+    'M2 Elena releases Tranche 3',
+    { ops: ['releaseTranche'] },
+  )
+  t.check(
+    'M2: Ren is told "Funding released"',
+    titled(m2.notifications, 'Funding released'),
+    JSON.stringify(m2.notifications.map((n) => n.title)),
+  )
+  t.check(
+    'M2: Tranche 4 is available, and the agreement still reads Active',
+    w.state.tranches.find((tr) => tr.id === DEMO.tranches.lumen4)?.status === 'available' &&
+      !isFullyReleased(w.state, LUMEN_AGREEMENT) &&
+      agreementBadge(w.state, lumenAgreement()).label === 'Active',
+  )
+
+  // M3. Elena releases Tranche 4 without a request (Scheduled: none is needed). It is the last one.
+  const operationsBefore = accountBalance(w.state, ACC.lumenOperations)
+  const m3 = await w.run(
+    U.elena,
+    'releaseTranche',
+    { trancheId: DEMO.tranches.lumen4 },
+    'M3 Elena releases the last tranche, which nobody requested: no agreement-status operation',
+    { ops: ['releaseTranche'] },
+  )
+  t.check(
+    'M3: it lands in Operations',
+    accountBalance(w.state, ACC.lumenOperations) - operationsBefore === usd(15_000),
+  )
+  t.check(
+    'M3: Ren is told it was the final tranche of the agreement',
+    titled(m3.notifications, 'Final tranche released') &&
+      m3.notifications.every((n) =>
+        n.body.endsWith(`That was the last tranche of ${lumenAgreement().title}.`),
+      ),
+    JSON.stringify(m3.notifications.map((n) => [n.title, n.body])),
+  )
+  const capital = agreementCapital(w.state, LUMEN_AGREEMENT)
+  t.check(
+    'M3: nothing is left to fund or release, and nothing stays in the Funding Vault',
+    capital.remainingCommitment === 0 &&
+      capital.inFundingVault === 0 &&
+      capital.unfunded === 0 &&
+      vaultBalance(w.state, DEMO.vaults.lumenFunding) === 0,
+    JSON.stringify(capital),
+  )
+  t.check(
+    'M3: it reads Completed, but its status is still active and it still governs Lumen',
+    isFullyReleased(w.state, LUMEN_AGREEMENT) &&
+      lumenAgreement().status === 'active' &&
+      agreementDisplayStatus(w.state, lumenAgreement()) === 'completed' &&
+      agreementBadge(w.state, lumenAgreement()).label === 'Completed' &&
+      governingAgreement(w.state, LUMEN)?.id === LUMEN_AGREEMENT,
+  )
+  w.refuse(
+    U.elena,
+    'fundAgreement',
+    { agreementId: LUMEN_AGREEMENT, amount: usd(1) },
+    'limit_exceeded',
+    'M3 funding 1 USD more',
+  )
+  // H5: a Member's Settings show it Completed too, from what their Agency carries.
+  t.check(
+    "M3: Noah's Agency carries it as completed, like Ren's Settings show it",
+    w.view(U.noah).agencies.find((a) => a.id === LUMEN)?.fundingAgreement?.status === 'completed' &&
+      agencyAgreementSummary(w.view(U.noah), LUMEN)?.status === 'completed' &&
+      agencyAgreementSummary(w.view(U.ren), LUMEN)?.status === 'completed',
+    JSON.stringify(agencyAgreementSummary(w.view(U.noah), LUMEN)),
+  )
+
+  // M4. A second agreement for Lumen: created, accepted, funded and released. The first one, in
+  // force first, keeps governing: its threshold applies, on the engine and on the ledger.
+  const created = await w.run(
+    U.elena,
+    'createAgreement',
+    {
+      portfolioId: DEMO.portfolio,
+      agencyId: LUMEN,
+      title: 'Second year',
+      purpose: 'Operating capital for a second year.',
+      committed: usd(6_000),
+      releaseModel: 'manual',
+      startDate: w.now,
+      endDate: plusHours(w.now, 24 * 365),
+      tranches: [
+        { name: 'Tranche 1', amount: usd(4_000), releaseCondition: 'manual' },
+        { name: 'Tranche 2', amount: usd(2_000), releaseCondition: 'manual' },
+      ],
+      spendingPolicy: {
+        allowedCategories: ['team', 'cloud'],
+        exceptionThreshold: usd(2_000),
+        reportingCadence: 'monthly',
+        returnConditions: 'Unreleased capital stays in the Funding Vault until the parties agree on it.',
+      },
+      evidenceRequirements: 'A monthly spend report.',
+    },
+    'M4 Elena creates a second agreement for Lumen, with a lower threshold',
+    { ops: ['createAgreement'] },
+  )
+  const second = created.result.id
+  t.check(
+    'M4: Lumen lists the new agreement first, the completed one last',
+    agreementsOf(w.state, LUMEN)
+      .map((a) => a.id)
+      .join() === [second, LUMEN_AGREEMENT].join(),
+  )
+  const waiting = [U.ren, U.noah].map((userId) => agencyAgreementSummary(w.view(userId), LUMEN))
+  t.check(
+    'M4: while it waits for acceptance, Ren and Noah both still see the first one, Completed',
+    waiting.every((summary) => summary?.title === lumenAgreement().title && summary.status === 'completed'),
+    JSON.stringify(waiting),
+  )
+  await w.run(U.ren, 'acceptAgreement', { agreementId: second }, 'M4 Ren accepts it', {
+    ops: ['acceptAgreement'],
+  })
+  t.check(
+    'M4: the running agreement comes first; the first one still governs, with its own threshold',
+    agreementsOf(w.state, LUMEN)[0]?.id === second &&
+      governingAgreement(w.state, LUMEN)?.id === LUMEN_AGREEMENT &&
+      exceptionThresholdOf(w.state, LUMEN) === lumenAgreement().spendingPolicy.exceptionThreshold &&
+      exceptionThresholdOf(w.state, LUMEN)! > usd(3_000),
+  )
+  await w.gather(U.ren, ACC.lumenOperations, usd(3_000))
+  await w.run(
+    U.ren,
+    'sendPayment',
+    {
+      agencyId: LUMEN,
+      type: 'vendor',
+      recipient: { kind: 'destination', destinationId: D.stratus },
+      accountId: ACC.lumenOperations,
+      amount: usd(3_000),
+      category: 'cloud',
+      memo: 'Hosting, second year',
+    },
+    "M4 Ren pays 3,000 USD, above the new agreement's threshold: no exception, and the ledger agrees",
+    { ops: ['pay'] },
+  )
+  await w.run(
+    U.elena,
+    'fundAgreement',
+    { agreementId: second, amount: usd(4_000) },
+    'M4 Elena funds the first tranche of the second agreement',
+    { ops: ['fundAgreement'] },
+  )
+  const m4 = await w.run(
+    U.elena,
+    'releaseTranche',
+    {
+      trancheId: must(
+        w.state.tranches.find((tr) => tr.agreementId === second && tr.index === 1),
+        'Tranche 1',
+      ).id,
+    },
+    'M4 Elena releases it (Manual: no request needed)',
+    { ops: ['releaseTranche'] },
+  )
+  // Settings name the same agreement for every role: the running one with tranches left, not the
+  // first one (Completed), which still governs.
+  const summaries = [U.ren, U.noah, U.elena].map((userId) => agencyAgreementSummary(w.view(userId), LUMEN))
+  t.check(
+    'M4: Ren, Noah and Elena all see "Second year · Active" in Settings',
+    summaries.every((summary) => summary?.title === 'Second year' && summary.status === 'active') &&
+      agencyFundingAgreement(w.state, LUMEN)?.id === second,
+    JSON.stringify(summaries),
+  )
+  t.check(
+    "M4: …while Noah's Agency still carries the first agreement's exception threshold",
+    w.view(U.noah).agencies.find((a) => a.id === LUMEN)?.exceptionThreshold ===
+      lumenAgreement().spendingPolicy.exceptionThreshold,
+  )
+  t.check(
+    'M4: not the last tranche: "Funding released", and the agreement reads Active',
+    titled(m4.notifications, 'Funding released') &&
+      agreementBadge(
+        w.state,
+        must(
+          w.state.agreements.find((a) => a.id === second),
+          'the second agreement',
+        ),
+      ).label === 'Active',
+  )
+}
+
+// ─── N. Funding never exceeds what can still be released ─────────────────────
+
+/**
+ * Only a release moves money out of a Funding Vault, and a rejected tranche never releases. Arc's
+ * agreement (4 × 25,000, 50,000 funded, Tranche 1 released) loses Tranche 2 to a rejection: the
+ * engine then funds only what the tranches left can release, so no new capital is stranded, and
+ * the pooled vault still pays the later tranches down to zero.
+ */
+async function fundingCap(t: Checker) {
+  const w = new World(t, 'engine-n')
+  const ARC_AGREEMENT = DEMO.agreements.arc
+  const before = agreementCapital(w.state, ARC_AGREEMENT)
+  t.check(
+    "N: Arc's seeded agreement can take its whole unfunded commitment while every tranche is in play",
+    before.fundable === before.unfunded && before.releasable === usd(75_000),
+    JSON.stringify(before),
+  )
+
+  // N0. The engine funds less than the ledger checks, so the server holds the agreement while a
+  // funding of it, or a rejection of one of its milestones, waits to be signed.
+  const elenaFunds = prepare(w, U.elena, 'fundAgreement', { agreementId: ARC_AGREEMENT, amount: usd(1_000) })
+  const marcusFunds = prepare(w, U.marcus, 'fundAgreement', {
+    agreementId: ARC_AGREEMENT,
+    amount: usd(1_000),
+  })
+  const fundingOpen = elenaFunds.open()
+  t.check(
+    "N0: Marcus's funding of the agreement waits for Elena's",
+    sharesAny(marcusFunds.held, fundingOpen) && marcusFunds.held.has(`agreement:${ARC_AGREEMENT}`),
+    [...marcusFunds.held].join(', '),
+  )
+  const rejection = prepare(w, U.elena, 'requestMilestoneChanges', {
+    milestoneId: DEMO.milestones.arc2,
+    note: 'The prototype misses the agreed scope.',
+    reject: true,
+  })
+  t.check(
+    'N0: …and so does a rejection of one of its milestones, both ways',
+    sharesAny(rejection.held, fundingOpen) && sharesAny(marcusFunds.held, rejection.open()),
+    [...rejection.held].join(', '),
+  )
+  const changes = prepare(w, U.elena, 'requestMilestoneChanges', {
+    milestoneId: DEMO.milestones.arc2,
+    note: 'Please add the test plan.',
+  })
+  t.check(
+    'N0: a request for changes, which leaves the cap as it was, does not wait',
+    !sharesAny(changes.held, fundingOpen),
+    [...changes.held].join(', '),
+  )
+  const lumenFunds = prepare(w, U.marcus, 'fundAgreement', {
+    agreementId: DEMO.agreements.lumen,
+    amount: usd(1_000),
+  })
+  t.check(
+    "N0: a funding of Lumen's agreement does not wait for one of Arc's",
+    !sharesAny(lumenFunds.held, fundingOpen) && !sharesAny(elenaFunds.held, lumenFunds.open()),
+    [...lumenFunds.held].join(', '),
+  )
+
+  // N1. Elena rejects the milestone of Tranche 2, under review.
+  await w.run(
+    U.elena,
+    'requestMilestoneChanges',
+    { milestoneId: DEMO.milestones.arc2, note: 'The prototype misses the agreed scope.', reject: true },
+    'N1 Elena rejects the Prototype milestone',
+    { ops: ['requestChanges'] },
+  )
+  const capital = agreementCapital(w.state, ARC_AGREEMENT)
+  t.check(
+    'N1: Tranches 3 and 4 are left to release, and 25,000 of them is already in the Funding Vault',
+    capital.releasable === usd(50_000) &&
+      capital.inFundingVault === usd(25_000) &&
+      capital.fundable === usd(25_000) &&
+      capital.unfunded === usd(50_000),
+    JSON.stringify(capital),
+  )
+
+  // N2. The commitment would allow 50,000 more; only 25,000 can still be released.
+  const vault = DEMO.vaults.portfolio
+  if (vaultBalance(w.state, vault) < usd(50_000))
+    await w.run(
+      U.elena,
+      'addFunds',
+      { portfolioId: DEMO.portfolio, amount: usd(50_000), source: 'Treasury' },
+      'N2 setup: Elena adds funds',
+      { ops: ['deposit'] },
+    )
+  const message = w.refuse(
+    U.elena,
+    'fundAgreement',
+    { agreementId: ARC_AGREEMENT, amount: usd(50_000) },
+    'limit_exceeded',
+    'N2 funding the whole commitment left',
+  )
+  t.check(
+    'N2: it says how much can still be funded',
+    message === `Only ${usdText(usd(25_000))} more can be funded: that is what the tranches left still need.`,
+    message,
+  )
+  const beyond = w.refuse(
+    U.elena,
+    'fundAgreement',
+    { agreementId: ARC_AGREEMENT, amount: usd(60_000) },
+    'limit_exceeded',
+    'N2 funding beyond the commitment',
+  )
+  t.check(
+    'N2: …and beyond the commitment, it offers only what can be funded',
+    beyond ===
+      `Funded capital cannot exceed the ${usdText(usd(100_000))} commitment. You can add up to ${usdText(usd(25_000))}.`,
+    beyond,
+  )
+  await w.run(
+    U.elena,
+    'fundAgreement',
+    { agreementId: ARC_AGREEMENT, amount: usd(25_000) },
+    'N2 Elena funds what the tranches left can release',
+    { ops: ['fundAgreement'] },
+  )
+  const full = w.refuse(
+    U.elena,
+    'fundAgreement',
+    { agreementId: ARC_AGREEMENT, amount: usd(1) },
+    'limit_exceeded',
+    'N2 then 1 USD more',
+  )
+  t.check(
+    'N2: …because every tranche left is funded',
+    full === 'Every tranche left is already funded. Nothing more can be funded under this agreement.',
+    full,
+  )
+
+  // N3. Maya submits evidence for Tranches 3 and 4, and Elena releases both: the vault ends empty.
+  const releaseWithEvidence = async (milestoneId: Id, trancheId: Id, label: string) => {
+    await w.run(
+      U.maya,
+      'submitMilestoneEvidence',
+      {
+        milestoneId,
+        evidence: [file(`${label} report.pdf`)],
+        note: `${label} is done.`,
+        destinationAccountId: ACC.arcOperations,
+      },
+      `N3 Maya submits the ${label} evidence`,
+      { ops: ['requestTranche'] },
+    )
+    return w.run(U.elena, 'releaseTranche', { trancheId }, `N3 Elena releases the ${label} tranche`, {
+      ops: ['releaseTranche'],
+    })
+  }
+  await releaseWithEvidence(DEMO.milestones.arc3, DEMO.tranches.arc3, 'Beta')
+  const lastRelease = await releaseWithEvidence(DEMO.milestones.arc4, DEMO.tranches.arc4, 'Launch')
+  const after = agreementCapital(w.state, ARC_AGREEMENT)
+  t.check(
+    'N3: the Funding Vault ends at zero, with nothing stranded',
+    vaultBalance(w.state, DEMO.vaults.arcFunding) === 0 &&
+      after.inFundingVault === 0 &&
+      after.fundable === 0 &&
+      after.funded === usd(75_000) &&
+      after.released === usd(75_000),
+    JSON.stringify(after),
+  )
+  t.check(
+    'N3: with Tranche 2 rejected, the agreement still reads Completed, and the Admins hear of its final tranche',
+    isFullyReleased(w.state, ARC_AGREEMENT) &&
+      agreementBadge(
+        w.state,
+        must(
+          w.state.agreements.find((a) => a.id === ARC_AGREEMENT),
+          "Arc's agreement",
+        ),
+      ).label === 'Completed' &&
+      same(notifiedUsers(lastRelease), ADMINS) &&
+      lastRelease.notifications.every((n) => n.title === 'Final tranche released'),
+    JSON.stringify(lastRelease.notifications.map((n) => [n.userId, n.title])),
+  )
+}
+
+// ─── O. Notifications that ask for a decision ────────────────────────────────
+
+/**
+ * A notification that asks for a decision names what it is about: a request, a milestone, a
+ * tranche or an agreement to accept. Once anyone decides it, it is read for everyone it went to;
+ * other notifications, the follow-ups that only tell included, stay as they were.
+ */
+async function decidedNotifications(t: Checker) {
+  const w = new World(t, 'engine-o')
+  const ASKING = new Set([
+    'Request needs approval',
+    'Exception needs your decision',
+    'Milestone ready for review',
+    'Tranche requested',
+    'New funding agreement',
+  ])
+  type Kind = NotificationSubject['kind']
+  const about = (kind: Kind, id: Id) =>
+    w.state.notifications.filter((n) => n.subject?.kind === kind && n.subject.id === id)
+  const shown = (kind: Kind, id: Id) =>
+    JSON.stringify(about(kind, id).map((n) => [n.userId, n.title, n.readAt ?? 'unread']))
+  /** Every notification about it went to exactly `userIds` and is read, some of them just now. */
+  const readFor = (kind: Kind, id: Id, userIds: Id[]) => {
+    const notes = about(kind, id)
+    return (
+      same([...new Set(notes.map((n) => n.userId))].sort(), [...userIds].sort()) &&
+      notes.every((n) => n.readAt) &&
+      notes.some((n) => n.readAt === w.now)
+    )
+  }
+  /** A step's new notifications went to exactly `userIds`, unread, each naming `kind` `id`. */
+  const asked = (step: { notifications: Notification[] }, kind: Kind, id: Id, userIds: Id[]) =>
+    same(notifiedUsers(step), [...userIds].sort()) &&
+    step.notifications.every((n) => same(n.subject, { kind, id }) && !n.readAt)
+
+  // O1. In the seed, what asks for a decision names something still waiting for it.
+  const waiting = ({ kind, id }: NotificationSubject) =>
+    kind === 'request'
+      ? w.state.requests.find((r) => r.id === id)?.status === 'needs_approval'
+      : kind === 'milestone'
+        ? w.state.milestones.find((m) => m.id === id)?.status === 'ready_for_review'
+        : kind === 'tranche'
+          ? w.state.tranches.find((tr) => tr.id === id)?.status === 'under_review'
+          : w.state.agreements.find((a) => a.id === id)?.status === 'pending_acceptance'
+  const asking = w.state.notifications.filter((n) => !n.readAt && ASKING.has(n.title))
+  t.check(
+    'O1: every unread notification of the seed that asks for a decision names one still waiting',
+    asking.length > 0 && asking.every((n) => n.subject !== undefined && waiting(n.subject)),
+    JSON.stringify(asking.map((n) => [n.userId, n.title, n.subject])),
+  )
+  t.check(
+    'O1: …and the ones that only tell name nothing',
+    w.state.notifications.every((n) => ASKING.has(n.title) || n.subject === undefined),
+  )
+
+  // O2. An Agency Admin approves a request: read for both Admins, and nothing else is.
+  const askForWork = async (label: string, key: string, userId: Id = U.alex): Promise<Id> => {
+    const step = await w.run(
+      userId,
+      'requestPayment',
+      {
+        agencyId: ARC,
+        budgetId: B.arcTeam,
+        type: 'work',
+        amount: usd(100),
+        category: 'team',
+        purpose: 'Pilot support',
+        attachments: [file(`o-${key}.pdf`)],
+        idempotencyKey: `smoke-o-${key}`,
+      },
+      label,
+      { ops: [] },
+    )
+    const id = step.result.id
+    t.check(
+      `${label}: both Agency Admins are asked, about that request`,
+      step.result.status === 'needs_approval' && asked(step, 'request', id, ADMINS),
+      shown('request', id),
+    )
+    w.later(1)
+    return id
+  }
+  await w.fund(U.maya, B.arcTeam, usd(100))
+  const approved = await askForWork('O2 Alex asks to be paid for his work', 'approve')
+  const otherUnread = w.state.notifications.filter(
+    (n) => !n.readAt && ADMINS.some((admin) => admin === n.userId) && n.subject?.id !== approved,
+  )
+  await w.run(U.maya, 'approveRequest', { requestId: approved }, 'O2 Maya approves it', { ops: ['pay'] })
+  t.check(
+    'O2: it is read for Maya and for Jordan, who did not decide it',
+    readFor('request', approved, ADMINS),
+    shown('request', approved),
+  )
+  t.check(
+    "O2: the Admins' other unread notifications stay unread, other requests' among them",
+    otherUnread.some((n) => n.subject?.kind === 'request') &&
+      otherUnread.every((n) => !w.state.notifications.find((m) => m.id === n.id)?.readAt),
+    JSON.stringify(otherUnread.map((n) => [n.userId, n.title])),
+  )
+
+  // O3–O6. Declined, cancelled by the requester, or cancelled with the requester's access.
+  const declined = await askForWork('O3 Alex asks again', 'decline')
+  await w.run(
+    U.jordan,
+    'declineRequest',
+    { requestId: declined, reason: 'Paid in the payroll' },
+    'O3 Jordan declines it',
+    { ops: [] },
+  )
+  t.check(
+    'O3: declined, it is read for both Admins',
+    readFor('request', declined, ADMINS),
+    shown('request', declined),
+  )
+  const cancelled = await askForWork('O4 Alex asks once more', 'cancel')
+  await w.run(U.alex, 'cancelRequest', { requestId: cancelled }, 'O4 Alex cancels it', { ops: [] })
+  t.check(
+    'O4: cancelled, it is read for both Admins',
+    readFor('request', cancelled, ADMINS),
+    shown('request', cancelled),
+  )
+  const revoked = await askForWork('O5 Alex asks for more', 'revoke')
+  const alexTeam = must(
+    w.state.allowances.find(
+      (a) =>
+        a.budgetId === B.arcTeam &&
+        a.status === 'active' &&
+        a.holder.kind === 'member' &&
+        a.holder.userId === U.alex,
+    ),
+    "Alex's Team payments allowance",
+  )
+  await w.run(
+    U.maya,
+    'revokeAllowance',
+    { allowanceId: alexTeam.id },
+    "O5 Maya revokes Alex's spending access to Team payments",
+    { ops: ['setAllowance'] },
+  )
+  t.check(
+    'O5: the request it cancels is read for both Admins',
+    w.state.requests.find((r) => r.id === revoked)?.status === 'cancelled' &&
+      readFor('request', revoked, ADMINS),
+    shown('request', revoked),
+  )
+  const removed = await askForWork('O6 Priya asks to be paid for her work', 'remove', U.priya)
+  const priya = must(
+    w.state.memberships.find(
+      (m) =>
+        m.userId === U.priya &&
+        m.status === 'active' &&
+        m.scope.kind === 'agency' &&
+        m.scope.agencyId === ARC,
+    ),
+    "Priya's membership",
+  )
+  await w.run(U.maya, 'revokeMembership', { membershipId: priya.id }, 'O6 Maya removes Priya from the Agency')
+  t.check(
+    'O6: the request her removal cancels is read for both Admins',
+    w.state.requests.find((r) => r.id === removed)?.status === 'cancelled' &&
+      readFor('request', removed, ADMINS),
+    shown('request', removed),
+  )
+
+  // O7. Exceptions, the Investor's to decide: the seeded one declined, a new one approved.
+  const audit = must(
+    w.state.requests.find(
+      (r) => r.agencyId === LUMEN && r.status === 'needs_approval' && isException(w.state, r),
+    ),
+    "Lumen's security audit",
+  )
+  w.later(1)
+  await w.run(
+    U.elena,
+    'declineRequest',
+    { requestId: audit.id, reason: 'Next quarter' },
+    "O7 Elena declines Lumen's security audit",
+    { ops: ['closeRequest'] },
+  )
+  t.check(
+    "O7: her seeded 'Exception needs your decision' is read",
+    readFor('request', audit.id, [U.elena]) &&
+      about('request', audit.id).every((n) => n.title === 'Exception needs your decision'),
+    shown('request', audit.id),
+  )
+  t.check(
+    "O7: Ren's 'Exception sent to Investor' only told him, and stays unread",
+    w.state.notifications.some(
+      (n) => n.userId === U.ren && n.title === 'Exception sent to Investor' && !n.readAt,
+    ),
+  )
+  const threshold = must(governingAgreement(w.state, LUMEN), "Lumen's agreement").spendingPolicy
+    .exceptionThreshold
+  const exceptionAsk: RequestPaymentInput = {
+    agencyId: LUMEN,
+    budgetId: B.lumenSecurity,
+    type: 'funds',
+    amount: cents(threshold + usd(1)),
+    category: 'legal',
+    purpose: 'Penetration test',
+    idempotencyKey: 'smoke-o-exception',
+  }
+  await w.fund(U.ren, B.lumenSecurity, exceptionAsk.amount)
+  const exception = await w.run(
+    U.ren,
+    'requestPayment',
+    exceptionAsk,
+    'O7 Ren asks for money above the exception threshold',
+    { ops: ['requestPayment'] },
+  )
+  const exceptionId = exception.result.id
+  t.check(
+    'O7: both Investors are asked, about that request',
+    asked(exception, 'request', exceptionId, INVESTORS),
+    shown('request', exceptionId),
+  )
+  w.later(1)
+  await w.run(U.elena, 'approveRequest', { requestId: exceptionId }, 'O7 Elena approves it', {
+    ops: ['approvePayment'],
+  })
+  t.check(
+    'O7: it is read for Elena and for Marcus',
+    readFor('request', exceptionId, INVESTORS),
+    shown('request', exceptionId),
+  )
+
+  // O8. Milestones: released, sent back for changes, rejected.
+  /** Setup: the agreement holds what releasing the tranche needs. */
+  const fundRelease = async (agreementId: Id, trancheId: Id, label: string) => {
+    const tranche = must(
+      w.state.tranches.find((tr) => tr.id === trancheId),
+      label,
+    )
+    const capital = agreementCapital(w.state, agreementId)
+    const need = cents(capital.released + tranche.amount - capital.funded)
+    if (need <= 0) return
+    if (vaultBalance(w.state, DEMO.vaults.portfolio) < need)
+      await w.run(
+        U.elena,
+        'addFunds',
+        { portfolioId: DEMO.portfolio, amount: need, source: 'Treasury' },
+        `${label} setup: Elena adds funds`,
+        { ops: ['deposit'] },
+      )
+    await w.run(
+      U.elena,
+      'fundAgreement',
+      { agreementId, amount: need },
+      `${label} setup: Elena funds the agreement`,
+      { ops: ['fundAgreement'] },
+    )
+  }
+  await fundRelease(DEMO.agreements.arc, DEMO.tranches.arc2, 'O8')
+  await w.run(
+    U.elena,
+    'releaseTranche',
+    { trancheId: DEMO.tranches.arc2 },
+    'O8 Elena approves the Prototype milestone and releases Tranche 2',
+    { ops: ['releaseTranche'] },
+  )
+  t.check(
+    "O8: her seeded 'Milestone ready for review' is read",
+    readFor('milestone', DEMO.milestones.arc2, [U.elena]),
+    shown('milestone', DEMO.milestones.arc2),
+  )
+  const submit = async (milestoneId: Id, label: string) => {
+    const step = await w.run(
+      U.maya,
+      'submitMilestoneEvidence',
+      {
+        milestoneId,
+        evidence: [file(`o-${label}.pdf`)],
+        note: `${label} is done.`,
+        destinationAccountId: ACC.arcOperations,
+      },
+      `O8 Maya submits the ${label} evidence`,
+      { ops: ['requestTranche'] },
+    )
+    t.check(
+      `O8: both Investors are asked to review the ${label} evidence, about that milestone`,
+      asked(step, 'milestone', milestoneId, INVESTORS),
+      shown('milestone', milestoneId),
+    )
+    w.later(1)
+  }
+  await submit(DEMO.milestones.arc3, 'Beta')
+  await w.run(
+    U.elena,
+    'requestMilestoneChanges',
+    { milestoneId: DEMO.milestones.arc3, note: 'Add the beta test results.' },
+    'O8 Elena asks for changes to the Beta milestone',
+    { ops: ['requestChanges'] },
+  )
+  t.check(
+    'O8: sent back for changes, it is read for both Investors',
+    readFor('milestone', DEMO.milestones.arc3, INVESTORS),
+    shown('milestone', DEMO.milestones.arc3),
+  )
+  await submit(DEMO.milestones.arc3, 'Beta v2')
+  await fundRelease(DEMO.agreements.arc, DEMO.tranches.arc3, 'O8')
+  await w.run(U.elena, 'releaseTranche', { trancheId: DEMO.tranches.arc3 }, 'O8 Elena releases Tranche 3', {
+    ops: ['releaseTranche'],
+  })
+  t.check(
+    'O8: released, what was submitted again is read for both Investors too',
+    readFor('milestone', DEMO.milestones.arc3, INVESTORS),
+    shown('milestone', DEMO.milestones.arc3),
+  )
+  await submit(DEMO.milestones.arc4, 'Launch')
+  await w.run(
+    U.elena,
+    'requestMilestoneChanges',
+    { milestoneId: DEMO.milestones.arc4, note: 'The launch misses the agreed scope.', reject: true },
+    'O8 Elena rejects the Launch milestone',
+    { ops: ['requestChanges'] },
+  )
+  t.check(
+    'O8: rejected, it is read for both Investors',
+    readFor('milestone', DEMO.milestones.arc4, INVESTORS),
+    shown('milestone', DEMO.milestones.arc4),
+  )
+
+  // O9. A tranche requested without a milestone, then released.
+  const requested = await w.run(
+    U.ren,
+    'requestTranche',
+    { trancheId: DEMO.tranches.lumen3, destinationAccountId: ACC.lumenOperations },
+    "O9 Ren requests Lumen's Tranche 3",
+    { ops: ['requestTranche'] },
+  )
+  t.check(
+    'O9: both Investors are asked, about that tranche',
+    asked(requested, 'tranche', DEMO.tranches.lumen3, INVESTORS),
+    shown('tranche', DEMO.tranches.lumen3),
+  )
+  w.later(1)
+  await fundRelease(DEMO.agreements.lumen, DEMO.tranches.lumen3, 'O9')
+  await w.run(U.elena, 'releaseTranche', { trancheId: DEMO.tranches.lumen3 }, 'O9 Elena releases it', {
+    ops: ['releaseTranche'],
+  })
+  t.check(
+    'O9: it is read for both Investors',
+    readFor('tranche', DEMO.tranches.lumen3, INVESTORS),
+    shown('tranche', DEMO.tranches.lumen3),
+  )
+
+  // O10. An agreement waiting for acceptance, then accepted.
+  const created = await w.run(
+    U.elena,
+    'createAgreement',
+    {
+      portfolioId: DEMO.portfolio,
+      agencyId: LUMEN,
+      title: 'Second year',
+      purpose: 'Operating capital for a second year.',
+      committed: usd(6_000),
+      releaseModel: 'manual',
+      startDate: w.now,
+      endDate: plusHours(w.now, 24 * 365),
+      tranches: [{ name: 'Tranche 1', amount: usd(6_000), releaseCondition: 'manual' }],
+      spendingPolicy: {
+        allowedCategories: ['team', 'cloud'],
+        exceptionThreshold: usd(2_000),
+        reportingCadence: 'monthly',
+        returnConditions: 'Unreleased capital stays in the Funding Vault until the parties agree on it.',
+      },
+      evidenceRequirements: 'A monthly spend report.',
+    },
+    'O10 Elena offers Lumen a second agreement',
+    { ops: ['createAgreement'] },
+  )
+  const agreementId = created.result.id
+  const lumenAdmins = notifiedUsers(created)
+  t.check(
+    "O10: Lumen's Admins are asked to accept it, about that agreement",
+    lumenAdmins.includes(U.ren) && asked(created, 'agreement', agreementId, lumenAdmins),
+    shown('agreement', agreementId),
+  )
+  w.later(1)
+  const accepted = await w.run(U.ren, 'acceptAgreement', { agreementId }, 'O10 Ren accepts it', {
+    ops: ['acceptAgreement'],
+  })
+  t.check(
+    'O10: it is read for them',
+    readFor('agreement', agreementId, lumenAdmins),
+    shown('agreement', agreementId),
+  )
+  t.check(
+    "O10: the Investors' 'Agreement accepted' only tells, and stays unread",
+    same(notifiedUsers(accepted), INVESTORS) &&
+      accepted.notifications.every((n) => n.title === 'Agreement accepted' && !n.subject && !n.readAt),
+  )
+}
+
+// ─── P. A stored decision, as each person reads it ───────────────────────────
+
+/**
+ * A request's decision is stored worded for its requester ("your per-operation limit"). The
+ * Agency Admin who reviews it reads whose limits they are, and a budget without an automatic
+ * limit (Team payments) says every request needs an Agency Admin, also in decisions stored
+ * before it said so ("Requests above 0.00 USD …").
+ */
+async function decisionReaders(t: Checker) {
+  const w = new World(t, 'engine-p')
+  const team = budgetOf(w.state, B.arcTeam)
+  t.check('P: Team payments approves nothing by itself', team.approvalThreshold === 0)
+  const amount = usd(100)
+  const requester = must(
+    [U.priya, U.alex, U.daniel].find((id) => allowanceLeft(w, B.arcTeam, id) >= amount),
+    'a Member with room left on Team payments',
+  )
+  await w.fund(U.maya, B.arcTeam, amount)
+  const ask: RequestPaymentInput = {
+    agencyId: ARC,
+    budgetId: B.arcTeam,
+    type: 'funds',
+    amount,
+    category: 'team',
+    purpose: 'Team offsite lunch',
+    idempotencyKey: 'smoke-p1-funds',
+  }
+  const every = 'Every request needs approval from an Agency Admin.'
+  t.check(
+    "P: Verified details read an older stored sentence as today's, and leave others alone",
+    currentPolicyText('Requests above 0.00 USD need approval from an Agency Admin.') === every &&
+      currentPolicyText('Requests above 250.00 USD need approval from an Agency Admin.') ===
+        'Requests above 250.00 USD need approval from an Agency Admin.',
+  )
+  const previewed = preview(w, requester, ask)
+  t.check(
+    'P1: the form says every request needs an Agency Admin',
+    previewed.outcome === 'needs_approval' &&
+      previewed.reason?.rule === 'approval_threshold' &&
+      previewed.reason.message === every,
+    JSON.stringify(previewed.reason),
+  )
+  const p1 = await w.run(requester, 'requestPayment', ask, 'P1 a Member asks Team payments for money', {
+    ops: ['requestPayment'],
+  })
+  const stored = p1.result.decision
+  samePreview(t, 'P1', previewed, stored)
+  t.check(
+    'P1: the stored decision is worded for the requester',
+    stored.checks.some((c) => c.rule === 'per_operation_limit' && c.message.startsWith('Within your ')),
+    JSON.stringify(stored.checks.map((c) => c.message)),
+  )
+  t.check(
+    'P1: the requester reads it unchanged',
+    JSON.stringify(policyForReader(stored)) === JSON.stringify(stored),
+  )
+
+  // P2. Maya reviews it: the same checks, about the requester.
+  const name = userName(w.state, requester)
+  const read = policyForReader(stored, name)
+  const messages = [...read.checks, ...(read.reason ? [read.reason] : [])].map((c) => c.message)
+  const allowance = must(
+    w.state.allowances.find(
+      (a) =>
+        a.budgetId === B.arcTeam &&
+        a.status === 'active' &&
+        a.holder.kind === 'member' &&
+        a.holder.userId === requester,
+    ),
+    "the requester's allowance on Team payments",
+  )
+  const cap = perPaymentCap(team, allowance)
+  const messageOf = (rule: string) => read.checks.find((c) => c.rule === rule)?.message
+  t.check(
+    'P2: the reviewer never reads "you" or "your"',
+    messages.every((m) => !/\byour?\b/i.test(m)),
+    messages.join(' | '),
+  )
+  t.check(
+    'P2: …but whose access and limits they are',
+    messageOf('holder_has_access') === `${name} has spending access to this budget.` &&
+      messageOf('per_operation_limit') === `Within ${name}'s per-operation limit of ${usdText(cap)}.` &&
+      Boolean(messageOf('period_limit')?.startsWith(`Within ${name}'s monthly limit. `)),
+    messages.join(' | '),
+  )
+  t.check(
+    'P2: the outcome, the rules and the reason stay the same',
+    read.outcome === stored.outcome &&
+      read.reason?.rule === stored.reason?.rule &&
+      read.reason?.message === every &&
+      JSON.stringify(read.checks.map((c) => [c.rule, c.passed, c.blocking])) ===
+        JSON.stringify(stored.checks.map((c) => [c.rule, c.passed, c.blocking])),
+  )
+  t.check(
+    'P2: reading it again changes nothing',
+    JSON.stringify(policyForReader(read, name)) === JSON.stringify(read),
+  )
+
+  // P3. A decision stored before: "Requests above 0.00 USD", and a refused per-operation limit.
+  const legacyThreshold = `Requests above ${usdText(cents(0))} need approval from an Agency Admin.`
+  const exceeded = `The amount exceeds your per-operation limit of ${usdText(cap)}.`
+  const legacy: PolicyDecision = {
+    ...stored,
+    checks: stored.checks.map((c) =>
+      c.rule === 'approval_threshold'
+        ? { ...c, message: legacyThreshold }
+        : c.rule === 'per_operation_limit'
+          ? { ...c, passed: false, message: `${exceeded} Reduce the amount or request a budget change.` }
+          : c,
+    ),
+    reason: stored.reason && { ...stored.reason, message: legacyThreshold },
+  }
+  const mine = policyForReader(legacy)
+  const theirs = policyForReader(legacy, name)
+  t.check(
+    'P3: the requester reads every request needs an Agency Admin, and what to do about the limit',
+    mine.reason?.message === every &&
+      mine.checks.find((c) => c.rule === 'approval_threshold')?.message === every &&
+      mine.checks.find((c) => c.rule === 'per_operation_limit')?.message ===
+        `${exceeded} Reduce the amount or request a budget change.`,
+    JSON.stringify(mine.checks.map((c) => c.message)),
+  )
+  t.check(
+    "P3: the reviewer reads the requester's limit, without the requester's advice",
+    theirs.reason?.message === every &&
+      theirs.checks.find((c) => c.rule === 'per_operation_limit')?.message ===
+        `The amount exceeds ${name}'s per-operation limit of ${usdText(cap)}.`,
+    JSON.stringify(theirs.checks.map((c) => c.message)),
+  )
+  const tools = budgetOf(w.state, B.arcTools)
+  const above = `Requests above ${usdText(tools.approvalThreshold)} need approval from an Agency Admin.`
+  t.check(
+    'P3: a budget with an automatic limit keeps saying what it is',
+    tools.approvalThreshold > 0 &&
+      policyForReader({ ...stored, checks: [{ ...must(stored.reason, 'the reason'), message: above }] }, name)
+        .checks[0]?.message === above,
+  )
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

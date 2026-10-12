@@ -131,6 +131,20 @@ export const releaseModelLabel: Record<ReleaseModel, { label: string; descriptio
   },
 }
 
+/**
+ * What an Agency does next once it accepts an agreement, by release model. The Investor always
+ * releases; without a milestone, a tranche needs no request (one only picks the account it lands in).
+ */
+export const agencyNextTranche: Record<ReleaseModel, string> = {
+  milestone: 'Submit evidence for the first milestone to request its tranche.',
+  manual:
+    'The Investor releases each tranche whenever they decide; the first one is ready for them now. You can also request it to choose the account it lands in.',
+  scheduled:
+    'The Investor releases each tranche when its planned date comes; the first one can already be released. You can also request it to choose the account it lands in.',
+  recurring:
+    'The Investor releases one tranche each period; the first one can already be released. You can also request it to choose the account it lands in.',
+}
+
 export const vaultKindLabel: Record<VaultKind, { label: string; description: string }> = {
   portfolio: {
     label: 'Portfolio Vault',

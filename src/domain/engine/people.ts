@@ -174,6 +174,7 @@ export function revokeMembership(tx: Tx, input: { membershipId: Id }) {
         request.requester.userId === membership.userId
       ) {
         request.status = 'cancelled'
+        tx.resolve({ kind: 'request', id: request.id })
       }
     }
     tx.activity(

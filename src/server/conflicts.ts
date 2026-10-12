@@ -50,6 +50,13 @@ import type { SettlementPlan } from '@/ledger/types'
  *   and the commands that change it. While the keeper's run of a schedule is
  *   on its way, nobody pauses or cancels it (and the other way round): the run
  *   would land on a schedule its confirmation no longer fits.
+ * - `agreement:<id>`: a funding agreement, by a funding of it and by the
+ *   rejection of one of its milestones. The engine funds at most what the
+ *   tranches left can still release (`agreementCapital(...).fundable`), while
+ *   the ledger only checks the commitment: a second funding, or a rejection
+ *   that lowers that cap, landing first would leave this one's confirmation
+ *   refusing money that already moved. A request for changes puts the tranche
+ *   back to available and leaves the cap as it was: it does not hold it.
  */
 export type HeldKeys = Set<string>
 
@@ -78,8 +85,9 @@ function addReceiptKeys(keys: HeldKeys, drafts: unknown) {
  * is offchain; a return's ledger call names no payment), the files it brings
  * (no ledger call names them), a bill paid or reconciled, the Viatik balance
  * of the person who signs (`signer`) a return of other money or a
- * withdrawal. An `attachReceipt` names its expense: the advance is read from
- * `state`.
+ * withdrawal, the agreement a funding or a milestone rejection changes. An
+ * `attachReceipt` names its expense: the advance is read from `state`; a
+ * rejection names its milestone: the agreement is read from `state` too.
  */
 function addInputKeys(
   keys: HeldKeys,
@@ -145,6 +153,17 @@ function addInputKeys(
       break
     case 'dismissUnscheduledPayment':
       add('payment', field('paymentId'))
+      break
+    // Funding is capped below the commitment the ledger checks (see `agreement:` above).
+    case 'fundAgreement':
+      add('agreement', field('agreementId'))
+      break
+    case 'requestMilestoneChanges':
+      if (fields.reject === true)
+        add(
+          'agreement',
+          state.milestones.find((milestone) => milestone.id === field('milestoneId'))?.agreementId,
+        )
       break
   }
 }

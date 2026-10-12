@@ -459,6 +459,9 @@ export function ledgerInvariants(
     if (!record) problems.push(`receipt ${receipt.number} (${receipt.kind}) has no ledger record`)
     else if (receipt.verified.status !== 'confirmed')
       problems.push(`receipt ${receipt.number} is not confirmed`)
+    // Verified details hide the mock ledger's stand-in transaction, block and hash only when flagged.
+    else if (receipt.verified.simulated !== true)
+      problems.push(`receipt ${receipt.number} is not flagged simulated`)
   }
   return problems
 }

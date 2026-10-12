@@ -14,7 +14,7 @@ import { budgetName, isOutsidePayment, receiptFor, recipientName } from '@/domai
 import { operationStatus, type StatusDescriptor } from '@/domain/status'
 import type { Payment } from '@/domain/types'
 import { formatDate } from '@/lib/format'
-import { formatLocalDateTime } from '@/lib/local-time'
+import { formatLocalDate, formatLocalDateTime } from '@/lib/local-time'
 
 import { useReceiptDrawer } from './receipt-details'
 
@@ -52,11 +52,14 @@ export function PaymentsTable({
       : recipientName(state, p.recipient)
   // Paid by an Agency Admin outside Viatik: the payee, tagged (the address stays in the receipt).
   const outside = (p: Payment) => !incoming && isOutsidePayment(p)
-  // A scheduled payment's next run is at a time of day, shown on the viewer's clock; the rest by date.
+  // A scheduled payment's next run is at a time of day, shown on the viewer's clock; the rest by
+  // date: the day it was paid on the viewer's clock, or the day it was meant for.
   const when = (p: Payment) =>
     p.status === 'scheduled'
       ? formatLocalDateTime(p.scheduledFor)
-      : formatDate(p.completedAt ?? p.scheduledFor)
+      : p.completedAt
+        ? formatLocalDate(p.completedAt)
+        : formatDate(p.scheduledFor)
   const amount = (p: Payment) => (
     <Amount value={p.amount} size="sm" signed={incoming} tone={incoming ? 'positive' : 'default'} />
   )

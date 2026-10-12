@@ -1,15 +1,19 @@
 import { add, cents, clampToZero, sum, ZERO, type Cents } from './money'
+import { agreementStatus, type StatusDescriptor } from './status'
 import type {
   Account,
+  AgreementStatus,
   AllowanceHolder,
   Budget,
   BudgetPeriod,
+  FundingAgreement,
   Id,
   ISODate,
   Location,
   Movement,
   PaymentRequest,
   SpendingCategory,
+  Tranche,
   ViatikState,
 } from './types'
 
@@ -277,17 +281,62 @@ export function agreementCapital(state: ViatikState, agreementId: Id) {
   const funded = sumMovements(state, (m) => m.kind === 'fund_agreement' && m.agreementId === agreementId)
   const released = sumMovements(state, (m) => m.kind === 'release_tranche' && m.agreementId === agreementId)
   const returned = returnedCapital(state, { agreementId })
+  const inFundingVault = clampToZero(cents(funded - released))
+  const releasable = sum(
+    state.tranches.filter((t) => t.agreementId === agreementId && !trancheIsOver(t)),
+    (t) => t.amount,
+  )
   return {
     committed,
     funded,
     released,
     returned,
     /** Funded but not yet released: what sits in the Funding Vault. */
-    inFundingVault: clampToZero(cents(funded - released)),
+    inFundingVault,
     remainingCommitment: clampToZero(cents(committed - released)),
     unfunded: clampToZero(cents(committed - funded)),
+    /** What the tranches still to release add up to (not released, rejected or cancelled). */
+    releasable,
+    /**
+     * What can still be funded: the tranches still to release, minus what already waits in the
+     * Funding Vault. Only a release moves money out of it, so anything more would stay there.
+     */
+    fundable: clampToZero(cents(releasable - inFundingVault)),
   }
 }
+
+// ─── Agreement lifecycle ────────────────────────────────────────────────────
+
+/** A tranche nothing can release any more: released, rejected or cancelled. */
+export const trancheIsOver = (tranche: Pick<Tranche, 'status'>) =>
+  tranche.status === 'released' || tranche.status === 'rejected' || tranche.status === 'cancelled'
+
+/**
+ * Every tranche of the agreement is over (released, rejected or cancelled): nothing is left to
+ * release. Shown only: no state on Monad ends an agreement, so it stays active (or paused) in
+ * the engine and on the ledger, and it keeps governing the Agency's exception threshold.
+ */
+export function isFullyReleased(state: ViatikState, agreementId: Id): boolean {
+  const tranches = state.tranches.filter((t) => t.agreementId === agreementId)
+  return tranches.length > 0 && tranches.every(trancheIsOver)
+}
+
+/** Releasing this tranche leaves nothing to release: every other tranche of its agreement is over. */
+export const isLastTranche = (state: ViatikState, tranche: Pick<Tranche, 'id' | 'agreementId'>) =>
+  state.tranches.every(
+    (t) => t.agreementId !== tranche.agreementId || t.id === tranche.id || trancheIsOver(t),
+  )
+
+/** The status screens show: an active or paused agreement with nothing left to release reads Completed. */
+export function agreementDisplayStatus(state: ViatikState, agreement: FundingAgreement): AgreementStatus {
+  return (agreement.status === 'active' || agreement.status === 'paused') &&
+    isFullyReleased(state, agreement.id)
+    ? 'completed'
+    : agreement.status
+}
+
+export const agreementBadge = (state: ViatikState, agreement: FundingAgreement): StatusDescriptor =>
+  agreementStatus[agreementDisplayStatus(state, agreement)]
 
 /**
  * What an Agency has been committed, funded and released across all its agreements (cancelled ones

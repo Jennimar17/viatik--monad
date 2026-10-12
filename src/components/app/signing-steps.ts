@@ -41,7 +41,7 @@ export type SigningLabels = {
 
 /**
  * The last stage an operation reached, kept after it fails so the failed step
- * can be marked. Updated during render, the way the investor withdraw sheet does.
+ * can be marked. Updated during render.
  */
 export function useReachedStage(phase: OperationPhase): number {
   const [reached, setReached] = React.useState(0)

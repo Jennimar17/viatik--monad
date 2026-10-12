@@ -193,16 +193,24 @@ export function VerifiedDetailsList({
   details: VerifiedDetails
   className?: string
 }) {
-  const rows: Row[] = [
-    { label: 'Status', value: details.status === 'confirmed' ? 'Confirmed' : 'Pending' },
-    { label: 'Network', value: `${details.network} · chain ${details.chainId}` },
-    hashRow('Account', details.account, 8, 6),
-    hashRow('Transaction', details.transaction),
-    { label: 'Block', value: details.block.toLocaleString('en-US'), mono: true },
-    { label: 'Timestamp', value: `${formatDateTime(details.timestamp)} UTC` },
-    ...(details.receiptHash ? [hashRow('Receipt hash', details.receiptHash)] : []),
-    { label: 'Contract policy', value: details.contractPolicy },
-  ]
+  // A simulated record's account, transaction, block and receipt hash are stand-ins: never shown.
+  const rows: Row[] = details.simulated
+    ? [
+        { label: 'Status', value: 'Simulated' },
+        { label: 'Network', value: `${details.network} · chain ${details.chainId}` },
+        { label: 'Timestamp', value: formatDateTime(details.timestamp, { withYear: true, withZone: true }) },
+        { label: 'Contract policy', value: details.contractPolicy },
+      ]
+    : [
+        { label: 'Status', value: details.status === 'confirmed' ? 'Confirmed' : 'Pending' },
+        { label: 'Network', value: `${details.network} · chain ${details.chainId}` },
+        hashRow('Account', details.account, 8, 6),
+        hashRow('Transaction', details.transaction),
+        { label: 'Block', value: details.block.toLocaleString('en-US'), mono: true },
+        { label: 'Timestamp', value: formatDateTime(details.timestamp, { withYear: true, withZone: true }) },
+        ...(details.receiptHash ? [hashRow('Receipt hash', details.receiptHash)] : []),
+        { label: 'Contract policy', value: details.contractPolicy },
+      ]
   // Raw ledger data, shown only when opened.
   const advanced: Row[] = [
     ...(details.outcome ? [{ label: 'Outcome', value: OUTCOME_LABEL[details.outcome] }] : []),

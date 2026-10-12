@@ -13,6 +13,7 @@ import type {
   Movement,
   MovementKind,
   NotificationKind,
+  NotificationSubject,
   Receipt,
   ReceiptKind,
   ViatikState,
@@ -193,7 +194,13 @@ export class Tx {
     return record
   }
 
-  notify(userIds: Id[], title: string, body: string, href: string, kind?: NotificationKind) {
+  notify(
+    userIds: Id[],
+    title: string,
+    body: string,
+    href: string,
+    { kind, subject }: { kind?: NotificationKind; subject?: NotificationSubject } = {},
+  ) {
     for (const userId of new Set(userIds)) {
       if (this.ctx.actor.kind === 'user' && this.ctx.actor.userId === userId) continue
       this.state.notifications.unshift({
@@ -204,7 +211,17 @@ export class Tx {
         href,
         createdAt: this.now,
         ...(kind ? { kind } : {}),
+        ...(subject ? { subject: { ...subject } } : {}),
       })
+    }
+  }
+
+  /** `subject` was decided: what asked for that decision is read for everyone it went to. */
+  resolve(subject: NotificationSubject) {
+    for (const notification of this.state.notifications) {
+      const about = notification.subject
+      if (!notification.readAt && about?.kind === subject.kind && about.id === subject.id)
+        notification.readAt = this.now
     }
   }
 

@@ -5,12 +5,13 @@ import * as React from 'react'
 
 import { FormField, PillInput } from '@/components/app/form-controls'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { ApprovalSheet } from '@/components/viatik/approval-sheet'
 import { MoneyInput } from '@/components/viatik/forms'
-import { CopyButton, type OperationPhase, type Step } from '@/components/viatik/operation'
+import { CopyButton } from '@/components/viatik/operation'
 import { useCommand, useLedger, useViatikState } from '@/data/react'
 import { parseAddress, shortAddress } from '@/domain/address'
 import { pseudoAddress } from '@/domain/ids'
@@ -27,48 +28,6 @@ type Destination = 'own' | 'other'
 
 /** 0x and 40 hexadecimal characters: the shape of an address, before its checksum is checked. */
 const ADDRESS_SHAPE = /^0x[0-9a-fA-F]{40}$/
-
-/** How far a withdrawal got: 0 preparing, 1 signing, 2 confirming, 3 done. */
-const STAGE: Partial<Record<OperationPhase, number>> = {
-  idle: 0,
-  preparing: 0,
-  waiting_for_confirmation: 1,
-  processing: 2,
-  completed: 3,
-}
-
-/** Prepared → Approved → Sent, for a withdrawal the person signs on Monad. A failure marks the step it reached. */
-function withdrawSteps(phase: OperationPhase, reached: number): Step[] {
-  const stage = STAGE[phase]
-  const stateAt = (index: number): Step['state'] => {
-    if (stage === undefined) {
-      const failedAt = Math.min(reached, 2)
-      return index < failedAt ? 'done' : index === failedAt ? 'failed' : 'upcoming'
-    }
-    if (phase === 'idle') return 'upcoming'
-    return stage > index ? 'done' : stage === index ? 'current' : 'upcoming'
-  }
-  return [
-    {
-      id: 'prepared',
-      label: 'Prepared',
-      detail: "Viatik checks the withdrawal against the ledger's rules.",
-      state: stateAt(0),
-    },
-    {
-      id: 'approved',
-      label: 'Approved',
-      detail: 'Your Viatik account signs it. Viatik pays the network fee.',
-      state: stateAt(1),
-    },
-    {
-      id: 'sent',
-      label: 'Sent',
-      detail: 'Recorded on Monad and sent to the address.',
-      state: stateAt(2),
-    },
-  ]
-}
 
 /** One destination choice, as a selectable card. */
 function DestinationOption({
@@ -154,10 +113,10 @@ export function InvestorWithdrawSheet({
     to: string
     own: boolean
   } | null>(null)
-  // The last stage the withdrawal reached, kept when it fails.
-  const [reached, setReached] = React.useState(0)
-  const stage = STAGE[withdraw.phase]
-  if (stage !== undefined && stage !== reached) setReached(stage)
+  const steps = useSigningSteps(withdraw.phase, {
+    prepared: "Viatik checks the withdrawal against the ledger's rules.",
+    done: { label: 'Sent', detail: 'Recorded on Monad and sent to the address.' },
+  })
   // While the withdrawal runs, what it was confirmed with cannot change.
   const locked = withdraw.isPending
 
@@ -262,7 +221,7 @@ export function InvestorWithdrawSheet({
         ),
         actions: <ReceiptDetailsButton receipt={receipt} />,
       }}
-      steps={monad ? withdrawSteps(withdraw.phase, reached) : undefined}
+      steps={steps}
     >
       <div className="flex flex-col gap-5">
         <FormField

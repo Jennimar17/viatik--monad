@@ -17,6 +17,7 @@ import * as React from 'react'
 import { ButtonLink } from '@/components/app/button-link'
 import { FormField, PillInput, SimpleSelect } from '@/components/app/form-controls'
 import { receiptHref } from '@/components/app/nav'
+import { providerKindLine } from '@/components/app/provider-parts'
 import { ReceiptDetailsButton, requestRecord } from '@/components/app/receipt-details'
 import { PAYS_REQUESTER, requestFollowUp, requestRecipientLabel } from '@/components/app/request-parts'
 import { useHref, useRole } from '@/components/app/role-context'
@@ -44,6 +45,7 @@ import { execute, previewPolicy } from '@/domain/engine'
 import { newId } from '@/domain/ids'
 import { categoryLabel, requestTypeLabel } from '@/domain/labels'
 import { formatUsd, min, type Cents } from '@/domain/money'
+import { perPaymentCap } from '@/domain/policy'
 import { memberBudgets, receiptFor, userName } from '@/domain/queries'
 import type { PaymentRequest, RequestType, SpendingCategory } from '@/domain/types'
 import { fromDateInput } from '@/lib/format'
@@ -131,15 +133,16 @@ function NewRequest() {
           (d) => budget.allowedDestinationIds.includes(d.id) && d.status === 'approved',
         )
       : state.destinations.filter((d) => d.agencyId === agencyId && d.status === 'approved')
-  ).map((d) => ({ value: d.id, label: d.name, description: d.settlementLabel }))
+  ).map((d) => ({ value: d.id, label: d.name, description: providerKindLine(d) }))
 
-  // Switching budgets keeps a choice only when the new budget allows it.
+  // Switching budgets keeps a choice only when the new budget allows it. Otherwise nothing is
+  // guessed: the budget's only category, or work's usual one, else the Member chooses.
   const allowedCategories = budget?.allowedCategories ?? []
   const category =
     categoryChoice && allowedCategories.includes(categoryChoice)
       ? categoryChoice
       : ((work ? WORK_CATEGORIES.find((c) => allowedCategories.includes(c)) : undefined) ??
-        allowedCategories[0] ??
+        (allowedCategories.length === 1 ? allowedCategories[0] : undefined) ??
         null)
   const destinationId =
     !paysMe && destinationChoice && destinationOptions.some((d) => d.value === destinationChoice)
@@ -186,6 +189,7 @@ function NewRequest() {
           : 'Choose where the money goes.'
         : undefined,
     amount: !amount ? 'Enter an amount.' : undefined,
+    category: budget && !category ? 'Choose a category.' : undefined,
     purpose: purpose.trim().length < 3 ? 'Say what this is for.' : undefined,
     merchant: reimbursement && !merchant.trim() ? 'Enter where you bought it.' : undefined,
     spentAt:
@@ -485,15 +489,24 @@ function NewRequest() {
               value={amount}
               onChange={setAmount}
               invalid={touched && Boolean(errors.amount)}
-              available={selected ? min(selected.remaining, selected.usage.available) : undefined}
+              available={
+                selected
+                  ? min(
+                      perPaymentCap(selected.budget, selected.allowance),
+                      min(selected.remaining, selected.usage.available),
+                    )
+                  : undefined
+              }
             />
           </FormField>
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            <FormField label="Category" htmlFor="category">
+            <FormField label="Category" htmlFor="category" error={touched ? errors.category : undefined}>
               <SimpleSelect
                 id="category"
                 value={category}
                 onValueChange={(v) => setCategoryChoice(v as SpendingCategory)}
+                invalid={touched && Boolean(errors.category)}
+                placeholder="Choose a category"
                 options={allowedCategories.map((c) => ({
                   value: c,
                   label: categoryLabel[c],
@@ -520,8 +533,8 @@ function NewRequest() {
       ) : (
         <p className="px-1 text-sm text-subtle">
           {paysMe
-            ? 'Choose a budget and an amount to check the rules.'
-            : 'Choose a budget, destination, and amount to check the rules.'}
+            ? 'Choose a budget, an amount and a category to check the rules.'
+            : 'Choose a budget, destination, amount and category to check the rules.'}
         </p>
       )}
 

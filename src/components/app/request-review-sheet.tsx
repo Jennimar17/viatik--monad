@@ -20,6 +20,7 @@ import { useCommand, useViatikState } from '@/data/react'
 import { addDays, JUSTIFY_WITHIN_DAYS, paidAt } from '@/domain/accountability'
 import { categoryLabel } from '@/domain/labels'
 import { formatUsd, ZERO } from '@/domain/money'
+import { policyForReader } from '@/domain/policy'
 import {
   aboveExceptionThreshold,
   governingAgreement,
@@ -31,6 +32,7 @@ import {
 } from '@/domain/queries'
 import type { PaymentRequest } from '@/domain/types'
 import { formatDate, formatDateTime } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 /** What already happened to a request that no longer needs a decision. */
 function decidedCopy(request: PaymentRequest, approver: string | undefined): string {
@@ -89,7 +91,20 @@ export function RequestReviewSheet({
   const workAboveThreshold = work && aboveExceptionThreshold(state, request)
   const ownRequest = request.requester.kind === 'user' && request.requester.userId === userId
   const decidable = request.status === 'needs_approval'
-  const allowed =
+  // An exception belongs to an Investor of this Agency's portfolio, as `approveRequest` checks:
+  // an Agency Admin's role alone would let them press a button the engine always refuses.
+  const portfolioId = state.agencies.find((a) => a.id === request.agencyId)?.portfolioId
+  const investorOfRequest = state.memberships.some(
+    (m) =>
+      m.userId === userId &&
+      m.role === 'investor' &&
+      m.status === 'active' &&
+      m.scope.kind === 'portfolio' &&
+      m.scope.portfolioId === portfolioId,
+  )
+  // Declining follows the role alone (`declineRequest`): an Agency Admin may still turn down an
+  // exception that waits for the Investor.
+  const canDecline =
     decidable &&
     can('approve_payment', {
       agencyId: request.agencyId,
@@ -97,6 +112,7 @@ export function RequestReviewSheet({
       createdBy: request.requester,
       isException: exception,
     })
+  const allowed = canDecline && (!exception || investorOfRequest)
   const budget = state.budgets.find((b) => b.id === request.budgetId)
   const account = state.accounts.find((a) => a.id === budget?.sourceAccountId)
   const agreement = governingAgreement(state, request.agencyId)
@@ -148,11 +164,13 @@ export function RequestReviewSheet({
           ? `Above the ${thresholdText} exception threshold of the funding agreement, so the Investor decides.`
           : work
             ? `Payment for work is always reviewed by an Agency Admin and paid from ${budget?.name ?? 'the budget'}. Nobody approves their own request.`
-            : `${budget?.name ?? 'This budget'}: requests above ${formatUsd(budget?.approvalThreshold ?? ZERO, { withCode: true })} need an Agency Admin. Nobody approves their own request.`,
+            : budget && budget.approvalThreshold > 0
+              ? `${budget.name}: requests above ${formatUsd(budget.approvalThreshold, { withCode: true })} need an Agency Admin. Nobody approves their own request.`
+              : `${budget?.name ?? 'This budget'}: every request needs an Agency Admin. Nobody approves their own request.`,
       }}
       confirmLabel={declining ? 'Decline request' : 'Approve and pay'}
       confirmVariant={declining ? 'destructive' : 'default'}
-      disabled={!allowed || (declining ? reason.trim().length < 3 : workAboveThreshold)}
+      disabled={declining ? !canDecline || reason.trim().length < 3 : !allowed || workAboveThreshold}
       phase={active.phase}
       error={active.error}
       // Previewed only for someone who can approve; once approving, they stay in place.
@@ -163,7 +181,7 @@ export function RequestReviewSheet({
           : approve.run({ requestId: request.id })
       }
       secondaryAction={
-        allowed && !declining ? (
+        canDecline && !declining ? (
           <Button
             variant="ghost"
             size="pill-sm"
@@ -202,10 +220,10 @@ export function RequestReviewSheet({
         <div className="flex gap-3 rounded-xl border border-info/30 bg-info-soft p-4 text-sm">
           <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden="true" />
           <p className="text-pretty text-muted-foreground">
-            {ownRequest
-              ? `You created this request. Another Agency Admin has to approve it${otherAdmins.length ? `: ${otherAdmins.join(' or ')} can.` : '.'}`
-              : exception
-                ? 'This request is above the exception threshold of the funding agreement. It is waiting for the Investor.'
+            {exception
+              ? 'This request is above the exception threshold of the funding agreement. It is waiting for the Investor.'
+              : ownRequest
+                ? `You created this request. Another Agency Admin has to approve it${otherAdmins.length ? `: ${otherAdmins.join(' or ')} can.` : '.'}`
                 : work
                   ? 'Payment for work is always decided by an Agency Admin.'
                   : 'You do not have permission to decide this request.'}
@@ -249,7 +267,7 @@ export function RequestReviewSheet({
                     {
                       label: 'Receipts due',
                       value: payment
-                        ? formatDate(addDays(paidAt(payment), JUSTIFY_WITHIN_DAYS))
+                        ? formatLocalDate(addDays(paidAt(payment), JUSTIFY_WITHIN_DAYS))
                         : `${JUSTIFY_WITHIN_DAYS} days after payment`,
                     },
                   ]
@@ -264,7 +282,11 @@ export function RequestReviewSheet({
               },
             ]}
           />
-          <PolicyVerdict decision={request.decision} perspective="reviewer" />
+          {/* Stored worded for the requester: someone else reads whose limits they are. */}
+          <PolicyVerdict
+            decision={policyForReader(request.decision, ownRequest ? undefined : requester)}
+            perspective="reviewer"
+          />
         </>
       )}
     </ApprovalSheet>

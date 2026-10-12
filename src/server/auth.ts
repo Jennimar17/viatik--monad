@@ -1,5 +1,6 @@
 import { InvalidAuthTokenError } from '@privy-io/node'
 import { createMiddleware } from 'hono/factory'
+import { wrapTime } from 'hono/timing'
 
 import { publicEnv } from '@/lib/env'
 
@@ -49,7 +50,7 @@ export const requireAccount = createMiddleware<AppEnv>(async (c, next) => {
 
   const privy = getPrivy()
   try {
-    const claims = await privy.utils().auth().verifyAccessToken(token)
+    const claims = await wrapTime(c, 'auth', privy.utils().auth().verifyAccessToken(token))
     c.set('privyUserId', claims.user_id)
   } catch (error) {
     if (!(error instanceof InvalidAuthTokenError)) throw error

@@ -15,11 +15,12 @@ import { KeyValueList } from '@/components/viatik/layout'
 import { StatusBadge } from '@/components/viatik/status'
 import { categoryLabel, releaseModelLabel } from '@/domain/labels'
 import { formatUsd } from '@/domain/money'
-import { userName } from '@/domain/queries'
+import { governingAgreement, userName } from '@/domain/queries'
 import { agreementCapital } from '@/domain/selectors'
-import { milestoneStatus, trancheStatus } from '@/domain/status'
+import { milestoneStatus, trancheStatusFor } from '@/domain/status'
 import type { FundingAgreement, Milestone, Tranche, ViatikState } from '@/domain/types'
 import { formatBytes, formatDate } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 import { cn } from '@/lib/utils'
 
 const tranchesOf = (state: ViatikState, agreementId: string) =>
@@ -67,13 +68,15 @@ export function trancheTimeline(
   state: ViatikState,
   agreementId: string,
   actionFor?: (tranche: Tranche, milestone?: Milestone) => React.ReactNode,
+  /** Who reads it: an available tranche without a milestone is ready to release for the Investor. */
+  reader: 'investor' | 'agency' = 'agency',
 ): TimelineItem[] {
   return tranchesOf(state, agreementId).map((tranche) => {
     const milestone = tranche.milestoneId
       ? state.milestones.find((m) => m.id === tranche.milestoneId)
       : undefined
     const date = tranche.releasedAt
-      ? `Released ${formatDate(tranche.releasedAt)}`
+      ? `Released ${formatLocalDate(tranche.releasedAt)}`
       : milestone
         ? `Milestone due ${formatDate(milestone.dueDate)}`
         : tranche.scheduledFor
@@ -94,7 +97,7 @@ export function trancheTimeline(
       status:
         milestone && tranche.status !== 'released'
           ? milestoneStatus[milestone.status]
-          : trancheStatus[tranche.status],
+          : trancheStatusFor(tranche, reader),
       state: timelineState(tranche, milestone),
       action: actionFor?.(tranche, milestone),
     }
@@ -146,6 +149,16 @@ const cadenceLabel: Record<FundingAgreement['spendingPolicy']['reportingCadence'
 export function AgreementTerms({ state, agreement }: { state: ViatikState; agreement: FundingAgreement }) {
   const policy = agreement.spendingPolicy
   const prose = (text: string) => <span className="max-w-xs text-pretty">{text}</span>
+  // The first agreement in force governs the Agency's payments, on the engine and on the ledger,
+  // and nothing ends an agreement: one created after it never governs. Only one created before it
+  // and still waiting for acceptance would take over, once accepted.
+  const governing = governingAgreement(state, agreement.agencyId)
+  const otherGoverning = governing && governing.id !== agreement.id ? governing : undefined
+  const created = (id: string) => state.agreements.findIndex((a) => a.id === id)
+  const takesOver =
+    otherGoverning !== undefined &&
+    agreement.status === 'pending_acceptance' &&
+    created(agreement.id) < created(otherGoverning.id)
   return (
     <KeyValueList
       items={[
@@ -155,7 +168,11 @@ export function AgreementTerms({ state, agreement }: { state: ViatikState; agree
         {
           label: 'Exception threshold',
           value: formatUsd(policy.exceptionThreshold, { withCode: true }),
-          hint: 'Operations above this need Investor review',
+          hint: otherGoverning
+            ? takesOver
+              ? `Applies once this agreement is accepted: it was created before ${otherGoverning.title}, which governs the Agency today.`
+              : `Does not apply: ${otherGoverning.title} governs the Agency for as long as it exists.`
+            : 'Operations above this need Investor review',
         },
         { label: 'Reporting', value: cadenceLabel[policy.reportingCadence] },
         {
@@ -174,12 +191,14 @@ export function MilestoneTimelineFor({
   state,
   agreementId,
   actionFor,
+  reader = 'agency',
 }: {
   state: ViatikState
   agreementId: string
   actionFor?: (tranche: Tranche, milestone?: Milestone) => React.ReactNode
+  reader?: 'investor' | 'agency'
 }) {
-  return <MilestoneTimeline items={trancheTimeline(state, agreementId, actionFor)} />
+  return <MilestoneTimeline items={trancheTimeline(state, agreementId, actionFor, reader)} />
 }
 
 /** Submitted evidence. Documents stay private; only their fingerprints are recorded. */

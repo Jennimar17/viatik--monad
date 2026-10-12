@@ -4,7 +4,8 @@ import { requestTypeLabel } from '@/domain/labels'
 import { formatUsd } from '@/domain/money'
 import { budgetName, destinationName, userName } from '@/domain/queries'
 import type { Id, PaymentRequest, RequestType, ViatikState } from '@/domain/types'
-import { formatDate, formatShortDate } from '@/lib/format'
+import { formatDate } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 /**
  * Shared words for requests and the money they pay: where it goes, what each
@@ -174,14 +175,16 @@ export const advanceTitle = (s: Pick<AdvanceStanding, 'request' | 'payment'>): s
 
 /**
  * "due Nov 1, 2026", "overdue since Oct 1, 2026" or "justified", lowercase to follow
- * other details. `short` drops the year, for dense rows.
+ * other details. `short` drops the year, for dense rows. The deadline is an instant (30 days
+ * after the payment), so it reads on the viewer's clock like the day it was received.
+ * `timeZone` replaces the viewer's (tests).
  */
 export function advanceDueText(
   s: Pick<AdvanceStanding, 'dueAt' | 'overdue' | 'settled'>,
-  { short = false }: { short?: boolean } = {},
+  { short = false, timeZone }: { short?: boolean; timeZone?: string } = {},
 ): string {
   if (s.settled) return 'justified'
-  const date = short ? formatShortDate(s.dueAt) : formatDate(s.dueAt)
+  const date = formatLocalDate(s.dueAt, { withYear: !short, timeZone })
   return s.overdue ? `overdue since ${date}` : `due ${date}`
 }
 
@@ -194,7 +197,7 @@ export function advanceFollowUp(
   s: Pick<AdvanceStanding, 'userId' | 'dueAt' | 'overdue' | 'settled'>,
   viewerUserId?: Id,
 ): string {
-  const due = formatDate(s.dueAt)
+  const due = formatLocalDate(s.dueAt)
   if (s.settled) return 'Justified: receipts and returns cover all of it.'
   if (s.userId === viewerUserId) {
     return s.overdue

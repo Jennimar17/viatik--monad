@@ -9,6 +9,7 @@ import { FormField, PillInput, SimpleSelect, useChoice } from '@/components/app/
 import { CreateOperationsAccount, EmptySourceHint } from '@/components/app/money-setup'
 import { useHref, useRole } from '@/components/app/role-context'
 import { useBottomBar } from '@/components/app/shell/app-shell'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Amount } from '@/components/viatik/amount'
@@ -18,30 +19,29 @@ import { FormActions, MoneyInput } from '@/components/viatik/forms'
 import { PageHeader, Panel } from '@/components/viatik/layout'
 import { PersonAvatar } from '@/components/viatik/people'
 import { useCommand, useViatikState } from '@/data/react'
-import { formatUsd, sum, usd, ZERO, type Cents } from '@/domain/money'
-import { accountName, userName } from '@/domain/queries'
+import { formatUsd, sum, toInputString, ZERO, type Cents } from '@/domain/money'
+import { accountName, payablePeople, userName } from '@/domain/queries'
 import { accountBalance, budgetUsage } from '@/domain/selectors'
 import { pluralize } from '@/lib/format'
 
 const NO_BUDGET = 'none'
 const monthName = new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' })
 
-type Row = { userId: string; selected: boolean; amount: Cents | null }
+type Row = { userId: string; selected: boolean; amount: Cents | null; last: Cents | null }
 
 export default function TeamPaymentsPage() {
-  const { state, now } = useViatikState()
+  const { state, now, userId } = useViatikState()
   const { scopeId: agencyId } = useRole()
   const href = useHref()
   const router = useRouter()
   const send = useCommand('sendTeamPayments')
+  const steps = useSigningSteps(send.phase, {
+    prepared: "Viatik checks the payments against their source's limits and the ledger's rules.",
+    done: { label: 'Paid', detail: 'Recorded on Monad, with a receipt for each person.' },
+  })
 
-  const people = state.memberships.filter(
-    (m) =>
-      m.scope.kind === 'agency' &&
-      m.scope.agencyId === agencyId &&
-      m.status === 'active' &&
-      m.role === 'member',
-  )
+  // Everyone in the Agency but you, Admins included: nobody pays themselves.
+  const people = payablePeople(state, agencyId, userId)
   const accounts = state.accounts.filter((a) => a.agencyId === agencyId && a.status === 'active')
   const budgets = state.budgets.filter(
     (b) => b.agencyId === agencyId && b.status === 'active' && b.allowedCategories.includes('team'),
@@ -56,8 +56,10 @@ export default function TeamPaymentsPage() {
     accounts.map((a) => a.id),
     accounts.find((a) => a.template === 'people')?.id ?? accounts[0]?.id,
   )
-  const [memo, setMemo] = React.useState(`${monthName.format(new Date(now))} team payment`)
-  // Everyone paid before is preselected with their last amount (a paid request for work is not payroll).
+  // The memo is written each time: the month's name is only a suggestion.
+  const [memo, setMemo] = React.useState('')
+  // Nobody is selected and nothing is filled in: ticking someone fills in what they were last
+  // paid, if anything (a paid request for work is not payroll).
   const [rows, setRows] = React.useState<Row[]>(() =>
     people.map((m) => {
       const last = state.payments
@@ -69,7 +71,7 @@ export default function TeamPaymentsPage() {
             (p.type === 'team' || p.type === 'contractor'),
         )
         .sort((a, b) => (a.scheduledFor < b.scheduledFor ? 1 : -1))[0]
-      return { userId: m.userId, selected: Boolean(last), amount: last?.amount ?? usd(500) }
+      return { userId: m.userId, selected: false, amount: null, last: last?.amount ?? null }
     }),
   )
   const [open, setOpen] = React.useState(false)
@@ -110,8 +112,8 @@ export default function TeamPaymentsPage() {
       <div className="flex flex-col gap-8">
         <PageHeader title="Pay team" />
         <EmptyState
-          title="No Members to pay"
-          description="Invite people to the Agency first. Team payments go to active Members."
+          title="Nobody to pay yet"
+          description="Invite people to the Agency first. Team payments go to everyone in it except you."
           action={
             <ButtonLink href={href('team')} size="pill">
               Go to Team
@@ -173,8 +175,18 @@ export default function TeamPaymentsPage() {
               )}
             </FormField>
           )}
-          <FormField label="Memo" htmlFor="memo" className="sm:col-span-2">
-            <PillInput id="memo" value={memo} onChange={(e) => setMemo(e.target.value)} />
+          <FormField
+            label="Memo"
+            htmlFor="memo"
+            className="sm:col-span-2"
+            hint="Say what these payments are for. Each person sees it."
+          >
+            <PillInput
+              id="memo"
+              value={memo}
+              onChange={(e) => setMemo(e.target.value)}
+              placeholder={`${monthName.format(new Date(now))} team payment`}
+            />
           </FormField>
         </div>
       </Panel>
@@ -196,15 +208,28 @@ export default function TeamPaymentsPage() {
               >
                 <Checkbox
                   checked={row.selected}
-                  onCheckedChange={(value) => updateRow(row.userId, { selected: Boolean(value) })}
+                  onCheckedChange={(value) =>
+                    updateRow(row.userId, {
+                      selected: Boolean(value),
+                      amount: value && row.amount === null ? row.last : row.amount,
+                    })
+                  }
                   aria-label={`Pay ${name}`}
                 />
                 <PersonAvatar name={name} size="sm" />
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">{name}</span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-sm font-medium">{name}</span>
+                  {row.last ? (
+                    <span className="text-xs text-subtle">
+                      Last paid {formatUsd(row.last, { withCode: true })}
+                    </span>
+                  ) : null}
+                </span>
                 <div className="w-40 sm:w-52">
                   <MoneyInput
                     value={row.amount}
                     onChange={(value) => updateRow(row.userId, { amount: value })}
+                    placeholder={row.last ? toInputString(row.last) : undefined}
                     disabled={!row.selected}
                     invalid={tooHigh}
                     aria-describedby={undefined}
@@ -261,6 +286,7 @@ export default function TeamPaymentsPage() {
         confirmLabel="Send team payments"
         phase={send.phase}
         error={send.error}
+        steps={steps}
         onConfirm={async () => {
           if (!sourceAccountId) return
           const payments = await send.run({

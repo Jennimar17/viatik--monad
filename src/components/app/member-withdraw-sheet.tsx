@@ -5,6 +5,7 @@ import * as React from 'react'
 
 import { FormField, SimpleSelect, type Option } from '@/components/app/form-controls'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
@@ -54,6 +55,10 @@ export function MemberWithdrawSheet({
   const { state, now, userId } = useViatikState()
   const saved = useSavedAddresses()
   const send = useCommand('withdrawBalance')
+  const steps = useSigningSteps(send.phase, {
+    prepared: "Viatik checks the amount against your balance and the ledger's rules.",
+    done: { label: 'Sent', detail: 'Recorded on Monad and sent to the address.' },
+  })
   const [amount, setAmount] = React.useState<Cents | null>(null)
   const [picked, setPicked] = React.useState<string | null>(null)
   // The address the person confirmed: a confirmation never carries over to another destination.
@@ -150,6 +155,7 @@ export function MemberWithdrawSheet({
       }
       phase={send.phase}
       error={send.error}
+      steps={steps}
       onConfirm={async () => {
         if (!amount || !destination) return
         const result = await send.run({ agencyId, amount, to: destination.address })

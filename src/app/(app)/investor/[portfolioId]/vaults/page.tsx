@@ -41,7 +41,8 @@ import type { Movement, Vault } from '@/domain/types'
 import { networkInfo } from '@/domain/verification'
 import { publicEnv } from '@/lib/env'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { formatDate, formatDateTime, formatMon, formatShortDate, pluralize, shortHash } from '@/lib/format'
+import { formatDateTime, formatMon, pluralize, shortHash } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 const VAULT_MOVEMENTS: ReadonlySet<Movement['kind']> = new Set([
   'deposit',
@@ -64,6 +65,8 @@ export default function VaultsPage() {
   const [yieldOpen, setYieldOpen] = React.useState(false)
   // Viatik's own test stake: a preview, never capital (kept out of every total on this page).
   const { data: networkYield } = useNetworkYield()
+  // The network names the asset (TestUSD on testnet), not the vault's stored `asset`, always 'USDC'.
+  const asset = networkInfo(publicEnv.NEXT_PUBLIC_MONAD_NETWORK).asset
 
   const vaults = state.vaults.filter((v) => v.portfolioId === portfolioId)
   const portfolioVault = vaults.find((v) => v.kind === 'portfolio')
@@ -174,7 +177,7 @@ export default function VaultsPage() {
           <Panel
             title={portfolioVault.name}
             description={vaultKindLabel.portfolio.description}
-            action={<Tag>{portfolioVault.asset}</Tag>}
+            action={<Tag>{asset.symbol}</Tag>}
           >
             <Amount value={available ?? ZERO} size="xl" />
             <BalanceCheckNote check={checks?.check(portfolioVault.id)} className="mt-2" />
@@ -426,7 +429,7 @@ function VaultAssetSheet({
                 label: 'Asset',
                 value: monad ? (
                   <span className="inline-flex items-center gap-1">
-                    TestUSD (6 decimals, no value)
+                    {network.asset.detail}
                     {monad.token ? (
                       <span className="font-mono text-xs">
                         · {link(`address/${monad.token}`, shortHash(monad.token, 8, 4))}
@@ -434,7 +437,7 @@ function VaultAssetSheet({
                     ) : null}
                   </span>
                 ) : (
-                  `${vault.asset} (6 decimals)`
+                  network.asset.detail
                 ),
               },
               { label: 'Network', value: `${network.name} · chain ${network.chainId}` },
@@ -516,9 +519,10 @@ function VaultAssetSheet({
             ]}
           />
           <p className="text-xs text-pretty text-subtle">
-            {monad
-              ? 'Amounts everywhere else in Viatik are shown in USD. On testnet, TestUSD stands in for USDC one to one.'
-              : 'Amounts everywhere else in Viatik are shown in USD. USDC settles them one to one.'}
+            Amounts everywhere else in Viatik are shown in USD.{' '}
+            {network.asset.standsInFor
+              ? `On testnet, ${network.asset.symbol} stands in for ${network.asset.standsInFor} one to one.`
+              : `${network.asset.symbol} settles them one to one.`}
           </p>
         </div>
       </SheetContent>
@@ -535,7 +539,10 @@ function yieldStatus(data: NetworkYield | undefined): StatusDescriptor {
   if (!data.available) return { label: 'Can’t be read right now', tone: 'neutral' }
   if (noWei(data.stakeWei)) return { label: 'No test stake right now', tone: 'neutral' }
   if (!data.validator.active) return { label: 'Not earning right now', tone: 'warning' }
-  return { label: `Earning since ${formatShortDate(data.activeFrom.at)}`, tone: 'success' }
+  return {
+    label: `Earning since ${formatLocalDate(data.activeFrom.at, { withYear: false })}`,
+    tone: 'success',
+  }
 }
 
 /**
@@ -606,7 +613,7 @@ function YieldAssetSheet({
                 { label: 'Rewards so far', value: formatMon(read.rewardsWei), hint: 'Unclaimed' },
                 {
                   label: 'Earning since',
-                  value: `Epoch ${read.activeFrom.epoch} · ${formatDate(read.activeFrom.at)}`,
+                  value: `Epoch ${read.activeFrom.epoch} · ${formatLocalDate(read.activeFrom.at)}`,
                 },
                 { label: 'Current epoch', value: String(read.epoch) },
                 {

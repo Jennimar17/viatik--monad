@@ -29,7 +29,8 @@ import { formatUsd, sum, ZERO, type Cents } from '@/domain/money'
 import { roleLabel } from '@/domain/permissions'
 import { userName } from '@/domain/queries'
 import type { Membership } from '@/domain/types'
-import { formatDate, pluralize } from '@/lib/format'
+import { pluralize } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 type Row = {
   membership: Membership
@@ -337,7 +338,7 @@ function Team() {
                         <span className="flex min-w-0 flex-col">
                           <span className="truncate text-sm font-medium">{i.name}</span>
                           <span className="truncate text-xs text-subtle">
-                            {i.email} · {roleLabel[i.role]} · invited {formatDate(i.createdAt)} by{' '}
+                            {i.email} · {roleLabel[i.role]} · invited {formatLocalDate(i.createdAt)} by{' '}
                             {userName(state, i.invitedBy)}
                           </span>
                         </span>

@@ -17,7 +17,7 @@ import { useViatikState } from '@/data/react'
 import { budgetName } from '@/domain/queries'
 import { requestStatusFor } from '@/domain/status'
 import type { PaymentRequest, RequestStatus } from '@/domain/types'
-import { formatDate } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 const IN_PROGRESS: ReadonlySet<RequestStatus> = new Set(['needs_approval', 'approved', 'processing'])
 const NOT_APPROVED: ReadonlySet<RequestStatus> = new Set(['rejected', 'declined', 'cancelled'])
@@ -37,7 +37,7 @@ export default function MemberRequestsPage() {
       header: 'Date',
       cell: ({ row }) => (
         <span className="text-sm whitespace-nowrap text-muted-foreground">
-          {formatDate(row.original.createdAt)}
+          {formatLocalDate(row.original.createdAt)}
         </span>
       ),
     },
@@ -87,7 +87,7 @@ export default function MemberRequestsPage() {
           <span className="flex min-w-0 flex-col gap-0.5">
             <span className="truncate text-sm font-medium">{r.purpose}</span>
             <span className="truncate text-xs text-subtle">
-              {formatDate(r.createdAt)} · {requestRecipientLabel(state, r, userId)}
+              {formatLocalDate(r.createdAt)} · {requestRecipientLabel(state, r, userId)}
             </span>
           </span>
           <span className="flex flex-col items-end gap-1">

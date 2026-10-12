@@ -23,6 +23,7 @@ import type {
   Id,
   ISODate,
   Location,
+  NotificationSubject,
   Payment,
   PaymentDestination,
   PaymentRequest,
@@ -336,7 +337,7 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
         exceptionThreshold: usd(10_000),
         reportingCadence: 'per_milestone',
         returnConditions:
-          'Unreleased capital returns to the Portfolio Vault if the agreement is cancelled or expires.',
+          'Unreleased capital stays in the Funding Vault until the parties agree on what happens to it.',
       },
       evidenceRequirements:
         'Each milestone needs a written summary, a demo link or build, and supporting documents.',
@@ -358,7 +359,8 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
         allowedCategories: ['team', 'contractors', 'software', 'cloud', 'legal'],
         exceptionThreshold: usd(5_000),
         reportingCadence: 'monthly',
-        returnConditions: 'Unreleased capital returns to the Portfolio Vault at the end of the agreement.',
+        returnConditions:
+          'Released capital the Agency does not use is returned to the Portfolio Vault with Return to Investor.',
       },
       evidenceRequirements: 'Monthly spend report before each scheduled release.',
       createdBy: U.elena,
@@ -380,7 +382,7 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
         exceptionThreshold: usd(5_000),
         reportingCadence: 'per_milestone',
         returnConditions:
-          'Unreleased capital returns to the Portfolio Vault if the pilot does not start within 60 days.',
+          'Unreleased capital stays in the Funding Vault until the parties agree on what happens to it.',
       },
       evidenceRequirements: 'Field notes, participant consent summary, and a phase report.',
       createdBy: U.marcus,
@@ -596,55 +598,31 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
       status: 'approved',
       addedAt: at,
     })
-  destination(DST.vertex, A.arc, 'Vertex Cloud', 'vendor', 'cloud', 'USDC account •• 4821', b.ago(183))
-  destination(DST.canvasly, A.arc, 'Canvasly', 'service', 'software', 'Card on file •• 1107', b.ago(183))
-  destination(DST.tasklane, A.arc, 'Tasklane', 'service', 'software', 'Card on file •• 1107', b.ago(183))
-  destination(DST.pagecraft, A.arc, 'Pagecraft', 'service', 'software', 'Card on file •• 1107', b.ago(183))
-  destination(
-    DST.pulse,
-    A.arc,
-    'Pulse Data API',
-    'service',
-    'ai_services',
-    'USDC account •• 9f3a',
-    b.ago(160),
-  )
-  destination(
-    DST.northwind,
-    A.arc,
-    'Northwind Travel',
-    'vendor',
-    'travel',
-    'USDC account •• 7730',
-    b.ago(165),
-  )
-  destination(DST.atlas, A.arc, 'Atlas Legal', 'vendor', 'legal', 'USDC account •• 2204', b.ago(150))
+  destination(DST.vertex, A.arc, 'Vertex Cloud', 'vendor', 'cloud', 'Customer no. 4821', b.ago(183))
+  destination(DST.canvasly, A.arc, 'Canvasly', 'service', 'software', 'Customer no. 1107', b.ago(183))
+  destination(DST.tasklane, A.arc, 'Tasklane', 'service', 'software', 'Customer no. 1107', b.ago(183))
+  destination(DST.pagecraft, A.arc, 'Pagecraft', 'service', 'software', 'Customer no. 1107', b.ago(183))
+  destination(DST.pulse, A.arc, 'Pulse Data API', 'service', 'ai_services', 'Customer no. 9f3a', b.ago(160))
+  destination(DST.northwind, A.arc, 'Northwind Travel', 'vendor', 'travel', 'Customer no. 7730', b.ago(165))
+  destination(DST.atlas, A.arc, 'Atlas Legal', 'vendor', 'legal', 'Customer no. 2204', b.ago(150))
   destination(
     DST.harbor,
     A.arc,
     'Harbor Contractors',
     'contractor',
     'contractors',
-    'USDC account •• 5518',
+    'Customer no. 5518',
     b.ago(40),
   )
-  destination(DST.stratus, A.lumen, 'Stratus Hosting', 'vendor', 'cloud', 'USDC account •• 3190', b.ago(127))
-  destination(
-    DST.codepath,
-    A.lumen,
-    'Codepath Tools',
-    'service',
-    'software',
-    'Card on file •• 6612',
-    b.ago(127),
-  )
+  destination(DST.stratus, A.lumen, 'Stratus Hosting', 'vendor', 'cloud', 'Customer no. 3190', b.ago(127))
+  destination(DST.codepath, A.lumen, 'Codepath Tools', 'service', 'software', 'Customer no. 6612', b.ago(127))
   destination(
     DST.sentinel,
     A.lumen,
     'Sentinel Security Audits',
     'vendor',
     'legal',
-    'USDC account •• 8045',
+    'Customer no. 8045',
     b.ago(12),
   )
 
@@ -1773,7 +1751,7 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
   }
 
   // Current approval queue.
-  request({
+  const canvaslyUpgrade = request({
     agencyId: A.arc,
     budgetId: BUD.arcTools,
     requester: user(U.daniel),
@@ -1786,7 +1764,7 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     leavePending: true,
   })
   // Jordan's is Maya's to decide: nobody approves their own request.
-  request({
+  const summitTicket = request({
     agencyId: A.arc,
     budgetId: BUD.arcTravel,
     requester: user(U.jordan),
@@ -2028,7 +2006,7 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
   }
   allowance(BUD.lumenSecurity, U.ren, usd(7_000), b.ago(10, 10), U.ren, A.lumen)
   // Above the agreement's exception threshold: routed to the Investor.
-  request({
+  const securityAudit = request({
     agencyId: A.lumen,
     budgetId: BUD.lumenSecurity,
     requester: user(U.ren),
@@ -2098,9 +2076,20 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
   const investors = [U.elena, U.marcus]
   const accountName = (id: Id) => s.accounts.find((a) => a.id === id)?.name ?? 'Account'
   const agencyNameOf = (id: Id) => s.agencies.find((a) => a.id === id)?.name ?? 'Agency'
-  const notifyAll = (userIds: Id[], title: string, body: string, href: string, at: ISODate, read = false) => {
-    for (const userId of userIds) b.notify(userId, title, body, href, at, read)
+  const notifyAll = (
+    userIds: Id[],
+    title: string,
+    body: string,
+    href: string,
+    at: ISODate,
+    read = false,
+    subject?: NotificationSubject,
+  ) => {
+    for (const userId of userIds) b.notify(userId, title, body, href, at, read, subject)
   }
+  /** What a "needs approval" notification asks to decide, as the engine names it. */
+  const asksAbout = (req: PaymentRequest | null): NotificationSubject | undefined =>
+    req ? { kind: 'request', id: req.id } : undefined
   const balanceHref = `/member/${A.arc}/payments`
   const personHref = (userId: Id) => `/agency/${A.arc}/team/${userId}`
   const approvalsHref = `/agency/${A.arc}/approvals`
@@ -2673,9 +2662,12 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     `${nameOf(U.alex)} requested ${usdLabel(waitingAmount)} for ${waitingWork.purpose}.`,
     approvalsHref,
     waitingAt,
+    false,
+    asksAbout(waitingWork),
   )
 
   // ─── Notifications ─────────────────────────────────────────────────────────
+  // The ones that ask for a decision name what they ask about: deciding it marks them read.
 
   const agencyHref = (path: string) => `/agency/${A.arc}/${path}`
   b.notify(
@@ -2684,6 +2676,8 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     'Arc Studio submitted evidence for "Prototype delivered".',
     `/investor/${P}/funding/${DEMO.agreements.arc}/milestones/${DEMO.milestones.arc2}`,
     submittedAt,
+    false,
+    { kind: 'milestone', id: DEMO.milestones.arc2 },
   )
   b.notify(
     U.elena,
@@ -2691,6 +2685,8 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     'Lumen Labs requested 6,200.00 USD for an annual security audit.',
     `/investor/${P}/approvals`,
     b.ago(1, 11, 5),
+    false,
+    asksAbout(securityAudit),
   )
   b.notify(
     U.elena,
@@ -2714,9 +2710,27 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     'Daniel Okafor requested 320.00 USD for Canvasly team plan upgrade.',
     agencyHref('approvals'),
     b.ago(1, 9, 25),
+    false,
+    asksAbout(canvaslyUpgrade),
   )
-  b.notify(U.maya, 'Bill due soon', 'Vertex Cloud bill is due in 3 days.', agencyHref('bills'), b.ago(1, 7))
-  b.notify(U.maya, 'Bill overdue', 'Pagecraft bill was due 4 days ago.', agencyHref('bills'), b.ago(3, 12))
+  // The due dates of this month's Vertex Cloud and Pagecraft bills (Vendor bills above), as dates:
+  // "in 3 days" would be wrong on any later day the notification is read.
+  const dueDay = (at: ISODate) =>
+    new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(at))
+  b.notify(
+    U.maya,
+    'Bill due soon',
+    `Vertex Cloud bill is due ${dueDay(b.ahead(3, 12))}.`,
+    agencyHref('bills'),
+    b.ago(1, 7),
+  )
+  b.notify(
+    U.maya,
+    'Bill overdue',
+    `Pagecraft bill was due ${dueDay(b.ago(4, 12))}.`,
+    agencyHref('bills'),
+    b.ago(3, 12),
+  )
   b.notify(
     U.maya,
     'Evidence submitted',
@@ -2731,6 +2745,8 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     'Jordan Lee requested 450.00 USD for Product Design Summit ticket.',
     agencyHref('approvals'),
     b.ago(1, 16, 10),
+    false,
+    asksAbout(summitTicket),
   )
   // Only vendor payments' expenses miss receipts now (money for purchases is "to justify"), and
   // only those there were when Alex was told.

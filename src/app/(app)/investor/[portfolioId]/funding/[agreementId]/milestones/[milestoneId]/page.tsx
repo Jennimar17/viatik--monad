@@ -9,9 +9,11 @@ import { ButtonLink } from '@/components/app/button-link'
 import { FundShortfall } from '@/components/app/fund-agreement-sheet'
 import { EvidenceList } from '@/components/app/funding-parts'
 import { ReceiptDetailsButton, trancheRequestRecord } from '@/components/app/receipt-details'
+import { RELEASE_STEPS } from '@/components/app/release-tranche-sheet'
 import { useHref, usePermissions, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
 import { useBottomBar } from '@/components/app/shell/app-shell'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
@@ -25,9 +27,9 @@ import { PersonAvatar } from '@/components/viatik/people'
 import { StatusBadge } from '@/components/viatik/status'
 import { VerifiedDetailsButton } from '@/components/viatik/verified-details-drawer'
 import { useCommand, useViatikState } from '@/data/react'
-import { add, formatUsd, subtract } from '@/domain/money'
+import { add, cents, clampToZero, formatUsd, subtract, sum } from '@/domain/money'
 import { accountName, receiptFor, userName } from '@/domain/queries'
-import { agreementCapital } from '@/domain/selectors'
+import { agreementCapital, isLastTranche, trancheIsOver } from '@/domain/selectors'
 import { milestoneStatus, trancheStatus } from '@/domain/status'
 import { formatDate, formatDateTime } from '@/lib/format'
 
@@ -41,6 +43,11 @@ export default function MilestoneReviewPage() {
   const { can } = usePermissions()
   const release = useCommand('releaseTranche')
   const changes = useCommand('requestMilestoneChanges')
+  const releaseSteps = useSigningSteps(release.phase, RELEASE_STEPS)
+  const changesSteps = useSigningSteps(changes.phase, {
+    prepared: 'Viatik checks that you may decide on this milestone.',
+    done: { label: 'Recorded on Monad', detail: 'The Agency sees your note.' },
+  })
   const [draftChecked, setDraftChecked] = React.useState<number[]>([])
   const [note, setNote] = React.useState('')
   const [releaseOpen, setReleaseOpen] = React.useState(false)
@@ -95,6 +102,14 @@ export default function MilestoneReviewPage() {
   // What the ledger recorded when the evidence was submitted with the tranche request.
   const submission = milestone.submissionVerified ? trancheRequestRecord(state, tranche) : undefined
   const rejecting = (changesMode ?? lastChangesMode) === 'reject'
+  // Rejected, this tranche never releases: what the Funding Vault holds beyond the other tranches
+  // still to release stays there, since only a release moves money out. Counted without this
+  // tranche, so the copy holds once it is rejected.
+  const othersToRelease = sum(
+    state.tranches.filter((t) => t.agreementId === agreement.id && t.id !== tranche.id && !trancheIsOver(t)),
+    (t) => t.amount,
+  )
+  const stranded = clampToZero(cents(capital.inFundingVault - othersToRelease))
 
   const openChanges = (mode: ChangesMode) => {
     setLastChangesMode(mode)
@@ -351,10 +366,13 @@ export default function MilestoneReviewPage() {
         confirmLabel="Release tranche"
         phase={release.phase}
         error={release.error}
+        steps={releaseSteps}
         onConfirm={() => release.run({ trancheId: tranche.id, checkedCriteria: checked, note })}
         success={{
           title: 'Funding released',
-          body: `${formatUsd(tranche.amount, { withCode: true })} is now available in the ${agencyLabel} ${destination ?? 'Operations'} account.`,
+          body: `${formatUsd(tranche.amount, { withCode: true })} is now available in the ${agencyLabel} ${destination ?? 'Operations'} account.${
+            isLastTranche(state, tranche) ? ` That was the last tranche: ${agreement.title} is complete.` : ''
+          }`,
           actions: (
             <>
               <ButtonLink href={href(`funding/${agreement.id}`)} size="pill-sm">
@@ -373,10 +391,16 @@ export default function MilestoneReviewPage() {
         title={rejecting ? 'Reject milestone' : 'Request changes'}
         summary={{
           what: rejecting
-            ? 'The milestone is rejected and this tranche will not be released for it.'
+            ? `The milestone is rejected and ${tranche.name} will never be released.${
+                stranded > 0
+                  ? ` ${formatUsd(stranded, { withCode: true })} already funded will stay in the Funding Vault: Viatik cannot move it back yet.`
+                  : capital.inFundingVault > 0
+                    ? ' Capital funded so far can still pay the other tranches.'
+                    : ''
+              }`
             : 'The Agency is asked to update the evidence. The tranche stays in the Funding Vault.',
           reversible: rejecting
-            ? 'Cannot be undone. The Agency would need a new agreement amendment.'
+            ? 'Cannot be undone. To fund this work again, create a new agreement.'
             : 'The Agency can resubmit at any time.',
           policy: 'Your note is shared with the Agency Admins.',
         }}
@@ -385,6 +409,7 @@ export default function MilestoneReviewPage() {
         disabled={note.trim().length < 3}
         phase={changes.phase}
         error={changes.error}
+        steps={changesSteps}
         onConfirm={() => changes.run({ milestoneId: milestone.id, note, reject: rejecting })}
         success={{
           title: rejecting ? 'Milestone rejected' : 'Changes requested',

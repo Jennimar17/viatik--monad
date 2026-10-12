@@ -58,7 +58,15 @@ import {
   type ProofState,
 } from '@/domain/status'
 import type { Id, ISODate, Payment, Reminder, ViatikState } from '@/domain/types'
-import { daysUntil, dueLabel, formatDate, formatRelative, formatShortDate, pluralize } from '@/lib/format'
+import {
+  daysUntil,
+  dueLabel,
+  formatRelative,
+  formatShortDate,
+  instantDueLabel,
+  pluralize,
+} from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 import { cn } from '@/lib/utils'
 
 /**
@@ -361,7 +369,7 @@ function AdvanceRow({
   actions?: (standing: AdvanceStanding) => React.ReactNode
 }) {
   const { state } = useViatikState()
-  const paid = formatShortDate(paidAt(s.payment))
+  const paid = formatLocalDate(paidAt(s.payment), { withYear: false })
   const meta = [
     `${perspective === 'member' ? 'Received' : 'Paid'} ${paid}`,
     // A budget the person no longer spends from may be out of their view: then it is left out.
@@ -402,7 +410,10 @@ function AdvanceRow({
             <li key={movement.id} className="flex items-center gap-2">
               <span className="min-w-0 flex-1 truncate text-foreground">
                 Returned
-                <span className="text-subtle"> · {formatShortDate(movement.createdAt)}</span>
+                <span className="text-subtle">
+                  {' '}
+                  · {formatLocalDate(movement.createdAt, { withYear: false })}
+                </span>
               </span>
               <Amount value={movement.amount} size="xs" />
             </li>
@@ -768,7 +779,8 @@ export function InvoicesPendingList({
                   <span className="truncate text-sm font-medium text-foreground">{payee}</span>
                   {showAddress ? <PayeeAddress address={addressOf(payment)} short /> : null}
                   <span className="text-xs text-pretty text-subtle">
-                    Paid {formatShortDate(paidAt(payment))} from {paidFrom(state, payment)}
+                    Paid {formatLocalDate(paidAt(payment), { withYear: false })} from{' '}
+                    {paidFrom(state, payment)}
                     {payment.memo ? ` · ${payment.memo}` : ''}
                   </span>
                 </span>
@@ -777,7 +789,7 @@ export function InvoicesPendingList({
                 <Amount value={payment.amount} size="sm" />
                 <StatusBadge status={proofStatus[proofState(payment, overdue)]} />
                 <span className={cn('text-xs', overdue ? 'text-danger' : 'text-subtle')}>
-                  {dueLabel(dueAt, now)}
+                  {instantDueLabel(dueAt, now, overdue)}
                 </span>
                 {rendered}
               </span>
@@ -860,7 +872,7 @@ export function OutsidePaymentsTable({
           <OpenFileButton evidence={p.proof} className="max-w-40 text-xs text-muted-foreground" />
         ) : (
           <span className={cn('text-xs', standing.overdue ? 'text-danger' : 'text-subtle')}>
-            {dueLabel(standing.dueAt, now)}
+            {instantDueLabel(standing.dueAt, now, standing.overdue)}
           </span>
         )}
         {rendered ? <span className="mt-1 flex flex-wrap items-center gap-2">{rendered}</span> : null}
@@ -875,7 +887,7 @@ export function OutsidePaymentsTable({
       accessorFn: (p) => paidAt(p),
       cell: ({ row }) => (
         <span className="text-sm whitespace-nowrap text-muted-foreground">
-          {formatDate(paidAt(row.original))}
+          {formatLocalDate(paidAt(row.original))}
         </span>
       ),
     },
@@ -961,7 +973,7 @@ export function OutsidePaymentsTable({
                     <Tag className="shrink-0">Outside Viatik</Tag>
                   </span>
                   <span className="truncate text-xs text-subtle">
-                    {formatDate(paidAt(p))} · {paidFrom(state, p)}
+                    {formatLocalDate(paidAt(p))} · {paidFrom(state, p)}
                   </span>
                 </span>
                 <Amount value={p.amount} size="sm" />
@@ -1043,7 +1055,7 @@ export function ReturnsList({
                   {receipt?.description ?? 'Capital returned'}
                 </span>
                 <span className="text-xs text-pretty text-subtle">
-                  {from} → {to} · {formatShortDate(movement.createdAt)}
+                  {from} → {to} · {formatLocalDate(movement.createdAt, { withYear: false })}
                   {agreement ? ` · counted in “${agreement.title}”` : ''}
                 </span>
               </span>
@@ -1165,7 +1177,8 @@ export function RecurringPaymentsList({
                   </span>
                   {last ? (
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-subtle">
-                      Last paid {formatShortDate(paidAt(last))} · {formatUsd(last.amount)}
+                      Last paid {formatLocalDate(paidAt(last), { withYear: false })} ·{' '}
+                      {formatUsd(last.amount)}
                       <StatusBadge status={proofStatus[invoiceStanding(last, now).state]} />
                     </span>
                   ) : due ? (

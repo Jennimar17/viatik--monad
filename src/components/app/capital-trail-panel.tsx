@@ -132,7 +132,13 @@ export function CapitalTrailPanel({ state, agreementId }: { state: ViatikState; 
             label: 'Funded',
             title: 'Funding Vault',
             amount: capital.funded,
-            detail: capital.unfunded > 0 ? `${formatUsd(capital.unfunded)} still to fund` : 'Fully funded',
+            // What can still be funded: a rejected tranche never releases, so its share is not.
+            detail:
+              capital.fundable > 0
+                ? `${formatUsd(capital.fundable)} still to fund`
+                : capital.unfunded > 0
+                  ? 'Nothing more to fund'
+                  : 'Fully funded',
           },
           {
             id: 'release',

@@ -17,8 +17,7 @@ import { StatusBadge } from '@/components/viatik/status'
 import { useViatikState } from '@/data/react'
 import { releaseModelLabel } from '@/domain/labels'
 import { agencyName } from '@/domain/queries'
-import { agreementCapital } from '@/domain/selectors'
-import { agreementStatus } from '@/domain/status'
+import { agreementBadge, agreementCapital, agreementDisplayStatus, trancheIsOver } from '@/domain/selectors'
 import type { AgreementStatus, FundingAgreement } from '@/domain/types'
 import { formatDate } from '@/lib/format'
 
@@ -31,10 +30,13 @@ export default function FundingPage() {
   const router = useRouter()
   const agreements = state.agreements.filter((a) => a.portfolioId === portfolioId)
 
+  // The next tranche that can still be released: a rejected or cancelled one never will be.
   const nextTranche = (agreement: FundingAgreement) =>
     state.tranches
-      .filter((t) => t.agreementId === agreement.id && t.status !== 'released')
+      .filter((t) => t.agreementId === agreement.id && !trancheIsOver(t))
       .sort((a, b) => a.index - b.index)[0]
+  const anyRejected = (agreement: FundingAgreement) =>
+    state.tranches.some((t) => t.agreementId === agreement.id && t.status === 'rejected')
 
   const columns: ColumnDef<FundingAgreement, unknown>[] = [
     {
@@ -94,7 +96,9 @@ export default function FundingPage() {
           <span className="text-sm text-muted-foreground">
             {next
               ? `${next.name}${next.scheduledFor ? ` · ${formatDate(next.scheduledFor)}` : ''}`
-              : 'All released'}
+              : anyRejected(row.original)
+                ? 'Nothing left to release'
+                : 'All released'}
           </span>
         )
       },
@@ -102,7 +106,7 @@ export default function FundingPage() {
     {
       id: 'status',
       header: 'Status',
-      cell: ({ row }) => <StatusBadge status={agreementStatus[row.original.status]} />,
+      cell: ({ row }) => <StatusBadge status={agreementBadge(state, row.original)} />,
     },
   ]
 
@@ -131,7 +135,7 @@ export default function FundingPage() {
                 <span className="text-sm font-medium">{a.title}</span>
                 <span className="text-xs text-subtle">{agencyName(state, a.agencyId)}</span>
               </span>
-              <StatusBadge status={agreementStatus[a.status]} />
+              <StatusBadge status={agreementBadge(state, a)} />
             </div>
             <CapitalBar committed={capital.committed} funded={capital.funded} released={capital.released} />
           </div>
@@ -140,10 +144,12 @@ export default function FundingPage() {
     />
   )
 
+  // By the status the badge shows: an agreement with every tranche released is listed as Closed.
   const byStatus = (predicate: (status: AgreementStatus) => boolean) =>
-    agreements.filter((a) => predicate(a.status))
+    agreements.filter((a) => predicate(agreementDisplayStatus(state, a)))
   const active = byStatus((s) => s === 'active')
   const pending = byStatus((s) => s === 'pending_acceptance')
+  const closed = byStatus((s) => CLOSED.has(s))
 
   return (
     <div className="flex flex-col gap-8">
@@ -162,7 +168,7 @@ export default function FundingPage() {
           { value: 'active', label: 'Active', count: active.length, content: table(active) },
           { value: 'pending', label: 'Pending acceptance', count: pending.length, content: table(pending) },
           { value: 'paused', label: 'Paused', content: table(byStatus((s) => s === 'paused')) },
-          { value: 'closed', label: 'Closed', content: table(byStatus((s) => CLOSED.has(s))) },
+          { value: 'closed', label: 'Closed', count: closed.length, content: table(closed) },
         ]}
       />
     </div>

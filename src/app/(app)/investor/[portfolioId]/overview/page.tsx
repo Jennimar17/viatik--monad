@@ -29,12 +29,14 @@ import { agreementsOf, investorApprovals } from '@/domain/queries'
 import {
   agencyCapital,
   agencyFunding,
+  agreementBadge,
   budgetUsage,
   capitalOverTime,
   portfolioCapital,
 } from '@/domain/selectors'
-import { agreementStatus, milestoneStatus } from '@/domain/status'
+import { milestoneStatus } from '@/domain/status'
 import { formatDate, formatShortDate, partOfDay, pluralize } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 /** "1 invoice and 400.00 USD to justify are overdue": what is late in one Agency. */
 function overdueHeadline(item: AgencyAccountability): string {
@@ -110,7 +112,7 @@ export default function InvestorOverviewPage() {
 
   const rows: AgencyRow[] = agencies.map((agency) => {
     // An Agency can have several agreements: the row adds them up and shows the one that needs
-    // attention first (waiting for acceptance, then active).
+    // attention first (waiting for acceptance, then active, then paused; completed ones last).
     const agreements = agreementsOf(state, agency.id)
     const agreement = agreements[0]
     const funding = agencyFunding(state, agency.id)
@@ -122,15 +124,16 @@ export default function InvestorOverviewPage() {
     const limit = sum(usage, (u) => u.periodLimit)
     const used = sum(usage, (u) => u.committedThisPeriod)
     const agreementIds = new Set(agreements.map((a) => a.id))
+    // A milestone still to come: an approved or rejected one is decided.
     const next = state.milestones
-      .filter((m) => agreementIds.has(m.agreementId) && m.status !== 'approved')
+      .filter((m) => agreementIds.has(m.agreementId) && m.status !== 'approved' && m.status !== 'rejected')
       .sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1))[0]
     return {
       id: agency.id,
       name: agency.name,
       agreement:
         agreements.length > 1 ? `${agreements.length} agreements` : (agreement?.title ?? 'No agreement'),
-      status: agreement ? agreementStatus[agreement.status] : { label: 'No agreement', tone: 'neutral' },
+      status: agreement ? agreementBadge(state, agreement) : { label: 'No agreement', tone: 'neutral' },
       committed: funding.committed,
       released,
       spentThisMonth: cap.spentThisPeriod,
@@ -155,7 +158,8 @@ export default function InvestorOverviewPage() {
     .filter(
       (m) =>
         state.agreements.some((a) => a.id === m.agreementId && a.portfolioId === portfolioId) &&
-        m.status !== 'approved',
+        m.status !== 'approved' &&
+        m.status !== 'rejected',
     )
     .sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1))
     .slice(0, 4)
@@ -240,7 +244,7 @@ export default function InvestorOverviewPage() {
             <Tag>Portfolio</Tag>
             <span>{portfolio?.name}</span>
             <span aria-hidden="true">·</span>
-            <span>{formatDate(now)}</span>
+            <span>{formatLocalDate(now)}</span>
           </>
         }
         title={`Good ${partOfDay(now)}, ${user?.name.split(' ')[0]}`}

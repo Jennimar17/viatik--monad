@@ -17,7 +17,7 @@ import { OrgAvatar } from '@/components/viatik/people'
 import { StatusBadge } from '@/components/viatik/status'
 import { useViatikState } from '@/data/react'
 import { agencyName, investorApprovals, userName } from '@/domain/queries'
-import { trancheStatus } from '@/domain/status'
+import { trancheStatusFor } from '@/domain/status'
 import type { PaymentRequest, Tranche } from '@/domain/types'
 import { formatDate, formatRelative } from '@/lib/format'
 
@@ -107,7 +107,7 @@ export default function InvestorApprovalsPage() {
                           </span>
                         </span>
                         <span className="flex flex-wrap items-center gap-3 sm:justify-end">
-                          <StatusBadge status={trancheStatus[tranche.status]} />
+                          <StatusBadge status={trancheStatusFor(tranche, 'investor')} />
                           <Amount value={tranche.amount} size="md" className="ml-auto sm:ml-0" />
                           {milestone && agreement ? (
                             <ButtonLink

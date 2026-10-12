@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { endTime, startTime, wrapTime } from 'hono/timing'
 
 import { invitationPreview } from '@/domain/identity'
 import { scopeStateForUser } from '@/domain/visibility'
@@ -21,12 +22,17 @@ const noStore = { 'cache-control': 'no-store' }
 export const state = new Hono<AppEnv>().get('/', requireAccount, requireUser, async (c) => {
   const user = c.get('user')
   // Operations of this person still pending on Monad get a short look first (it may change the version).
-  await sweepOpenOperations(user, c.get('requestId'))
-  const version = await readWorldVersion()
-  if (version !== null && c.req.header('if-none-match') === `"${user.id}:${version}"`) {
-    return c.body(null, 304, { ...noStore, etag: `"${user.id}:${version}"` })
+  await wrapTime(c, 'sweep', sweepOpenOperations(user, c.get('requestId')))
+  // Only a poll sends the ETag of its copy: a first load has nothing to compare, so the version is not read.
+  const ifNoneMatch = c.req.header('if-none-match')
+  if (ifNoneMatch) {
+    const version = await wrapTime(c, 'version', readWorldVersion())
+    if (version !== null && ifNoneMatch === `"${user.id}:${version}"`) {
+      return c.body(null, 304, { ...noStore, etag: `"${user.id}:${version}"` })
+    }
   }
 
+  startTime(c, 'state')
   let world = await readWorld()
   // First visit of a new person, or new verified details: record them once.
   if (withCaller(world.state, user, new Date().toISOString())) {
@@ -38,6 +44,7 @@ export const state = new Hono<AppEnv>().get('/', requireAccount, requireUser, as
       }
     })
   }
+  endTime(c, 'state')
   return c.json(scopeStateForUser(world.state, user.id), 200, {
     ...noStore,
     etag: `"${user.id}:${world.version}"`,

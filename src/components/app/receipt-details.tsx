@@ -8,6 +8,7 @@ import {
   VerifiedDetailsDrawer,
   type VerifiedRecord,
 } from '@/components/viatik/verified-details-drawer'
+import { currentPolicyText } from '@/domain/policy'
 import { accountName, agencyName, budgetName } from '@/domain/queries'
 import type { PaymentRequest, Receipt, Tranche, ViatikState } from '@/domain/types'
 
@@ -29,7 +30,8 @@ export function requestRecord(state: ViatikState, request: PaymentRequest): Veri
     amount: request.amount,
     fromLabel: budgetName(state, request.budgetId),
     toLabel: requestRecipientLabel(state, request),
-    details: request.ledger,
+    // Stored with the policy sentence of its day: an older one reads as the request page does now.
+    details: { ...request.ledger, contractPolicy: currentPolicyText(request.ledger.contractPolicy) },
   }
 }
 

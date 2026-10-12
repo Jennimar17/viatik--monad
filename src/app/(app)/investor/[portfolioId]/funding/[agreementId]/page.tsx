@@ -28,6 +28,7 @@ import { ReleaseTrancheSheet } from '@/components/app/release-tranche-sheet'
 import { useReceiptDrawer } from '@/components/app/receipt-details'
 import { useHref, useRole } from '@/components/app/role-context'
 import { ScreenUnavailable } from '@/components/app/screen-unavailable'
+import { useSigningSteps } from '@/components/app/signing-steps'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -44,9 +45,10 @@ import { StatusBadge, Tag } from '@/components/viatik/status'
 import { useCommand, useViatikState } from '@/data/react'
 import { categoryLabel, releaseModelLabel } from '@/domain/labels'
 import { formatUsd } from '@/domain/money'
-import { receiptFor } from '@/domain/queries'
-import { agreementStatus } from '@/domain/status'
+import { governingAgreement, receiptFor } from '@/domain/queries'
+import { agreementBadge, agreementCapital, isFullyReleased } from '@/domain/selectors'
 import { formatDate } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 export default function AgreementDetailPage() {
   const { agreementId } = useParams<{ agreementId: string }>()
@@ -62,6 +64,13 @@ export default function AgreementDetailPage() {
   const [resuming, setResuming] = React.useState(false)
   const receipts = useReceiptDrawer()
   const pause = useCommand('setAgreementPaused')
+  const pauseSteps = useSigningSteps(pause.phase, {
+    prepared: 'Viatik checks that you may pause or resume this agreement.',
+    done: {
+      label: 'Recorded on Monad',
+      detail: resuming ? 'Tranches can be released again.' : 'No tranche is released until it resumes.',
+    },
+  })
 
   const agreement = state.agreements.find((a) => a.id === agreementId && a.portfolioId === portfolioId)
   if (!agreement) {
@@ -77,7 +86,13 @@ export default function AgreementDetailPage() {
   const tranches = state.tranches.filter((t) => t.agreementId === agreement.id)
   const withEvidence = state.milestones.filter((m) => m.agreementId === agreement.id && m.evidence.length > 0)
   const paused = agreement.status === 'paused'
+  // Every tranche released (or rejected): nothing more to fund, release or pause.
+  const settled = isFullyReleased(state, agreement.id)
+  // What the tranches still to release can take; funding more would leave it in the Funding Vault.
+  const fundable = agreementCapital(state, agreement.id).fundable
   const policy = agreement.spendingPolicy
+  // The first agreement in force governs the Agency's payments, also once its tranches are released.
+  const governing = governingAgreement(state, agreement.agencyId)
   const milestoneHref = (milestoneId: string) => href(`funding/${agreement.id}/milestones/${milestoneId}`)
 
   return (
@@ -98,7 +113,7 @@ export default function AgreementDetailPage() {
         description={agreement.purpose}
         meta={
           <>
-            <StatusBadge status={agreementStatus[agreement.status]} size="md" />
+            <StatusBadge status={agreementBadge(state, agreement)} size="md" />
             <Tag>{releaseModelLabel[agreement.releaseModel].label}</Tag>
             <span className="text-sm text-subtle">
               {formatDate(agreement.startDate)} – {formatDate(agreement.endDate)}
@@ -114,7 +129,7 @@ export default function AgreementDetailPage() {
                 <MoreHorizontal />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56 p-1.5">
-                {agreement.status === 'active' || paused ? (
+                {(agreement.status === 'active' || paused) && !settled ? (
                   <DropdownMenuItem
                     className="gap-2 rounded-lg"
                     onClick={() => {
@@ -131,14 +146,24 @@ export default function AgreementDetailPage() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button size="pill" onClick={() => setFundOpen(true)}>
-              <HandCoins data-icon="inline-start" /> Fund agreement
-            </Button>
+            {settled || fundable <= 0 ? null : (
+              <Button size="pill" onClick={() => setFundOpen(true)}>
+                <HandCoins data-icon="inline-start" /> Fund agreement
+              </Button>
+            )}
           </>
         }
       />
 
-      {paused ? (
+      {settled ? (
+        <div className="rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm text-pretty">
+          {tranches.some((t) => t.status === 'rejected')
+            ? 'No tranche is left to release.'
+            : 'Every tranche has been released.'}{' '}
+          Nothing more can be funded or released under this agreement; {agency?.name ?? 'the Agency'} keeps
+          operating with the released capital.
+        </div>
+      ) : paused ? (
         <div className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm">
           This agreement is paused. Tranche releases are on hold and the Agency was notified.
         </div>
@@ -166,6 +191,7 @@ export default function AgreementDetailPage() {
                 <MilestoneTimelineFor
                   state={state}
                   agreementId={agreement.id}
+                  reader="investor"
                   actionFor={(tranche, milestone) => {
                     // No milestone to review and nothing the Agency has to request: the Investor can release it.
                     if (
@@ -229,8 +255,10 @@ export default function AgreementDetailPage() {
                   <PolicySummary
                     title="Spending policy"
                     lines={[
-                      `Released capital can only be used for ${policy.allowedCategories.map((c) => categoryLabel[c].toLowerCase()).join(', ')}.`,
-                      `Any single operation above ${formatUsd(policy.exceptionThreshold, { withCode: true })} comes to you as an exception.`,
+                      `Approved uses agreed with the Agency: ${policy.allowedCategories.map((c) => categoryLabel[c].toLowerCase()).join(', ')}. The Agency’s budgets set which categories each payment can use.`,
+                      governing && governing.id !== agreement.id
+                        ? `${governing.title} governs ${agency?.name ?? 'the Agency'}’s payments: single operations above ${formatUsd(governing.spendingPolicy.exceptionThreshold, { withCode: true })} come to you as exceptions.`
+                        : `Any single operation above ${formatUsd(policy.exceptionThreshold, { withCode: true })} comes to you as an exception.`,
                       'Nobody can approve their own request, including Agency Admins.',
                       'Budgets and Member limits are enforced by the funding contract, not only in the app.',
                     ]}
@@ -259,7 +287,7 @@ export default function AgreementDetailPage() {
                     <Panel
                       key={m.id}
                       title={m.title}
-                      description={m.submittedAt ? `Submitted ${formatDate(m.submittedAt)}` : undefined}
+                      description={m.submittedAt ? `Submitted ${formatLocalDate(m.submittedAt)}` : undefined}
                     >
                       <EvidenceList milestone={m} />
                     </Panel>
@@ -310,6 +338,7 @@ export default function AgreementDetailPage() {
         confirmVariant={resuming ? 'default' : 'destructive'}
         phase={pause.phase}
         error={pause.error}
+        steps={pauseSteps}
         onConfirm={() => pause.run({ agreementId: agreement.id, paused: !resuming })}
         success={{
           title: resuming ? 'Agreement resumed' : 'Agreement paused',

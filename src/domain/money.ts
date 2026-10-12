@@ -155,16 +155,26 @@ function getDecimalSeparator(locale: string): string {
 /**
  * Parses user input such as "1,250.5" or "120" into cents without floats.
  * Returns null for anything that is not a positive amount with at most two
- * decimals.
+ * decimals. A comma only groups thousands: "12,50" is refused rather than read
+ * as 1,250 (`usdInputHint` says why).
  */
 export function parseUsdInput(input: string): Cents | null {
-  const normalized = input.replace(/[\s,$]/g, '').replace(/USD$/i, '')
-  if (!/^\d+(\.\d{0,2})?$/.test(normalized)) return null
+  const trimmed = input.replace(/[\s$]/g, '').replace(/USD$/i, '')
+  if (!/^(\d{1,3}(,\d{3})+|\d+)(\.\d{0,2})?$/.test(trimmed)) return null
+  const normalized = trimmed.replace(/,/g, '')
   const [wholePart = '0', fractionPart = ''] = normalized.split('.')
   const whole = Number.parseInt(wholePart, 10)
   const fraction = Number.parseInt(fractionPart.padEnd(2, '0') || '0', 10)
   const total = whole * 100 + fraction
   return Number.isSafeInteger(total) ? cents(total) : null
+}
+
+/** Why typed text is not an amount, when a comma was used for cents ("12,50", "1.234,56"). */
+export function usdInputHint(input: string): string | null {
+  const trimmed = input.replace(/[\s$]/g, '').replace(/USD$/i, '')
+  return parseUsdInput(input) === null && /,\d{1,2}$/.test(trimmed)
+    ? 'Use a dot for cents, as in 12.50.'
+    : null
 }
 
 /** Cents to a plain editable string ("1250.50"), used to seed inputs. */
