@@ -11,6 +11,7 @@ import {
   SYSTEM,
 } from '@/data/keeper'
 import { applySettlement, planSettlement } from '@/data/settlement'
+import { dayIn } from '@/domain/days'
 import { DomainError, execute, runCommand } from '@/domain/engine'
 import { runScheduledPayment } from '@/domain/engine/system'
 import { DEMO } from '@/domain/fixtures'
@@ -18,7 +19,6 @@ import { upgradeState } from '@/domain/migrate'
 import { usd, type Cents } from '@/domain/money'
 import { subjectFor } from '@/domain/permissions'
 import {
-  dayIn,
   dueSchedules,
   isUnscheduledPayment,
   nextRunNumber,

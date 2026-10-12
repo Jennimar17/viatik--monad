@@ -36,6 +36,7 @@ import {
 } from '@/domain/selectors'
 import { milestoneStatus } from '@/domain/status'
 import { formatDate, formatShortDate, partOfDay, pluralize } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 /** "1 invoice and 400.00 USD to justify are overdue": what is late in one Agency. */
 function overdueHeadline(item: AgencyAccountability): string {
@@ -243,7 +244,7 @@ export default function InvestorOverviewPage() {
             <Tag>Portfolio</Tag>
             <span>{portfolio?.name}</span>
             <span aria-hidden="true">·</span>
-            <span>{formatDate(now)}</span>
+            <span>{formatLocalDate(now)}</span>
           </>
         }
         title={`Good ${partOfDay(now)}, ${user?.name.split(' ')[0]}`}

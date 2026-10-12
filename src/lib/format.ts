@@ -1,8 +1,16 @@
+import { dayIn } from '@/domain/days'
+
+import { formatLocalDateTime, localTimeZone, type LocalDateTimeOptions } from './local-time'
+
 /**
- * Locale-aware formatting for dates, hashes and file sizes. Amounts use
- * formatUsd from the money module; nothing here touches money.
+ * Formatting for dates, hashes and file sizes. Amounts use formatUsd from the
+ * money module; nothing here touches money.
  *
- * Dates format in UTC by default so server and client render the same text.
+ * Calendar dates (due, issue and expiry dates, spent on, an agreement's or a
+ * tranche's date, budget months) are stored as midnight UTC and format in UTC,
+ * so everyone sees the same day. Times of day, today's date, the days a feed is
+ * grouped by and the greeting are on the viewer's clock (`local-time.ts`, client
+ * screens only).
  */
 const cache = new Map<string, Intl.DateTimeFormat>()
 
@@ -26,10 +34,9 @@ export function formatShortDate(iso: string, locale = 'en-US') {
   return formatter(locale, { day: 'numeric', month: 'short' }).format(new Date(iso))
 }
 
-export function formatDateTime(iso: string, locale = 'en-US') {
-  return formatter(locale, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(
-    new Date(iso),
-  )
+/** "Oct 12, 2:13 AM": an instant on the viewer's clock; `withZone` adds "GMT-3", `withYear` the year. */
+export function formatDateTime(iso: string, options: LocalDateTimeOptions = {}) {
+  return formatLocalDateTime(iso, options)
 }
 
 /** A date input's "yyyy-mm-dd" as midnight UTC, matching how dates are displayed. */
@@ -62,13 +69,18 @@ export function formatRelative(iso: string, now: string, locale = 'en-US') {
   return formatDate(iso, locale)
 }
 
-/** "Today", "Yesterday" or a long date, for grouping feeds by day. */
-export function dayGroup(iso: string, now: string, locale = 'en-US') {
-  const startOf = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
-  const diff = Math.round((startOf(new Date(now)) - startOf(new Date(iso))) / DAY)
+/** "Today", "Yesterday" or a long date, for grouping feeds by the viewer's day. */
+export function dayGroup(
+  iso: string,
+  now: string,
+  { timeZone = localTimeZone() }: { timeZone?: string } = {},
+) {
+  const diff = Math.round((Date.parse(dayIn(now, timeZone)) - Date.parse(dayIn(iso, timeZone))) / DAY)
   if (diff === 0) return 'Today'
   if (diff === 1) return 'Yesterday'
-  return formatter(locale, { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(iso))
+  return formatter('en-US', { weekday: 'long', day: 'numeric', month: 'long', timeZone }).format(
+    new Date(iso),
+  )
 }
 
 export function daysUntil(iso: string, now: string) {

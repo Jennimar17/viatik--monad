@@ -2,14 +2,15 @@
 // settlement planner, the mock ledger and the genesis, and the ledger's books are checked after
 // every step (see scripts/smoke/harness.ts). It only reads the repo.
 //
-//   node scripts/smoke.mjs [engine] [settlement] [genesis] [alchemy] [kimi] [schedules] [client] [--failures]
+//   node scripts/smoke.mjs [engine] [settlement] [genesis] [alchemy] [kimi] [schedules] [client] [format] [--failures]
 //
 // With no suite named, all of them run. alchemy checks the webhook's pure pieces (signature,
 // filtering, the "Funds arrived" notification) and kimi the receipt reader's (config, limits,
 // answer parsing, matching), both with no keys and no network. schedules checks scheduled
 // payments and the keeper (plans, the mock ledger, failures, reminders, the state upgrade).
 // client checks the browser side of a command (how answers are read, what stays open on the
-// device) with fetch, storage and timers stubbed.
+// device) with fetch, storage and timers stubbed. format checks how dates, times and amounts
+// read on screen (the viewer's clock, calendar days, the amount input), in named time zones.
 // --failures prints only the failed checks.
 // Exit code: 0 everything passed, 1 a check failed, 2 the smoke itself broke (a suite did not
 // load, or a scenario threw something other than a failed step).
@@ -18,7 +19,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const SUITES = ['engine', 'settlement', 'genesis', 'alchemy', 'kimi', 'schedules', 'client']
+const SUITES = ['engine', 'settlement', 'genesis', 'alchemy', 'kimi', 'schedules', 'client', 'format']
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)

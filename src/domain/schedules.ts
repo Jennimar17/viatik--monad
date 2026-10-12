@@ -1,4 +1,5 @@
 import { remindersDue } from './accountability'
+import { dayIn } from './days'
 import { can, type Subject } from './permissions'
 import type { Id, ISODate, KeeperRun, KeeperStatus, Payment, Reminder, Schedule, ViatikState } from './types'
 
@@ -275,23 +276,6 @@ export function recordKeeperPass(
 }
 
 // ─── Monthly reminders on their due day ──────────────────────────────────────
-
-/** The calendar day (YYYY-MM-DD) an instant falls on in a time zone; UTC when the zone is unknown. */
-export function dayIn(iso: ISODate, timeZone: string | undefined): string {
-  const date = new Date(iso)
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: timeZone || 'UTC',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).formatToParts(date)
-    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? ''
-    return `${part('year')}-${part('month')}-${part('day')}`
-  } catch {
-    return date.toISOString().slice(0, 10)
-  }
-}
 
 export type ReminderNotice = {
   reminder: Reminder

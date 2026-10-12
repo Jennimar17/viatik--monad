@@ -199,7 +199,7 @@ export function VerifiedDetailsList({
     hashRow('Account', details.account, 8, 6),
     hashRow('Transaction', details.transaction),
     { label: 'Block', value: details.block.toLocaleString('en-US'), mono: true },
-    { label: 'Timestamp', value: `${formatDateTime(details.timestamp)} UTC` },
+    { label: 'Timestamp', value: formatDateTime(details.timestamp, { withYear: true, withZone: true }) },
     ...(details.receiptHash ? [hashRow('Receipt hash', details.receiptHash)] : []),
     { label: 'Contract policy', value: details.contractPolicy },
   ]

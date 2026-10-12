@@ -72,7 +72,9 @@ export function ReceiptView({
           {formatUsd(amount)}
           <span className="ml-2 text-lg text-muted-foreground">USD</span>
         </p>
-        <p className="text-sm text-muted-foreground">{formatDateTime(issuedAt)} UTC</p>
+        <p className="text-sm text-muted-foreground">
+          {formatDateTime(issuedAt, { withYear: true, withZone: true })}
+        </p>
       </section>
 
       <dl className="grid grid-cols-1 gap-px border-t border-border bg-border sm:grid-cols-2">
