@@ -158,6 +158,7 @@ export default async function engine(t: Checker) {
   await t.scenario("M. A funding agreement's lifecycle, to its last tranche and a second agreement", () =>
     agreementLifecycle(t),
   )
+  await t.scenario('N. Funding never exceeds what the tranches left can release', () => fundingCap(t))
 }
 
 // ─── A. Money for purchases ──────────────────────────────────────────────────
@@ -5551,6 +5552,130 @@ async function agreementLifecycle(t: Checker) {
           'the second agreement',
         ),
       ).label === 'Active',
+  )
+}
+
+// ─── N. Funding never exceeds what can still be released ─────────────────────
+
+/**
+ * Only a release moves money out of a Funding Vault, and a rejected tranche never releases. Arc's
+ * agreement (4 × 25,000, 50,000 funded, Tranche 1 released) loses Tranche 2 to a rejection: the
+ * engine then funds only what the tranches left can release, so no new capital is stranded, and
+ * the pooled vault still pays the later tranches down to zero.
+ */
+async function fundingCap(t: Checker) {
+  const w = new World(t, 'engine-n')
+  const ARC_AGREEMENT = DEMO.agreements.arc
+  const before = agreementCapital(w.state, ARC_AGREEMENT)
+  t.check(
+    "N: Arc's seeded agreement can take its whole unfunded commitment while every tranche is in play",
+    before.fundable === before.unfunded && before.releasable === usd(75_000),
+    JSON.stringify(before),
+  )
+
+  // N1. Elena rejects the milestone of Tranche 2, under review.
+  await w.run(
+    U.elena,
+    'requestMilestoneChanges',
+    { milestoneId: DEMO.milestones.arc2, note: 'The prototype misses the agreed scope.', reject: true },
+    'N1 Elena rejects the Prototype milestone',
+    { ops: ['requestChanges'] },
+  )
+  const capital = agreementCapital(w.state, ARC_AGREEMENT)
+  t.check(
+    'N1: Tranches 3 and 4 are left to release, and 25,000 of them is already in the Funding Vault',
+    capital.releasable === usd(50_000) &&
+      capital.inFundingVault === usd(25_000) &&
+      capital.fundable === usd(25_000) &&
+      capital.unfunded === usd(50_000),
+    JSON.stringify(capital),
+  )
+
+  // N2. The commitment would allow 50,000 more; only 25,000 can still be released.
+  const vault = DEMO.vaults.portfolio
+  if (vaultBalance(w.state, vault) < usd(50_000))
+    await w.run(
+      U.elena,
+      'addFunds',
+      { portfolioId: DEMO.portfolio, amount: usd(50_000), source: 'Treasury' },
+      'N2 setup: Elena adds funds',
+      { ops: ['deposit'] },
+    )
+  const message = w.refuse(
+    U.elena,
+    'fundAgreement',
+    { agreementId: ARC_AGREEMENT, amount: usd(50_000) },
+    'limit_exceeded',
+    'N2 funding the whole commitment left',
+  )
+  t.check(
+    'N2: it says how much can still be released',
+    message === `Only ${usdText(usd(25_000))} more can still be released under this agreement.`,
+    message,
+  )
+  await w.run(
+    U.elena,
+    'fundAgreement',
+    { agreementId: ARC_AGREEMENT, amount: usd(25_000) },
+    'N2 Elena funds what the tranches left can release',
+    { ops: ['fundAgreement'] },
+  )
+  const full = w.refuse(
+    U.elena,
+    'fundAgreement',
+    { agreementId: ARC_AGREEMENT, amount: usd(1) },
+    'limit_exceeded',
+    'N2 then 1 USD more',
+  )
+  t.check(
+    'N2: …because every tranche left is funded',
+    full === 'Every tranche left is already funded. Nothing more can be released under this agreement.',
+    full,
+  )
+
+  // N3. Maya submits evidence for Tranches 3 and 4, and Elena releases both: the vault ends empty.
+  const releaseWithEvidence = async (milestoneId: Id, trancheId: Id, label: string) => {
+    await w.run(
+      U.maya,
+      'submitMilestoneEvidence',
+      {
+        milestoneId,
+        evidence: [file(`${label} report.pdf`)],
+        note: `${label} is done.`,
+        destinationAccountId: ACC.arcOperations,
+      },
+      `N3 Maya submits the ${label} evidence`,
+      { ops: ['requestTranche'] },
+    )
+    return w.run(U.elena, 'releaseTranche', { trancheId }, `N3 Elena releases the ${label} tranche`, {
+      ops: ['releaseTranche'],
+    })
+  }
+  await releaseWithEvidence(DEMO.milestones.arc3, DEMO.tranches.arc3, 'Beta')
+  const lastRelease = await releaseWithEvidence(DEMO.milestones.arc4, DEMO.tranches.arc4, 'Launch')
+  const after = agreementCapital(w.state, ARC_AGREEMENT)
+  t.check(
+    'N3: the Funding Vault ends at zero, with nothing stranded',
+    vaultBalance(w.state, DEMO.vaults.arcFunding) === 0 &&
+      after.inFundingVault === 0 &&
+      after.fundable === 0 &&
+      after.funded === usd(75_000) &&
+      after.released === usd(75_000),
+    JSON.stringify(after),
+  )
+  t.check(
+    'N3: with Tranche 2 rejected, the agreement still reads Completed, and the Admins hear of its final tranche',
+    isFullyReleased(w.state, ARC_AGREEMENT) &&
+      agreementBadge(
+        w.state,
+        must(
+          w.state.agreements.find((a) => a.id === ARC_AGREEMENT),
+          "Arc's agreement",
+        ),
+      ).label === 'Completed' &&
+      same(notifiedUsers(lastRelease), ADMINS) &&
+      lastRelease.notifications.every((n) => n.title === 'Final tranche released'),
+    JSON.stringify(lastRelease.notifications.map((n) => [n.userId, n.title])),
   )
 }
 

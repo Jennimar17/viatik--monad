@@ -45,7 +45,7 @@ import { useCommand, useViatikState } from '@/data/react'
 import { categoryLabel, releaseModelLabel } from '@/domain/labels'
 import { formatUsd } from '@/domain/money'
 import { receiptFor } from '@/domain/queries'
-import { agreementBadge, isFullyReleased } from '@/domain/selectors'
+import { agreementBadge, agreementCapital, isFullyReleased } from '@/domain/selectors'
 import { formatDate } from '@/lib/format'
 
 export default function AgreementDetailPage() {
@@ -79,6 +79,8 @@ export default function AgreementDetailPage() {
   const paused = agreement.status === 'paused'
   // Every tranche released (or rejected): nothing more to fund, release or pause.
   const settled = isFullyReleased(state, agreement.id)
+  // What the tranches still to release can take; funding more would leave it in the Funding Vault.
+  const fundable = agreementCapital(state, agreement.id).fundable
   const policy = agreement.spendingPolicy
   const milestoneHref = (milestoneId: string) => href(`funding/${agreement.id}/milestones/${milestoneId}`)
 
@@ -133,7 +135,7 @@ export default function AgreementDetailPage() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            {settled ? null : (
+            {settled || fundable <= 0 ? null : (
               <Button size="pill" onClick={() => setFundOpen(true)}>
                 <HandCoins data-icon="inline-start" /> Fund agreement
               </Button>

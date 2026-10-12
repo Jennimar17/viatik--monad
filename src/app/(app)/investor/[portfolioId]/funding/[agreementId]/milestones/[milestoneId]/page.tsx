@@ -25,9 +25,9 @@ import { PersonAvatar } from '@/components/viatik/people'
 import { StatusBadge } from '@/components/viatik/status'
 import { VerifiedDetailsButton } from '@/components/viatik/verified-details-drawer'
 import { useCommand, useViatikState } from '@/data/react'
-import { add, formatUsd, subtract } from '@/domain/money'
+import { add, cents, clampToZero, formatUsd, subtract, sum } from '@/domain/money'
 import { accountName, receiptFor, userName } from '@/domain/queries'
-import { agreementCapital, isLastTranche } from '@/domain/selectors'
+import { agreementCapital, isLastTranche, trancheIsOver } from '@/domain/selectors'
 import { milestoneStatus, trancheStatus } from '@/domain/status'
 import { formatDate, formatDateTime } from '@/lib/format'
 
@@ -95,6 +95,14 @@ export default function MilestoneReviewPage() {
   // What the ledger recorded when the evidence was submitted with the tranche request.
   const submission = milestone.submissionVerified ? trancheRequestRecord(state, tranche) : undefined
   const rejecting = (changesMode ?? lastChangesMode) === 'reject'
+  // Rejected, this tranche never releases: what the Funding Vault holds beyond the other tranches
+  // still to release stays there, since only a release moves money out. Counted without this
+  // tranche, so the copy holds once it is rejected.
+  const othersToRelease = sum(
+    state.tranches.filter((t) => t.agreementId === agreement.id && t.id !== tranche.id && !trancheIsOver(t)),
+    (t) => t.amount,
+  )
+  const stranded = clampToZero(cents(capital.inFundingVault - othersToRelease))
 
   const openChanges = (mode: ChangesMode) => {
     setLastChangesMode(mode)
@@ -375,10 +383,16 @@ export default function MilestoneReviewPage() {
         title={rejecting ? 'Reject milestone' : 'Request changes'}
         summary={{
           what: rejecting
-            ? 'The milestone is rejected and this tranche will not be released for it.'
+            ? `The milestone is rejected and ${tranche.name} will never be released.${
+                stranded > 0
+                  ? ` ${formatUsd(stranded, { withCode: true })} already funded will stay in the Funding Vault: Viatik cannot move it back yet.`
+                  : capital.inFundingVault > 0
+                    ? ' Capital funded so far can still pay the other tranches.'
+                    : ''
+              }`
             : 'The Agency is asked to update the evidence. The tranche stays in the Funding Vault.',
           reversible: rejecting
-            ? 'Cannot be undone. The Agency would need a new agreement amendment.'
+            ? 'Cannot be undone. To fund this work again, create a new agreement.'
             : 'The Agency can resubmit at any time.',
           policy: 'Your note is shared with the Agency Admins.',
         }}

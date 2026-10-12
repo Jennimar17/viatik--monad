@@ -458,6 +458,17 @@ export function fundAgreement(tx: Tx, input: { agreementId: Id; amount: Cents })
       `Funded capital cannot exceed the ${usdText(agreement.committed)} commitment. You can add up to ${usdText(capital.unfunded)}.`,
     )
   }
+  // Only a release moves money out of a Funding Vault: capital beyond what the tranches still to
+  // release need would stay there for good (a rejected tranche never releases). The ledger only
+  // checks the commitment, so the engine is the stricter of the two.
+  if (input.amount > capital.fundable) {
+    throw new DomainError(
+      'limit_exceeded',
+      capital.fundable <= 0
+        ? 'Every tranche left is already funded. Nothing more can be released under this agreement.'
+        : `Only ${usdText(capital.fundable)} more can still be released under this agreement.`,
+    )
+  }
   const portfolioVault = tx.state.vaults.find(
     (v) => v.portfolioId === agreement.portfolioId && v.kind === 'portfolio',
   )!

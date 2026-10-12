@@ -281,15 +281,27 @@ export function agreementCapital(state: ViatikState, agreementId: Id) {
   const funded = sumMovements(state, (m) => m.kind === 'fund_agreement' && m.agreementId === agreementId)
   const released = sumMovements(state, (m) => m.kind === 'release_tranche' && m.agreementId === agreementId)
   const returned = returnedCapital(state, { agreementId })
+  const inFundingVault = clampToZero(cents(funded - released))
+  const releasable = sum(
+    state.tranches.filter((t) => t.agreementId === agreementId && !trancheIsOver(t)),
+    (t) => t.amount,
+  )
   return {
     committed,
     funded,
     released,
     returned,
     /** Funded but not yet released: what sits in the Funding Vault. */
-    inFundingVault: clampToZero(cents(funded - released)),
+    inFundingVault,
     remainingCommitment: clampToZero(cents(committed - released)),
     unfunded: clampToZero(cents(committed - funded)),
+    /** What the tranches still to release add up to (not released, rejected or cancelled). */
+    releasable,
+    /**
+     * What can still be funded: the tranches still to release, minus what already waits in the
+     * Funding Vault. Only a release moves money out of it, so anything more would stay there.
+     */
+    fundable: clampToZero(cents(releasable - inFundingVault)),
   }
 }
 

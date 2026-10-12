@@ -36,7 +36,8 @@ export function FundAgreementSheet({
     (v) => v.portfolioId === agreement.portfolioId && v.kind === 'portfolio',
   )
   const vaultAvailable = portfolioVault ? vaultBalance(state, portfolioVault.id) : ZERO
-  const max = min(capital.unfunded, vaultAvailable)
+  // Never more than the tranches still to release need: more could never leave the Funding Vault.
+  const max = min(capital.fundable, vaultAvailable)
   // undefined = untouched, so the amount defaults to everything that can be funded.
   const [draft, setDraft] = React.useState<Cents | null | undefined>(undefined)
   const amount = draft === undefined ? (suggested ? min(suggested, max) : max) : draft
@@ -63,7 +64,7 @@ export function FundAgreementSheet({
         to: `${agencyLabel} Funding Vault`,
         reversible:
           'Funds stay in the Funding Vault until you release a tranche. Viatik has no way to move them back yet.',
-        policy: `Funded capital cannot exceed the ${formatUsd(agreement.committed, { withCode: true })} commitment.`,
+        policy: `Funded capital cannot exceed the ${formatUsd(agreement.committed, { withCode: true })} commitment, nor what the tranches left can release.`,
       }}
       confirmLabel="Fund agreement"
       disabled={amount === null || invalid || max <= 0}
@@ -94,8 +95,12 @@ export function FundAgreementSheet({
         ) : null}
         {max <= 0 ? (
           <p className="text-sm text-muted-foreground">
-            {capital.unfunded <= 0 ? 'This agreement is fully funded.' : 'Your Portfolio Vault is empty.'}{' '}
-            {capital.unfunded > 0 ? (
+            {capital.unfunded <= 0
+              ? 'This agreement is fully funded.'
+              : capital.fundable <= 0
+                ? 'Every tranche left is already funded.'
+                : 'Your Portfolio Vault is empty.'}{' '}
+            {capital.fundable > 0 ? (
               <ButtonLink href={href('vaults/add-funds')} variant="link" size="sm" className="h-auto px-0">
                 Add funds
               </ButtonLink>
@@ -103,7 +108,7 @@ export function FundAgreementSheet({
           </p>
         ) : (
           <p className="text-xs text-subtle">
-            Up to {formatUsd(capital.unfunded, { withCode: true })} left to fund ·{' '}
+            Up to {formatUsd(capital.fundable, { withCode: true })} left to fund ·{' '}
             {formatUsd(vaultAvailable, { withCode: true })} in the Portfolio Vault
           </p>
         )}
