@@ -3,7 +3,7 @@ import { evidenceSetHash } from '../evidence'
 import { newId } from '../ids'
 import { cents, sum, type Cents } from '../money'
 import { activeOperationsAccount } from '../queries'
-import { agreementCapital, vaultBalance } from '../selectors'
+import { agreementCapital, isFullyReleased, vaultBalance } from '../selectors'
 import { assertTransition, canTransitionMilestone, canTransitionTranche } from '../status'
 import type {
   Agency,
@@ -732,6 +732,9 @@ export function releaseTranche(tx: Tx, input: { trancheId: Id; checkedCriteria?:
     ? tx.state.milestones.find((m) => m.id === nextTranche.milestoneId)
     : undefined
   if (nextMilestone && nextMilestone.status === 'not_started') nextMilestone.status = 'in_progress'
+  // Nothing left to release: the Agency is told this was the last one. The agreement's status does
+  // not change (no state on Monad ends an agreement); screens show it as Completed.
+  const last = isFullyReleased(tx.state, agreement.id)
 
   tx.activity(
     'tranche_released',
@@ -745,8 +748,10 @@ export function releaseTranche(tx: Tx, input: { trancheId: Id; checkedCriteria?:
   )
   tx.notify(
     tx.holders('agency_admin', { agencyId: agency.id }),
-    'Funding released',
-    `${usdText(tranche.amount)} is now available in the ${agency.name} ${destination.name} account.`,
+    last ? 'Final tranche released' : 'Funding released',
+    `${usdText(tranche.amount)} is now available in the ${agency.name} ${destination.name} account.${
+      last ? ` That was the last tranche of ${agreement.title}.` : ''
+    }`,
     `/agency/${agency.id}/accounts/${destination.id}`,
   )
   return { tranche, receipt, destination }

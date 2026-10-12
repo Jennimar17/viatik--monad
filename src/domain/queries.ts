@@ -1,5 +1,5 @@
 import { cents, clampToZero, sum, type Cents } from './money'
-import { accountBalance, budgetUsage, committedAt } from './selectors'
+import { accountBalance, agreementDisplayStatus, budgetUsage, committedAt } from './selectors'
 import type {
   Account,
   Actor,
@@ -113,12 +113,15 @@ export function activeAgreement(state: ViatikState, agencyId: Id): FundingAgreem
 
 /**
  * Every agreement of an Agency that is still in play (not cancelled): the ones waiting for the
- * Agency's acceptance first, then active, paused and the rest. Screens that show an Agency's
- * funding list all of them; `activeAgreement` is for the places that need exactly one.
+ * Agency's acceptance first, then active, paused and the rest (those with every tranche released
+ * among them). Screens that show an Agency's funding list all of them; `activeAgreement` is for
+ * the places that need exactly one.
  */
 export function agreementsOf(state: ViatikState, agencyId: Id): FundingAgreement[] {
-  const rank = (a: FundingAgreement) =>
-    a.status === 'pending_acceptance' ? 0 : a.status === 'active' ? 1 : a.status === 'paused' ? 2 : 3
+  const rank = (a: FundingAgreement) => {
+    const status = agreementDisplayStatus(state, a)
+    return status === 'pending_acceptance' ? 0 : status === 'active' ? 1 : status === 'paused' ? 2 : 3
+  }
   return state.agreements
     .filter((a) => a.agencyId === agencyId && a.status !== 'cancelled')
     .sort((a, b) => rank(a) - rank(b))
@@ -150,13 +153,14 @@ export function exceptionThresholdOf(state: ViatikState, agencyId: Id): Cents | 
 /**
  * The agreement an Agency's Settings name: the one shown to Admins and Investors, or, in a
  * Member's scoped state (which has no agreements), the title and status the Agency carries.
+ * The status is the one screens show: Completed once every tranche is released.
  */
 export function agencyAgreementSummary(
   state: ViatikState,
   agencyId: Id,
 ): { title: string; status: AgreementStatus } | undefined {
   const agreement = activeAgreement(state, agencyId)
-  if (agreement) return { title: agreement.title, status: agreement.status }
+  if (agreement) return { title: agreement.title, status: agreementDisplayStatus(state, agreement) }
   return state.agencies.find((a) => a.id === agencyId)?.fundingAgreement
 }
 

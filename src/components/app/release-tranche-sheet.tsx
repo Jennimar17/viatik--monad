@@ -4,7 +4,7 @@ import { ApprovalSheet } from '@/components/viatik/approval-sheet'
 import { useCommand, useViatikState } from '@/data/react'
 import { formatUsd, subtract, add } from '@/domain/money'
 import { accountName, agencyName, receiptFor } from '@/domain/queries'
-import { agreementCapital } from '@/domain/selectors'
+import { agreementCapital, isLastTranche } from '@/domain/selectors'
 
 import { FundShortfall } from '@/components/app/fund-agreement-sheet'
 import { ReceiptDetailsButton } from '@/components/app/receipt-details'
@@ -39,6 +39,8 @@ export function ReleaseTrancheSheet({
         (a) => a.agencyId === agreement?.agencyId && a.template === 'operations' && a.status === 'active',
       )?.name ?? 'Operations')
   const receipt = receiptFor(state, tranche?.receiptId)
+  // Only the other tranches count, so the success copy holds once this one is released.
+  const last = tranche ? isLastTranche(state, tranche) : false
   const short =
     tranche &&
     capital &&
@@ -77,7 +79,9 @@ export function ReleaseTrancheSheet({
       success={{
         title: 'Funding released',
         body: tranche
-          ? `${formatUsd(tranche.amount, { withCode: true })} is now available in the ${agency} ${destination} account.`
+          ? `${formatUsd(tranche.amount, { withCode: true })} is now available in the ${agency} ${destination} account.${
+              last ? ` That was the last tranche: ${agreement?.title ?? 'the agreement'} is complete.` : ''
+            }`
           : '',
         actions: <ReceiptDetailsButton receipt={receipt} />,
       }}

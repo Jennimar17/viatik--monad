@@ -38,8 +38,10 @@ import {
   adminApprovals,
   agencyAgreementSummary,
   agencyTeamSize,
+  agreementsOf,
   budgetsForVendor,
   defaultBillAccount,
+  exceptionThresholdOf,
   governingAgreement,
   investorApprovals,
   isException,
@@ -50,10 +52,14 @@ import {
 import {
   accountBalance,
   agencyCapital,
+  agreementBadge,
   agreementCapital,
+  agreementDisplayStatus,
   budgetUsage,
   holderSpentInPeriod,
+  isFullyReleased,
   isGiveBack,
+  isLastTranche,
   memberHeld,
   portfolioCapital,
   vaultBalance,
@@ -149,6 +155,9 @@ export default async function engine(t: Checker) {
     billsFromBudgets(t),
   )
   await t.scenario("L. The seed's demo story, as the read models show it, and going on", () => seedStory(t))
+  await t.scenario("M. A funding agreement's lifecycle, to its last tranche and a second agreement", () =>
+    agreementLifecycle(t),
+  )
 }
 
 // ─── A. Money for purchases ──────────────────────────────────────────────────
@@ -5320,6 +5329,229 @@ function paymentTypeOf(request: PaymentRequest): PaymentType {
     if (request.type === 'work') return 'team'
   }
   return 'tool'
+}
+
+// ─── M. A funding agreement's lifecycle ──────────────────────────────────────
+
+/**
+ * Lumen's scheduled agreement is funded to its commitment and released to its last tranche: it
+ * then reads Completed everywhere, yet keeps its status (no state on Monad ends an agreement) and
+ * keeps governing Lumen's exception threshold, also once a second agreement is in force.
+ */
+async function agreementLifecycle(t: Checker) {
+  const w = new World(t, 'engine-m')
+  const LUMEN_AGREEMENT = DEMO.agreements.lumen
+  const lumenAgreement = () =>
+    must(
+      w.state.agreements.find((a) => a.id === LUMEN_AGREEMENT),
+      "Lumen's agreement",
+    )
+  const titled = (notifications: { userId: Id; title: string }[], title: string) =>
+    notifications.length > 0 && notifications.every((n) => n.userId === U.ren && n.title === title)
+
+  // M1. Elena funds what is left of the commitment.
+  const unfunded = agreementCapital(w.state, LUMEN_AGREEMENT).unfunded
+  t.check("M1: Lumen's commitment is not fully funded in the seed", unfunded > 0, String(unfunded))
+  const portfolioVault = DEMO.vaults.portfolio
+  if (vaultBalance(w.state, portfolioVault) < unfunded)
+    await w.run(
+      U.elena,
+      'addFunds',
+      { portfolioId: DEMO.portfolio, amount: unfunded, source: 'Treasury' },
+      'M1 setup: Elena adds funds',
+      { ops: ['deposit'] },
+    )
+  await w.run(
+    U.elena,
+    'fundAgreement',
+    { agreementId: LUMEN_AGREEMENT, amount: unfunded },
+    "M1 Elena funds the rest of Lumen's commitment",
+    { ops: ['fundAgreement'] },
+  )
+
+  // M2. Ren requests Tranche 3 into Operations, and Elena releases it: not the last one.
+  await w.run(
+    U.ren,
+    'requestTranche',
+    { trancheId: DEMO.tranches.lumen3, destinationAccountId: ACC.lumenOperations },
+    'M2 Ren requests Tranche 3',
+    { ops: ['requestTranche'] },
+  )
+  t.check(
+    'M2: Tranche 3 is not the last one to release',
+    !isLastTranche(
+      w.state,
+      must(
+        w.state.tranches.find((tr) => tr.id === DEMO.tranches.lumen3),
+        'Tranche 3',
+      ),
+    ),
+  )
+  const m2 = await w.run(
+    U.elena,
+    'releaseTranche',
+    { trancheId: DEMO.tranches.lumen3 },
+    'M2 Elena releases Tranche 3',
+    { ops: ['releaseTranche'] },
+  )
+  t.check(
+    'M2: Ren is told "Funding released"',
+    titled(m2.notifications, 'Funding released'),
+    JSON.stringify(m2.notifications.map((n) => n.title)),
+  )
+  t.check(
+    'M2: Tranche 4 is available, and the agreement still reads Active',
+    w.state.tranches.find((tr) => tr.id === DEMO.tranches.lumen4)?.status === 'available' &&
+      !isFullyReleased(w.state, LUMEN_AGREEMENT) &&
+      agreementBadge(w.state, lumenAgreement()).label === 'Active',
+  )
+
+  // M3. Elena releases Tranche 4 without a request (Scheduled: none is needed). It is the last one.
+  const operationsBefore = accountBalance(w.state, ACC.lumenOperations)
+  const m3 = await w.run(
+    U.elena,
+    'releaseTranche',
+    { trancheId: DEMO.tranches.lumen4 },
+    'M3 Elena releases the last tranche, which nobody requested: no agreement-status operation',
+    { ops: ['releaseTranche'] },
+  )
+  t.check(
+    'M3: it lands in Operations',
+    accountBalance(w.state, ACC.lumenOperations) - operationsBefore === usd(15_000),
+  )
+  t.check(
+    'M3: Ren is told it was the final tranche of the agreement',
+    titled(m3.notifications, 'Final tranche released') &&
+      m3.notifications.every((n) =>
+        n.body.endsWith(`That was the last tranche of ${lumenAgreement().title}.`),
+      ),
+    JSON.stringify(m3.notifications.map((n) => [n.title, n.body])),
+  )
+  const capital = agreementCapital(w.state, LUMEN_AGREEMENT)
+  t.check(
+    'M3: nothing is left to fund or release, and nothing stays in the Funding Vault',
+    capital.remainingCommitment === 0 &&
+      capital.inFundingVault === 0 &&
+      capital.unfunded === 0 &&
+      vaultBalance(w.state, DEMO.vaults.lumenFunding) === 0,
+    JSON.stringify(capital),
+  )
+  t.check(
+    'M3: it reads Completed, but its status is still active and it still governs Lumen',
+    isFullyReleased(w.state, LUMEN_AGREEMENT) &&
+      lumenAgreement().status === 'active' &&
+      agreementDisplayStatus(w.state, lumenAgreement()) === 'completed' &&
+      agreementBadge(w.state, lumenAgreement()).label === 'Completed' &&
+      governingAgreement(w.state, LUMEN)?.id === LUMEN_AGREEMENT,
+  )
+  w.refuse(
+    U.elena,
+    'fundAgreement',
+    { agreementId: LUMEN_AGREEMENT, amount: usd(1) },
+    'limit_exceeded',
+    'M3 funding 1 USD more',
+  )
+  // H5: a Member's Settings show it Completed too, from what their Agency carries.
+  t.check(
+    "M3: Noah's Agency carries it as completed, like Ren's Settings show it",
+    w.view(U.noah).agencies.find((a) => a.id === LUMEN)?.fundingAgreement?.status === 'completed' &&
+      agencyAgreementSummary(w.view(U.noah), LUMEN)?.status === 'completed' &&
+      agencyAgreementSummary(w.view(U.ren), LUMEN)?.status === 'completed',
+    JSON.stringify(agencyAgreementSummary(w.view(U.noah), LUMEN)),
+  )
+
+  // M4. A second agreement for Lumen: created, accepted, funded and released. The first one, in
+  // force first, keeps governing: its threshold applies, on the engine and on the ledger.
+  const created = await w.run(
+    U.elena,
+    'createAgreement',
+    {
+      portfolioId: DEMO.portfolio,
+      agencyId: LUMEN,
+      title: 'Second year',
+      purpose: 'Operating capital for a second year.',
+      committed: usd(6_000),
+      releaseModel: 'manual',
+      startDate: w.now,
+      endDate: plusHours(w.now, 24 * 365),
+      tranches: [
+        { name: 'Tranche 1', amount: usd(4_000), releaseCondition: 'manual' },
+        { name: 'Tranche 2', amount: usd(2_000), releaseCondition: 'manual' },
+      ],
+      spendingPolicy: {
+        allowedCategories: ['team', 'cloud'],
+        exceptionThreshold: usd(2_000),
+        reportingCadence: 'monthly',
+        returnConditions: 'Unreleased capital stays in the Funding Vault until the parties agree on it.',
+      },
+      evidenceRequirements: 'A monthly spend report.',
+    },
+    'M4 Elena creates a second agreement for Lumen, with a lower threshold',
+    { ops: ['createAgreement'] },
+  )
+  const second = created.result.id
+  t.check(
+    'M4: Lumen lists the new agreement first, the completed one last',
+    agreementsOf(w.state, LUMEN)
+      .map((a) => a.id)
+      .join() === [second, LUMEN_AGREEMENT].join(),
+  )
+  await w.run(U.ren, 'acceptAgreement', { agreementId: second }, 'M4 Ren accepts it', {
+    ops: ['acceptAgreement'],
+  })
+  t.check(
+    'M4: the running agreement comes first; the first one still governs, with its own threshold',
+    agreementsOf(w.state, LUMEN)[0]?.id === second &&
+      governingAgreement(w.state, LUMEN)?.id === LUMEN_AGREEMENT &&
+      exceptionThresholdOf(w.state, LUMEN) === lumenAgreement().spendingPolicy.exceptionThreshold &&
+      exceptionThresholdOf(w.state, LUMEN)! > usd(3_000),
+  )
+  await w.gather(U.ren, ACC.lumenOperations, usd(3_000))
+  await w.run(
+    U.ren,
+    'sendPayment',
+    {
+      agencyId: LUMEN,
+      type: 'vendor',
+      recipient: { kind: 'destination', destinationId: D.stratus },
+      accountId: ACC.lumenOperations,
+      amount: usd(3_000),
+      category: 'cloud',
+      memo: 'Hosting, second year',
+    },
+    "M4 Ren pays 3,000 USD, above the new agreement's threshold: no exception, and the ledger agrees",
+    { ops: ['pay'] },
+  )
+  await w.run(
+    U.elena,
+    'fundAgreement',
+    { agreementId: second, amount: usd(4_000) },
+    'M4 Elena funds the first tranche of the second agreement',
+    { ops: ['fundAgreement'] },
+  )
+  const m4 = await w.run(
+    U.elena,
+    'releaseTranche',
+    {
+      trancheId: must(
+        w.state.tranches.find((tr) => tr.agreementId === second && tr.index === 1),
+        'Tranche 1',
+      ).id,
+    },
+    'M4 Elena releases it (Manual: no request needed)',
+    { ops: ['releaseTranche'] },
+  )
+  t.check(
+    'M4: not the last tranche: "Funding released", and the agreement reads Active',
+    titled(m4.notifications, 'Funding released') &&
+      agreementBadge(
+        w.state,
+        must(
+          w.state.agreements.find((a) => a.id === second),
+          'the second agreement',
+        ),
+      ).label === 'Active',
+  )
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

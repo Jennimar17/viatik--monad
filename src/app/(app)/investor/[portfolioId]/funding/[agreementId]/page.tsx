@@ -45,7 +45,7 @@ import { useCommand, useViatikState } from '@/data/react'
 import { categoryLabel, releaseModelLabel } from '@/domain/labels'
 import { formatUsd } from '@/domain/money'
 import { receiptFor } from '@/domain/queries'
-import { agreementStatus } from '@/domain/status'
+import { agreementBadge, isFullyReleased } from '@/domain/selectors'
 import { formatDate } from '@/lib/format'
 
 export default function AgreementDetailPage() {
@@ -77,6 +77,8 @@ export default function AgreementDetailPage() {
   const tranches = state.tranches.filter((t) => t.agreementId === agreement.id)
   const withEvidence = state.milestones.filter((m) => m.agreementId === agreement.id && m.evidence.length > 0)
   const paused = agreement.status === 'paused'
+  // Every tranche released (or rejected): nothing more to fund, release or pause.
+  const settled = isFullyReleased(state, agreement.id)
   const policy = agreement.spendingPolicy
   const milestoneHref = (milestoneId: string) => href(`funding/${agreement.id}/milestones/${milestoneId}`)
 
@@ -98,7 +100,7 @@ export default function AgreementDetailPage() {
         description={agreement.purpose}
         meta={
           <>
-            <StatusBadge status={agreementStatus[agreement.status]} size="md" />
+            <StatusBadge status={agreementBadge(state, agreement)} size="md" />
             <Tag>{releaseModelLabel[agreement.releaseModel].label}</Tag>
             <span className="text-sm text-subtle">
               {formatDate(agreement.startDate)} – {formatDate(agreement.endDate)}
@@ -114,7 +116,7 @@ export default function AgreementDetailPage() {
                 <MoreHorizontal />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56 p-1.5">
-                {agreement.status === 'active' || paused ? (
+                {(agreement.status === 'active' || paused) && !settled ? (
                   <DropdownMenuItem
                     className="gap-2 rounded-lg"
                     onClick={() => {
@@ -131,14 +133,24 @@ export default function AgreementDetailPage() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button size="pill" onClick={() => setFundOpen(true)}>
-              <HandCoins data-icon="inline-start" /> Fund agreement
-            </Button>
+            {settled ? null : (
+              <Button size="pill" onClick={() => setFundOpen(true)}>
+                <HandCoins data-icon="inline-start" /> Fund agreement
+              </Button>
+            )}
           </>
         }
       />
 
-      {paused ? (
+      {settled ? (
+        <div className="rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm text-pretty">
+          {tranches.some((t) => t.status === 'rejected')
+            ? 'No tranche is left to release.'
+            : 'Every tranche has been released.'}{' '}
+          Nothing more can be funded or released under this agreement; {agency?.name ?? 'the Agency'} keeps
+          operating with the released capital.
+        </div>
+      ) : paused ? (
         <div className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm">
           This agreement is paused. Tranche releases are on hold and the Agency was notified.
         </div>

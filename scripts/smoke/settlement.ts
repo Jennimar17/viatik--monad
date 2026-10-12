@@ -14,7 +14,7 @@ import { attachmentsHash } from '@/domain/evidence'
 import { DEMO } from '@/domain/fixtures'
 import { cents, formatUsd, usd, type Cents } from '@/domain/money'
 import { governingAgreement } from '@/domain/queries'
-import { accountBalance } from '@/domain/selectors'
+import { accountBalance, agreementCapital, isFullyReleased, vaultBalance } from '@/domain/selectors'
 import type { Id } from '@/domain/types'
 import { encodePlan, receiptHashOf } from '@/ledger/encode'
 import { ledgerId, witnessesOf } from '@/ledger/ids'
@@ -293,6 +293,65 @@ async function wholePlans(t: Checker) {
     keepOnFailure: false,
     uncovered: [],
   })
+
+  // Releasing an agreement's last tranche is a release and nothing else: no state on Monad ends an
+  // agreement, so the plan names no agreement status (screens show it as Completed).
+  const lw = new World(t, 'settlement-last-tranche')
+  const lumen = DEMO.agreements.lumen
+  const unfunded = agreementCapital(lw.state, lumen).unfunded
+  if (vaultBalance(lw.state, DEMO.vaults.portfolio) < unfunded)
+    await lw.run(
+      U.elena,
+      'addFunds',
+      { portfolioId: DEMO.portfolio, amount: unfunded, source: 'Treasury' },
+      'S1 setup: Elena adds funds',
+      { ops: ['deposit'] },
+    )
+  await lw.run(
+    U.elena,
+    'fundAgreement',
+    { agreementId: lumen, amount: unfunded },
+    'S1 setup: Lumen is funded',
+    {
+      ops: ['fundAgreement'],
+    },
+  )
+  await lw.run(
+    U.ren,
+    'requestTranche',
+    { trancheId: DEMO.tranches.lumen3, destinationAccountId: ACC.lumenOperations },
+    'S1 setup: Ren requests Tranche 3',
+    { ops: ['requestTranche'] },
+  )
+  await lw.run(U.elena, 'releaseTranche', { trancheId: DEMO.tranches.lumen3 }, 'S1 setup: Tranche 3', {
+    ops: ['releaseTranche'],
+  })
+  const last = await lw.run(
+    U.elena,
+    'releaseTranche',
+    { trancheId: DEMO.tranches.lumen4 },
+    "S1 Lumen's last tranche is released",
+  )
+  checkSame(t, 'S1: the whole plan of the last release, with no agreement-status operation', last.plan, {
+    ops: [{ call: 'releaseTranche', trancheId: DEMO.tranches.lumen4, decisionHash: null }],
+    records: [
+      {
+        opId: DEMO.tranches.lumen4,
+        kind: 'tranche_release',
+        amount: usd(15_000),
+        from: { id: DEMO.vaults.lumenFunding },
+        to: { id: ACC.lumenOperations },
+        evidenceHash: null,
+      },
+    ],
+    signerUserId: U.elena,
+    keepOnFailure: false,
+    uncovered: [],
+  })
+  t.check(
+    'S1: the agreement keeps its status and every tranche is over',
+    lw.state.agreements.find((a) => a.id === lumen)?.status === 'active' && isFullyReleased(lw.state, lumen),
+  )
 }
 
 // ─── S2. Hand-made plans ─────────────────────────────────────────────────────

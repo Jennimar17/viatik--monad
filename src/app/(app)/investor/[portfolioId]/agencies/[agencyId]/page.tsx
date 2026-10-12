@@ -49,9 +49,9 @@ import { agencyTypeLabel, categoryLabel } from '@/domain/labels'
 import { roleLabel } from '@/domain/permissions'
 import { agreementsOf, userName } from '@/domain/queries'
 import { isUnscheduledPayment } from '@/domain/schedules'
-import { agencyCapital, budgetUsage, spendByMonth } from '@/domain/selectors'
-import { agencyStatus, agreementStatus, budgetStatus } from '@/domain/status'
-import type { SpendingCategory } from '@/domain/types'
+import { agencyCapital, agreementBadge, budgetUsage, isFullyReleased, spendByMonth } from '@/domain/selectors'
+import { agencyStatus, budgetStatus } from '@/domain/status'
+import type { FundingAgreement, SpendingCategory } from '@/domain/types'
 import { seriesColor, seriesKey } from '@/lib/chart-colors'
 import { formatDate, pluralize } from '@/lib/format'
 
@@ -93,10 +93,17 @@ function InvestorAgencyDetail() {
     )
   }
 
-  // An Agency can have several agreements. The header acts on the one that is running (or the most
-  // urgent), and the Overview tab lists them all.
+  // An Agency can have several agreements. The header acts on the one that is running, with a
+  // tranche still to release (or the most urgent), and the Overview tab lists them all.
   const agreements = agreementsOf(state, agency.id)
-  const agreement = agreements.find((a) => a.status === 'active' || a.status === 'paused') ?? agreements[0]
+  const running = (a: FundingAgreement) => a.status === 'active' || a.status === 'paused'
+  const agreement =
+    agreements.find((a) => running(a) && !isFullyReleased(state, a.id)) ??
+    agreements.find(running) ??
+    agreements[0]
+  const settled = agreement ? isFullyReleased(state, agreement.id) : false
+  // A pause holds releases: one with nothing left to release is not on hold.
+  const pausedAgreements = agreements.filter((a) => a.status === 'paused' && !isFullyReleased(state, a.id))
   const capital = agencyCapital(state, agency.id, now)
   const budgets = state.budgets.filter((b) => b.agencyId === agency.id)
   const members = state.memberships.filter(
@@ -207,8 +214,8 @@ function InvestorAgencyDetail() {
         meta={
           <>
             <Tag>{agencyTypeLabel[agency.type]}</Tag>
-            {agreements[0] ? (
-              <StatusBadge status={agreementStatus[agreements[0].status]} size="md" />
+            {agreement ? (
+              <StatusBadge status={agreementBadge(state, agreement)} size="md" />
             ) : (
               <StatusBadge status={agencyStatus[agency.status]} size="md" />
             )}
@@ -226,7 +233,7 @@ function InvestorAgencyDetail() {
         }
         actions={
           <>
-            {agreement && (agreement.status === 'active' || paused) && can('freeze_agreement') ? (
+            {agreement && (agreement.status === 'active' || paused) && !settled && can('freeze_agreement') ? (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={<Button variant="outline" size="icon-pill" aria-label="More actions" />}
@@ -268,14 +275,10 @@ function InvestorAgencyDetail() {
         }
       />
 
-      {agreements.some((a) => a.status === 'paused') ? (
+      {pausedAgreements.length > 0 ? (
         <div className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm">
-          {agreements
-            .filter((a) => a.status === 'paused')
-            .map((a) => a.title)
-            .join(', ')}{' '}
-          {agreements.filter((a) => a.status === 'paused').length > 1 ? 'are' : 'is'} paused. Tranche releases
-          are on hold; {agency.name} keeps operating with capital already released.
+          {pausedAgreements.map((a) => a.title).join(', ')} {pausedAgreements.length > 1 ? 'are' : 'is'}{' '}
+          paused. Tranche releases are on hold; {agency.name} keeps operating with capital already released.
         </div>
       ) : null}
 
@@ -308,7 +311,7 @@ function InvestorAgencyDetail() {
                           action={
                             <span className="flex items-center gap-2">
                               {agreements.length > 1 ? (
-                                <StatusBadge status={agreementStatus[item.status]} />
+                                <StatusBadge status={agreementBadge(state, item)} />
                               ) : null}
                               <ButtonLink href={href(`funding/${item.id}`)} variant="ghost" size="pill-sm">
                                 Details <ArrowRight data-icon="inline-end" />

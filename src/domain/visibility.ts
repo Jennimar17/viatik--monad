@@ -1,5 +1,6 @@
 import { governingAgreement } from './queries'
 import { isCreatorActive, isOpenSchedule } from './schedules'
+import { agreementDisplayStatus } from './selectors'
 import type { Agency, Id, Location, Movement, Receipt, User, ViatikState } from './types'
 
 /**
@@ -59,7 +60,8 @@ export function scopeStateForUser(state: ViatikState, userId: Id): ViatikState {
       const governing = governingAgreement(state, a.id)
       if (governing) {
         agency.exceptionThreshold = governing.spendingPolicy.exceptionThreshold
-        agency.fundingAgreement = { title: governing.title, status: governing.status }
+        // As screens show it: Completed once every tranche is released (the Member sees no tranches).
+        agency.fundingAgreement = { title: governing.title, status: agreementDisplayStatus(state, governing) }
       }
       agency.teamSize = state.memberships.filter(
         (m) => m.status === 'active' && m.scope.kind === 'agency' && m.scope.agencyId === a.id,

@@ -1,15 +1,19 @@
 import { add, cents, clampToZero, sum, ZERO, type Cents } from './money'
+import { agreementStatus, type StatusDescriptor } from './status'
 import type {
   Account,
+  AgreementStatus,
   AllowanceHolder,
   Budget,
   BudgetPeriod,
+  FundingAgreement,
   Id,
   ISODate,
   Location,
   Movement,
   PaymentRequest,
   SpendingCategory,
+  Tranche,
   ViatikState,
 } from './types'
 
@@ -288,6 +292,39 @@ export function agreementCapital(state: ViatikState, agreementId: Id) {
     unfunded: clampToZero(cents(committed - funded)),
   }
 }
+
+// ─── Agreement lifecycle ────────────────────────────────────────────────────
+
+/** A tranche nothing can release any more: released, rejected or cancelled. */
+export const trancheIsOver = (tranche: Pick<Tranche, 'status'>) =>
+  tranche.status === 'released' || tranche.status === 'rejected' || tranche.status === 'cancelled'
+
+/**
+ * Every tranche of the agreement is over (released, rejected or cancelled): nothing is left to
+ * release. Shown only: no state on Monad ends an agreement, so it stays active (or paused) in
+ * the engine and on the ledger, and it keeps governing the Agency's exception threshold.
+ */
+export function isFullyReleased(state: ViatikState, agreementId: Id): boolean {
+  const tranches = state.tranches.filter((t) => t.agreementId === agreementId)
+  return tranches.length > 0 && tranches.every(trancheIsOver)
+}
+
+/** Releasing this tranche leaves nothing to release: every other tranche of its agreement is over. */
+export const isLastTranche = (state: ViatikState, tranche: Pick<Tranche, 'id' | 'agreementId'>) =>
+  state.tranches.every(
+    (t) => t.agreementId !== tranche.agreementId || t.id === tranche.id || trancheIsOver(t),
+  )
+
+/** The status screens show: an active or paused agreement with nothing left to release reads Completed. */
+export function agreementDisplayStatus(state: ViatikState, agreement: FundingAgreement): AgreementStatus {
+  return (agreement.status === 'active' || agreement.status === 'paused') &&
+    isFullyReleased(state, agreement.id)
+    ? 'completed'
+    : agreement.status
+}
+
+export const agreementBadge = (state: ViatikState, agreement: FundingAgreement): StatusDescriptor =>
+  agreementStatus[agreementDisplayStatus(state, agreement)]
 
 /**
  * What an Agency has been committed, funded and released across all its agreements (cancelled ones

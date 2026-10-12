@@ -27,7 +27,7 @@ import { VerifiedDetailsButton } from '@/components/viatik/verified-details-draw
 import { useCommand, useViatikState } from '@/data/react'
 import { add, formatUsd, subtract } from '@/domain/money'
 import { accountName, receiptFor, userName } from '@/domain/queries'
-import { agreementCapital } from '@/domain/selectors'
+import { agreementCapital, isLastTranche } from '@/domain/selectors'
 import { milestoneStatus, trancheStatus } from '@/domain/status'
 import { formatDate, formatDateTime } from '@/lib/format'
 
@@ -354,7 +354,9 @@ export default function MilestoneReviewPage() {
         onConfirm={() => release.run({ trancheId: tranche.id, checkedCriteria: checked, note })}
         success={{
           title: 'Funding released',
-          body: `${formatUsd(tranche.amount, { withCode: true })} is now available in the ${agencyLabel} ${destination ?? 'Operations'} account.`,
+          body: `${formatUsd(tranche.amount, { withCode: true })} is now available in the ${agencyLabel} ${destination ?? 'Operations'} account.${
+            isLastTranche(state, tranche) ? ` That was the last tranche: ${agreement.title} is complete.` : ''
+          }`,
           actions: (
             <>
               <ButtonLink href={href(`funding/${agreement.id}`)} size="pill-sm">
