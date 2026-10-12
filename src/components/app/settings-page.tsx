@@ -170,7 +170,9 @@ function Settings() {
                 htmlFor="profile-tz"
                 hint={
                   <>
-                    Shown to your team. Times in Viatik follow this device’s clock ({deviceZoneLabel}).
+                    {/* An Agency's team pages show its people's zones; nothing shows an Investor's. */}
+                    {role === 'investor' ? '' : 'Shown to your team. '}Times in Viatik follow this device’s
+                    clock ({deviceZoneLabel}).
                     {suggestDeviceZone ? (
                       <>
                         {' '}

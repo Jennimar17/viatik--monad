@@ -1167,7 +1167,7 @@ export function checkAgencyPayment(
     if (tx.actor.kind === 'user' && recipient.userId === tx.actor.userId) {
       throw new DomainError(
         'forbidden',
-        'You cannot pay yourself. Request payment for work and another Agency Admin reviews it.',
+        'You cannot pay yourself. Another Agency Admin has to pay you.',
       )
     }
   } else {

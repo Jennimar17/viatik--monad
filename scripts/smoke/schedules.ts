@@ -1841,7 +1841,11 @@ async function selfPayment(t: Checker) {
   t.check(
     'F17 it needs attention, and says why',
     scheduleState(w.state, scheduleOf(w, stored.id), w.now) === 'needs_attention' &&
-      Boolean(scheduleOf(w, stored.id).failure?.message.includes('nobody can pay themselves')),
+      Boolean(
+        scheduleOf(w, stored.id).failure?.message.endsWith(
+          'scheduled it to their own balance, and nobody can pay themselves. Cancel it.',
+        ),
+      ),
     scheduleOf(w, stored.id).failure?.message,
   )
 }

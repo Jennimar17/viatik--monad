@@ -2890,8 +2890,8 @@ async function firstSmoke(t: Checker) {
   }
   const selfMessage = w.refuse(U.maya, 'sendPayment', toSelf, 'forbidden', 'I an Admin cannot pay herself')
   t.check(
-    'I it says to request payment for work instead',
-    selfMessage === 'You cannot pay yourself. Request payment for work and another Agency Admin reviews it.',
+    'I it says another Agency Admin has to pay her',
+    selfMessage === 'You cannot pay yourself. Another Agency Admin has to pay you.',
     selfMessage,
   )
   w.refuse(
@@ -3147,10 +3147,30 @@ async function labelsAndSeed(t: Checker) {
   )
   const lowCap = describeBudgetPolicy(tools, { allowance: { perOperationLimit: usd(100) } })
   t.check(
-    'J: with a cap at or below the automatic limit, everything within the limits approves itself',
+    'J: with a cap at or below the automatic limit, everything within the limits approves itself but work',
     lowCap.includes(`A single payment cannot exceed ${usdText(usd(100))}.`) &&
-      lowCap.includes('Payments within these limits are approved automatically.'),
+      lowCap.includes(
+        'Payments within these limits are approved automatically, except payment for work, which an Agency Admin always reviews.',
+      ),
     lowCap.join(' | '),
+  )
+  const belowException = describeBudgetPolicy(tools, {
+    allowance: { perOperationLimit: usd(100) },
+    exceptionThreshold: usd(60),
+  })
+  t.check(
+    "J: …and with the Investor's exception threshold below that cap, payments above it go to the Investor",
+    belowException.includes(
+      `Payments up to ${usdText(usd(60))} are approved automatically, except payment for work, which an Agency Admin always reviews. Payments above ${usdText(usd(60))} go to the Investor.`,
+    ) &&
+      same(
+        describeBudgetPolicy(tools, {
+          allowance: { perOperationLimit: usd(100) },
+          exceptionThreshold: usd(100),
+        }),
+        lowCap,
+      ),
+    belowException.join(' | '),
   )
   const toolsLines = describeBudgetPolicy(tools, { allowance: alexOn(B.arcTools) })
   t.check(

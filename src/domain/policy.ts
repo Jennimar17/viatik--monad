@@ -303,6 +303,8 @@ export function describeBudgetPolicy(
     locale?: string
     /** A Member's spending access: their own per-payment cap, when lower, is the one that applies. */
     allowance?: Pick<SpendingAllowance, 'perOperationLimit'>
+    /** The exception threshold that governs the Agency (`exceptionThresholdOf`): above it, the Investor decides. */
+    exceptionThreshold?: Cents
   } = {},
 ): string[] {
   const lines: string[] = []
@@ -311,12 +313,21 @@ export function describeBudgetPolicy(
   lines.push(`Up to ${fmt(budget.periodLimit)} can be spent ${periodWord}.`)
   const cap = perPaymentCap(budget, options.allowance)
   lines.push(`A single payment cannot exceed ${fmt(cap)}.`)
-  // For a holder whose own cap is at or below the automatic limit, nothing they can pay goes above it.
+  // For a holder whose own cap is at or below the automatic limit, nothing they can pay goes above it,
+  // but payment for work is always reviewed, and above the exception threshold the Investor decides
+  // (`withAgreementRules`).
+  const investorAbove =
+    options.exceptionThreshold !== undefined && options.exceptionThreshold < cap
+      ? options.exceptionThreshold
+      : undefined
+  const work = 'except payment for work, which an Agency Admin always reviews'
   lines.push(
     budget.approvalThreshold <= 0
       ? 'Every payment needs an Agency Admin approval.'
       : options.allowance && budget.approvalThreshold >= cap
-        ? 'Payments within these limits are approved automatically.'
+        ? investorAbove !== undefined
+          ? `Payments up to ${fmt(investorAbove)} are approved automatically, ${work}. Payments above ${fmt(investorAbove)} go to the Investor.`
+          : `Payments within these limits are approved automatically, ${work}.`
         : `Payments up to ${fmt(budget.approvalThreshold)} are approved automatically. Anything above needs an Agency Admin.`,
   )
   // The vendor list limits vendor payments only: money a person requests goes to their own Viatik balance.

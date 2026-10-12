@@ -24,7 +24,7 @@ import { useViatikState } from '@/data/react'
 import { budgetPeriodUnit, categoryLabel } from '@/domain/labels'
 import { formatUsd, min, sum } from '@/domain/money'
 import { describeBudgetPolicy } from '@/domain/policy'
-import { destinationName, memberBudgets } from '@/domain/queries'
+import { destinationName, exceptionThresholdOf, memberBudgets } from '@/domain/queries'
 import { upcomingPayments } from '@/domain/schedules'
 import { requestStatusFor } from '@/domain/status'
 import { formatRelative, formatShortDate } from '@/lib/format'
@@ -309,6 +309,7 @@ export default function MemberOverviewPage() {
                   destinationNames: main.budget.allowedDestinationIds.map((id) => destinationName(state, id)),
                   categoryLabels: categoryLabel,
                   allowance: main.allowance,
+                  exceptionThreshold: exceptionThresholdOf(state, agencyId),
                 }).slice(1),
               ]}
             />

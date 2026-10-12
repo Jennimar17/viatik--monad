@@ -59,9 +59,14 @@ export function VerifiedDetailsDrawer({
               </span>
               <Amount value={record.amount} size="lg" />
             </div>
-            <span className="flex items-center gap-1.5 text-xs text-sage">
-              <ShieldCheck className="size-4" aria-hidden="true" /> {SETTLEMENT_ASSET}
-            </span>
+            {/* A simulated record settled nothing: no asset, no check. */}
+            {record.details.simulated ? (
+              <span className="text-xs text-subtle">Simulated</span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-xs text-sage">
+                <ShieldCheck className="size-4" aria-hidden="true" /> {SETTLEMENT_ASSET}
+              </span>
+            )}
           </div>
           <VerifiedDetailsList details={record.details} />
         </div>

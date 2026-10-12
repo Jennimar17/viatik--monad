@@ -173,7 +173,7 @@ export function runScheduledPayment(tx: Tx, input: RunScheduledPaymentInput): Pa
   if (schedule.recipient.kind === 'member' && schedule.recipient.userId === schedule.createdBy) {
     throw new DomainError(
       'forbidden',
-      `${tx.nameOf(schedule.createdBy)} scheduled it to their own balance, and nobody can pay themselves. Cancel it, and request payment for work instead.`,
+      `${tx.nameOf(schedule.createdBy)} scheduled it to their own balance, and nobody can pay themselves. Cancel it.`,
     )
   }
   const { account, budget, portfolioId, recipientName } = checkAgencyPayment(tx, {

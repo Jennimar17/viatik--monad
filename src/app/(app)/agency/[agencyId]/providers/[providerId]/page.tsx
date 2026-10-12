@@ -59,8 +59,8 @@ import { pluralize } from '@/lib/format'
 import { formatLocalDate } from '@/lib/local-time'
 
 const NETWORK = publicEnv.NEXT_PUBLIC_MONAD_NETWORK
-/** The asset provider payments settle in: TestUSD stands in for USDC on testnet. */
-const ASSET = NETWORK === 'testnet' ? 'TestUSD' : 'USDC'
+/** The network provider payments settle on, and its asset as Verified details names it (TestUSD on testnet). */
+const NETWORK_INFO = networkInfo(NETWORK)
 
 const actionIcons: Record<ProviderStatusAction, React.ReactNode> = {
   pause: <PauseCircle className="size-4" />,
@@ -286,9 +286,9 @@ export default function ProviderDetailPage() {
               'Payments to it are recorded under this provider. This is a demo: nothing leaves Viatik.'
             ) : (
               <>
-                Payments to it are recorded on Monad under this provider. On {networkInfo(NETWORK).name}, the{' '}
-                {ASSET} goes to Viatik’s {NETWORK === 'testnet' ? 'test ' : ''}payout account; to pay the
-                provider’s own address, use{' '}
+                Payments to it are recorded on Monad under this provider. On {NETWORK_INFO.name}, the{' '}
+                {NETWORK_INFO.asset.symbol} goes to Viatik’s {NETWORK === 'testnet' ? 'test ' : ''}payout
+                account; to pay the provider’s own address, use{' '}
                 <Link
                   href={href('accounts/pay-outside')}
                   className="text-foreground underline-offset-4 hover:underline"
