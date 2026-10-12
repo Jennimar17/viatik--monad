@@ -99,7 +99,7 @@ export function justifySummary(acc: MemberAccountability): string {
     acc.overdueCount > 0
       ? `${acc.overdueCount} overdue`
       : acc.nextDue
-        ? `${acc.open.length > 1 ? 'next due' : 'due'} ${formatShortDate(acc.nextDue.dueAt)}`
+        ? `${acc.open.length > 1 ? 'next due' : 'due'} ${formatLocalDate(acc.nextDue.dueAt, { withYear: false })}`
         : null
   return [`${usd(acc.pending)} to justify`, when].filter(Boolean).join(' · ')
 }
@@ -107,7 +107,8 @@ export function justifySummary(acc: MemberAccountability): string {
 /** The hint under a "To justify" figure: how many are overdue, when the next one is due, or all justified. */
 export function justifyHint(acc: MemberAccountability): React.ReactNode {
   if (acc.overdueCount > 0) return <span className="text-danger">{acc.overdueCount} overdue</span>
-  if (acc.nextDue) return `${acc.open.length > 1 ? 'Next due' : 'Due'} ${formatShortDate(acc.nextDue.dueAt)}`
+  if (acc.nextDue)
+    return `${acc.open.length > 1 ? 'Next due' : 'Due'} ${formatLocalDate(acc.nextDue.dueAt, { withYear: false })}`
   return 'All justified'
 }
 
@@ -244,9 +245,9 @@ export function MemberAccountabilityBanner({ agencyId }: { agencyId: Id }) {
   if (pending > 0) {
     headline = firstLate
       ? `${usd(pending)} to justify · ${usd(overdue)} overdue`
-      : `${usd(pending)} to justify · ${open.length > 1 ? 'next due' : 'due'} ${formatShortDate(nextDue?.dueAt ?? now)}`
+      : `${usd(pending)} to justify · ${open.length > 1 ? 'next due' : 'due'} ${formatLocalDate(nextDue?.dueAt ?? now, { withYear: false })}`
     body = firstLate
-      ? `${titles(late)} ${late.length === 1 ? 'was due' : 'are overdue, the first since'} ${formatShortDate(firstLate.dueAt)}. Add receipts for what you bought or return what you did not use.`
+      ? `${titles(late)} ${late.length === 1 ? 'was due' : 'are overdue, the first since'} ${formatLocalDate(firstLate.dueAt, { withYear: false })}. Add receipts for what you bought or return what you did not use.`
       : `Add receipts for what you bought with ${titles(open)}, or return what you do not use.`
   } else {
     headline = missingText ?? ''

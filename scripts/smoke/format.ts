@@ -1,3 +1,5 @@
+import { advanceDueText } from '@/components/app/request-parts'
+import { addDays, JUSTIFY_WITHIN_DAYS, PROOF_WITHIN_DAYS } from '@/domain/accountability'
 import { calendarDaysUntil } from '@/domain/days'
 import { cents, parseUsdInput, toInputString, usdInputHint } from '@/domain/money'
 import { billState } from '@/domain/queries'
@@ -8,7 +10,9 @@ import {
   dueLabel,
   formatDate,
   formatDateTime,
+  formatRelative,
   formatShortDate,
+  instantDueLabel,
   partOfDay,
 } from '@/lib/format'
 import { formatLocalDate, formatLocalDateTime, formatLocalTime } from '@/lib/local-time'
@@ -25,6 +29,8 @@ import { checkSame, type Checker } from './harness'
 
 /** Buenos Aires: GMT-3 all year (no daylight saving time). */
 const BA = 'America/Argentina/Buenos_Aires'
+/** Tokyo: GMT+9 all year (no daylight saving time). */
+const TOKYO = 'Asia/Tokyo'
 
 /** Some ICU versions put a narrow no-break space before AM/PM: every space reads as a plain one. */
 const plain = (text: string) => text.replace(/\s/g, ' ')
@@ -49,6 +55,9 @@ export default async function format(t: Checker) {
   await t.scenario('T3. Days to a due date are calendar days', () => dueDays(t))
   await t.scenario('T4. The amount input refuses a comma for cents', () => amounts(t))
   await t.scenario('T5. The greeting follows the hour on the viewer’s clock', () => greeting(t))
+  await t.scenario('T6. Deadlines that close at an instant count on the viewer’s clock', () =>
+    instantDeadlines(t),
+  )
 }
 
 // ─── T1. Times of day ────────────────────────────────────────────────────────
@@ -285,5 +294,83 @@ function greeting(t: Checker) {
     'T5 the same instant is morning in UTC',
     partOfDay('2026-10-12T08:00:00Z', { timeZone: 'UTC' }),
     'morning',
+  )
+}
+
+// ─── T6. Deadlines that close at an instant ──────────────────────────────────
+
+function instantDeadlines(t: Checker) {
+  const tokyo = { timeZone: TOKYO }
+  // Paid outside Viatik at 8:00 AM on Oct 5 in Tokyo, still Oct 4 in UTC: the invoice is due 7
+  // days later, at 8:00 AM on Oct 12 in Tokyo.
+  const paid = '2026-10-04T23:00:00Z'
+  const invoiceDue = addDays(paid, PROOF_WITHIN_DAYS)
+  const invoice = (now: string, timeZone = TOKYO) =>
+    instantDueLabel(invoiceDue, now, Date.parse(now) > Date.parse(invoiceDue), { timeZone })
+  checkSame(
+    t,
+    'T6 the invoice of a payment made at 8 AM on Oct 5 in Tokyo is due at 8 AM on Oct 12 there',
+    plain(formatLocalDateTime(invoiceDue, tokyo)),
+    'Oct 12, 8:00 AM',
+  )
+  checkSame(
+    t,
+    'T6 in Tokyo: Due tomorrow on Oct 11, Due today until 8 AM on Oct 12 (not "1 day overdue"), then Overdue today',
+    [
+      invoice('2026-10-11T03:00:00Z'), // Oct 11, noon
+      invoice('2026-10-11T22:00:00Z'), // Oct 12, 7:00 AM: not overdue yet
+      invoice('2026-10-11T23:30:00Z'), // Oct 12, 8:30 AM
+      invoice('2026-10-12T16:00:00Z'), // Oct 13, 1:00 AM
+    ],
+    ['Due tomorrow', 'Due today', 'Overdue today', '1 day overdue'],
+  )
+  checkSame(
+    t,
+    'T6 … and in UTC, where the same window closes at 11 PM on Oct 11',
+    [invoice('2026-10-11T22:00:00Z', 'UTC'), invoice('2026-10-11T23:30:00Z', 'UTC')],
+    ['Due today', 'Overdue today'],
+  )
+
+  // Money for purchases is justified within 30 days of the payment: received and due read on the
+  // same clock, 30 days apart.
+  const receivedInTokyo = '2026-10-04T23:00:00Z' // 8:00 AM on Oct 5 in Tokyo
+  const open = { dueAt: addDays(receivedInTokyo, JUSTIFY_WITHIN_DAYS), overdue: false, settled: false }
+  checkSame(
+    t,
+    'T6 money for purchases received Oct 5 in Tokyo is due Nov 4 there (not Nov 3)',
+    [
+      formatLocalDate(receivedInTokyo, { ...tokyo, withYear: false }),
+      advanceDueText(open, { short: true, ...tokyo }),
+      advanceDueText(open, tokyo),
+    ],
+    ['Oct 5', 'due Nov 4', 'due Nov 4, 2026'],
+  )
+  const receivedInBogota = '2026-10-05T02:00:00Z' // 9:00 PM on Oct 4 in Bogota
+  const late = { dueAt: addDays(receivedInBogota, JUSTIFY_WITHIN_DAYS), overdue: true, settled: false }
+  checkSame(
+    t,
+    'T6 … received Oct 4 in Bogota, it is overdue since Nov 3 there (not Nov 4)',
+    [
+      formatLocalDate(receivedInBogota, { timeZone: 'America/Bogota', withYear: false }),
+      advanceDueText(late, { short: true, timeZone: 'America/Bogota' }),
+    ],
+    ['Oct 4', 'overdue since Nov 3'],
+  )
+
+  // Past 30 days, a relative time reads the day on the viewer's clock, as the request page does.
+  const sent = '2026-09-03T01:00:00Z' // 10:00 PM on Sep 2 in Buenos Aires
+  const now = '2026-10-12T15:00:00Z'
+  checkSame(
+    t,
+    'T6 a request sent 40 days ago reads Sep 2 in Buenos Aires, its day there',
+    [formatRelative(sent, now, { timeZone: BA }), formatLocalDate(sent, { timeZone: BA })],
+    ['Sep 2, 2026', 'Sep 2, 2026'],
+  )
+  checkSame(t, 'T6 … and Sep 3 in UTC', formatRelative(sent, now, { timeZone: 'UTC' }), 'Sep 3, 2026')
+  checkSame(
+    t,
+    'T6 within 30 days it stays relative',
+    formatRelative('2026-10-10T15:00:00Z', now, { timeZone: BA }),
+    '2 days ago',
   )
 }

@@ -58,7 +58,14 @@ import {
   type ProofState,
 } from '@/domain/status'
 import type { Id, ISODate, Payment, Reminder, ViatikState } from '@/domain/types'
-import { daysUntil, dueLabel, formatRelative, formatShortDate, pluralize } from '@/lib/format'
+import {
+  daysUntil,
+  dueLabel,
+  formatRelative,
+  formatShortDate,
+  instantDueLabel,
+  pluralize,
+} from '@/lib/format'
 import { formatLocalDate } from '@/lib/local-time'
 import { cn } from '@/lib/utils'
 
@@ -144,13 +151,6 @@ export function DueBadge({
   const tone = late ? 'danger' : days <= 3 ? 'warning' : 'neutral'
   return <StatusBadge status={{ label: dueLabel(dueAt, now), tone }} className={className} />
 }
-
-/**
- * The due date under an invoice's status. Its window closes at an instant (`overdue`), so the
- * day it closes reads "Overdue today", matching the red status, rather than "Due today".
- */
-const invoiceDueLabel = (dueAt: ISODate, now: ISODate, overdue: boolean) =>
-  overdue && daysUntil(dueAt, now) >= 0 ? 'Overdue today' : dueLabel(dueAt, now)
 
 /** The full address of an outside payment with a copy button, or a plain note when the viewer may not see it. */
 function PayeeAddress({ address, short = false }: { address: string | undefined; short?: boolean }) {
@@ -789,7 +789,7 @@ export function InvoicesPendingList({
                 <Amount value={payment.amount} size="sm" />
                 <StatusBadge status={proofStatus[proofState(payment, overdue)]} />
                 <span className={cn('text-xs', overdue ? 'text-danger' : 'text-subtle')}>
-                  {invoiceDueLabel(dueAt, now, overdue)}
+                  {instantDueLabel(dueAt, now, overdue)}
                 </span>
                 {rendered}
               </span>
@@ -872,7 +872,7 @@ export function OutsidePaymentsTable({
           <OpenFileButton evidence={p.proof} className="max-w-40 text-xs text-muted-foreground" />
         ) : (
           <span className={cn('text-xs', standing.overdue ? 'text-danger' : 'text-subtle')}>
-            {invoiceDueLabel(standing.dueAt, now, standing.overdue)}
+            {instantDueLabel(standing.dueAt, now, standing.overdue)}
           </span>
         )}
         {rendered ? <span className="mt-1 flex flex-wrap items-center gap-2">{rendered}</span> : null}

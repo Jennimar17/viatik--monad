@@ -1,6 +1,12 @@
 import { calendarDaysUntil, dayIn } from '@/domain/days'
 
-import { formatLocalDateTime, localHour, localTimeZone, type LocalDateTimeOptions } from './local-time'
+import {
+  formatLocalDate,
+  formatLocalDateTime,
+  localHour,
+  localTimeZone,
+  type LocalDateTimeOptions,
+} from './local-time'
 
 /**
  * Formatting for dates, hashes and file sizes. Amounts use formatUsd from the
@@ -57,16 +63,20 @@ export function csvCell(value: unknown): string {
   return `"${text.replace(/"/g, '""')}"`
 }
 
-/** "2 hours ago", "in 3 days", "yesterday". */
-export function formatRelative(iso: string, now: string, locale = 'en-US') {
-  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
+/**
+ * "2 hours ago", "in 3 days", "yesterday"; past 30 days, the day the instant falls on in the
+ * viewer's time zone ("Sep 2, 2026"), as lists and detail pages print it. `timeZone` replaces the
+ * viewer's (tests).
+ */
+export function formatRelative(iso: string, now: string, { timeZone }: { timeZone?: string } = {}) {
+  const rtf = new Intl.RelativeTimeFormat('en-US', { numeric: 'auto' })
   const diff = new Date(iso).getTime() - new Date(now).getTime()
   const abs = Math.abs(diff)
   if (abs < 60 * 1000) return 'just now'
   if (abs < 60 * 60 * 1000) return rtf.format(Math.round(diff / (60 * 1000)), 'minute')
   if (abs < DAY) return rtf.format(Math.round(diff / (60 * 60 * 1000)), 'hour')
   if (abs < 30 * DAY) return rtf.format(Math.round(diff / DAY), 'day')
-  return formatDate(iso, locale)
+  return formatLocalDate(iso, { timeZone })
 }
 
 /** "Today", "Yesterday" or a long date, for grouping feeds by the viewer's day. */
@@ -99,6 +109,25 @@ export function dueLabel(iso: string, now: string, options: { timeZone?: string 
   if (days === 0) return 'Due today'
   if (days === 1) return 'Due tomorrow'
   return `Due in ${days} days`
+}
+
+/**
+ * The due label of a window that closes at an instant rather than on a day (an outside payment's
+ * invoice): counted to the day it closes on the viewer's clock, and "Overdue today" once it has
+ * closed (`overdue`) while that day lasts, matching the red status. `timeZone` replaces the
+ * viewer's (tests).
+ */
+export function instantDueLabel(
+  dueAt: string,
+  now: string,
+  overdue: boolean,
+  { timeZone = localTimeZone() }: { timeZone?: string } = {},
+) {
+  // The day it closes on the viewer's clock, as midnight UTC: the shape `daysUntil` counts to.
+  const dueDay = `${dayIn(dueAt, timeZone)}T00:00:00Z`
+  return overdue && daysUntil(dueDay, now, { timeZone }) >= 0
+    ? 'Overdue today'
+    : dueLabel(dueDay, now, { timeZone })
 }
 
 /**

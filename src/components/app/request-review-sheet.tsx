@@ -31,6 +31,7 @@ import {
 } from '@/domain/queries'
 import type { PaymentRequest } from '@/domain/types'
 import { formatDate, formatDateTime } from '@/lib/format'
+import { formatLocalDate } from '@/lib/local-time'
 
 /** What already happened to a request that no longer needs a decision. */
 function decidedCopy(request: PaymentRequest, approver: string | undefined): string {
@@ -249,7 +250,7 @@ export function RequestReviewSheet({
                     {
                       label: 'Receipts due',
                       value: payment
-                        ? formatDate(addDays(paidAt(payment), JUSTIFY_WITHIN_DAYS))
+                        ? formatLocalDate(addDays(paidAt(payment), JUSTIFY_WITHIN_DAYS))
                         : `${JUSTIFY_WITHIN_DAYS} days after payment`,
                     },
                   ]
