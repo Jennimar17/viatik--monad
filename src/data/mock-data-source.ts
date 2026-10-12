@@ -102,6 +102,10 @@ export class MockDataSource implements DataSource {
   }
 
   private write(state: ViatikState) {
+    // Saved under the demo's own version, not the seed's: SeedBuilder writes the state shape's
+    // version (1, the server's seed too), so no saved copy was recognized and every reload and
+    // every other tab started over.
+    state.version = STATE_VERSION
     this.state = state
     if (typeof window === 'undefined') return
     try {

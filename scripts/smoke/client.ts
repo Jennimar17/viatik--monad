@@ -1,8 +1,10 @@
 import { ApiDataSource } from '@/data/api-data-source'
 import { DataSourceError, type OpenOperation, type SendCall } from '@/data/data-source'
+import { MockDataSource } from '@/data/mock-data-source'
 import { planSettlement } from '@/data/settlement'
 import { runCommand } from '@/domain/engine'
 import { createDemoState } from '@/domain/fixtures'
+import type { ViatikState } from '@/domain/types'
 
 import { NOW, type Checker } from './harness'
 
@@ -23,6 +25,7 @@ type Scripted = [status: number, body: string]
 /** The globals the suite swaps out, and what each scenario reads back. */
 function browser() {
   const store = new Map<string, string>()
+  const storageListeners: ((event: { key: string; newValue: string | null }) => void)[] = []
   const requests: string[] = []
   let answers: Scripted[] = []
   let waited = 0
@@ -34,7 +37,9 @@ function browser() {
       setItem: (key: string, value: string) => void store.set(key, String(value)),
       removeItem: (key: string) => void store.delete(key),
     },
-    addEventListener() {},
+    addEventListener(type: string, listener: (event: { key: string; newValue: string | null }) => void) {
+      if (type === 'storage') storageListeners.push(listener)
+    },
     removeEventListener() {},
   }
   g.fetch = async (url: string | URL) => {
@@ -51,6 +56,10 @@ function browser() {
     requests,
     get waited() {
       return waited
+    },
+    /** What another tab hears when this device's storage changes (the browser's `storage` event). */
+    broadcast(key: string) {
+      for (const listener of storageListeners) listener({ key, newValue: store.get(key) ?? null })
     },
     /** The answers the server gives, in order, for the next scenario. */
     script(next: Scripted[]) {
@@ -70,6 +79,7 @@ export default async function client(t: Checker) {
   const env = browser()
   try {
     await answers(t, env)
+    await demo(t, env)
   } finally {
     env.restore()
   }
@@ -190,5 +200,53 @@ async function answers(t: Checker, env: ReturnType<typeof browser>) {
       outcome.status === 'confirmed' && !env.store.has(OPEN_KEY),
       JSON.stringify(outcome),
     )
+  })
+}
+
+/** The no-account demo keeps its data in this browser: reloads, other tabs and reset. */
+async function demo(t: Checker, env: ReturnType<typeof browser>) {
+  const DEMO_KEY = 'viatik:demo-state'
+  const unread = (state: ViatikState) => state.notifications.filter((n) => n.userId === 'u_maya' && !n.readAt).length
+  const title = (state: ViatikState) => state.users.find((u) => u.id === 'u_maya')?.title
+
+  await t.scenario('H2. The demo keeps its data across reloads and tabs', async () => {
+    env.store.clear()
+    const tabA = new MockDataSource()
+    const seeded = unread(await tabA.load('u_maya'))
+    await tabA.dispatch('u_maya', 'markNotificationsRead', {})
+    const reloaded = await new MockDataSource().load('u_maya')
+    t.check(
+      'what one visit changed is still there after a full reload',
+      seeded > 0 && unread(reloaded) === 0,
+      `unread ${seeded} → ${unread(reloaded)} after reload`,
+    )
+
+    const tabB = new MockDataSource()
+    await tabB.load('u_maya')
+    let heard = 0
+    tabB.subscribe(() => (heard += 1))
+    await tabA.dispatch('u_maya', 'updateProfile', { title: 'Changed in tab A' })
+    env.broadcast(DEMO_KEY)
+    t.check(
+      'another open tab takes the change',
+      heard >= 1 && title(await tabB.load('u_maya')) === 'Changed in tab A',
+      `heard ${heard}, title in tab B ${JSON.stringify(title(await tabB.load('u_maya')))}`,
+    )
+
+    const stale = JSON.parse(env.store.get(DEMO_KEY) ?? '{}') as ViatikState
+    stale.version = 1
+    const maya = stale.users.find((u) => u.id === 'u_maya')
+    if (maya) maya.title = 'Saved by an older demo'
+    env.store.set(DEMO_KEY, JSON.stringify(stale))
+    t.check(
+      'a copy saved by an older demo starts over',
+      title(await new MockDataSource().load('u_maya')) !== 'Saved by an older demo',
+    )
+
+    const tab = new MockDataSource()
+    await tab.load('u_maya')
+    await tab.dispatch('u_maya', 'markNotificationsRead', {})
+    await tab.reset()
+    t.check('reset is kept after a reload', unread(await new MockDataSource().load('u_maya')) === seeded)
   })
 }
