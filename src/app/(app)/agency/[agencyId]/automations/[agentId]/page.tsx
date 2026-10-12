@@ -99,10 +99,10 @@ export default function AgentDetailPage() {
   })
   const hasSpend = days.some((d) => d.spent > 0)
   const month = lastMonths(now, 1)[0]
-  const monthTotal = sum(
-    requests.filter((r) => month && committedAt(r) >= month.start && committedAt(r) < month.end),
-    (r) => r.amount,
+  const thisMonth = requests.filter(
+    (r) => month && committedAt(r) >= month.start && committedAt(r) < month.end,
   )
+  const monthTotal = sum(thisMonth, (r) => r.amount)
   const denied = decisions.filter((d) => d.outcome === 'rejected').length
   const agencyDestinations = state.destinations.filter(
     (d) =>
@@ -230,7 +230,7 @@ export default function AgentDetailPage() {
           hint={`Daily cap ${formatUsd(agent.dailyCap, { withCode: true })}`}
           emphasis
         />
-        <KpiTile label="This month" value={monthTotal} hint={pluralize(requests.length, 'payment')} />
+        <KpiTile label="This month" value={monthTotal} hint={pluralize(thisMonth.length, 'payment')} />
         <KpiTile
           label="Decisions logged"
           value={<span className="font-display text-2xl leading-none">{decisions.length}</span>}

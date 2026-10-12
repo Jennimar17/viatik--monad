@@ -134,13 +134,14 @@ function NewRequest() {
       : state.destinations.filter((d) => d.agencyId === agencyId && d.status === 'approved')
   ).map((d) => ({ value: d.id, label: d.name, description: d.settlementLabel }))
 
-  // Switching budgets keeps a choice only when the new budget allows it.
+  // Switching budgets keeps a choice only when the new budget allows it. Otherwise nothing is
+  // guessed: the budget's only category, or work's usual one, else the Member chooses.
   const allowedCategories = budget?.allowedCategories ?? []
   const category =
     categoryChoice && allowedCategories.includes(categoryChoice)
       ? categoryChoice
       : ((work ? WORK_CATEGORIES.find((c) => allowedCategories.includes(c)) : undefined) ??
-        allowedCategories[0] ??
+        (allowedCategories.length === 1 ? allowedCategories[0] : undefined) ??
         null)
   const destinationId =
     !paysMe && destinationChoice && destinationOptions.some((d) => d.value === destinationChoice)
@@ -187,6 +188,7 @@ function NewRequest() {
           : 'Choose where the money goes.'
         : undefined,
     amount: !amount ? 'Enter an amount.' : undefined,
+    category: budget && !category ? 'Choose a category.' : undefined,
     purpose: purpose.trim().length < 3 ? 'Say what this is for.' : undefined,
     merchant: reimbursement && !merchant.trim() ? 'Enter where you bought it.' : undefined,
     spentAt:
@@ -497,11 +499,13 @@ function NewRequest() {
             />
           </FormField>
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            <FormField label="Category" htmlFor="category">
+            <FormField label="Category" htmlFor="category" error={touched ? errors.category : undefined}>
               <SimpleSelect
                 id="category"
                 value={category}
                 onValueChange={(v) => setCategoryChoice(v as SpendingCategory)}
+                invalid={touched && Boolean(errors.category)}
+                placeholder="Choose a category"
                 options={allowedCategories.map((c) => ({
                   value: c,
                   label: categoryLabel[c],
@@ -528,8 +532,8 @@ function NewRequest() {
       ) : (
         <p className="px-1 text-sm text-subtle">
           {paysMe
-            ? 'Choose a budget and an amount to check the rules.'
-            : 'Choose a budget, destination, and amount to check the rules.'}
+            ? 'Choose a budget, an amount and a category to check the rules.'
+            : 'Choose a budget, destination, amount and category to check the rules.'}
         </p>
       )}
 

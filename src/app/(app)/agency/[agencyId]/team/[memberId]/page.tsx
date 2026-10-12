@@ -116,7 +116,7 @@ export default function MemberDetailPage() {
             <PersonAvatar name={user.name} size="lg" /> {user.name}
           </span>
         }
-        description={`${user.title} · ${user.email}`}
+        description={[user.title, user.email].filter(Boolean).join(' · ')}
         meta={
           <>
             <Tag>{roleLabel[membership.role]}</Tag>
