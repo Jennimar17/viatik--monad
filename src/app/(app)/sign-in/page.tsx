@@ -39,17 +39,21 @@ function workspaceName(state: ViatikState, membership: Membership) {
     : (state.agencies.find((a) => a.id === scope.agencyId)?.name ?? 'Agency')
 }
 
-export default function SignInPage() {
-  return (
-    <React.Suspense>
-      <SignIn />
-    </React.Suspense>
-  )
+/**
+ * Old deep links (`/sign-in?as=…`) now live on the demo page. Only this part reads the URL, so
+ * only this part waits for the browser: the rest of the page is in the prerendered HTML.
+ */
+function LegacyAsRedirect({ showDemo }: { showDemo: boolean }) {
+  const router = useRouter()
+  const asParam = useSearchParams().get('as')
+  React.useEffect(() => {
+    if (asParam && showDemo) router.replace(`/sign-in/demo?as=${encodeURIComponent(asParam)}` as Route)
+  }, [asParam, showDemo, router])
+  return null
 }
 
-function SignIn() {
+export default function SignInPage() {
   const router = useRouter()
-  const params = useSearchParams()
   const { userId, mode, account, accountsEnabled, accountsReady, error, retry, signIn, signOut } =
     useSession()
   const { state, memberships } = useViatik()
@@ -57,12 +61,6 @@ function SignIn() {
   // workspace opens by itself once the account resolves.
   const [signingIn, setSigningIn] = React.useState(false)
   const showDemo = publicEnv.NEXT_PUBLIC_DEMO_MODE || !accountsEnabled
-
-  // Old deep links (`/sign-in?as=…`) now live on the demo page.
-  const asParam = params.get('as')
-  React.useEffect(() => {
-    if (asParam && showDemo) router.replace(`/sign-in/demo?as=${encodeURIComponent(asParam)}` as Route)
-  }, [asParam, showDemo, router])
 
   // After a real sign-in: one workspace opens directly; none goes to onboarding.
   const signedIn = mode === 'account' && Boolean(userId) && Boolean(state)
@@ -83,6 +81,9 @@ function SignIn() {
 
   return (
     <main id="main" className="grid min-h-svh grid-cols-1 lg:grid-cols-[1.05fr_1fr]">
+      <React.Suspense fallback={null}>
+        <LegacyAsRedirect showDemo={showDemo} />
+      </React.Suspense>
       <section className="grain relative hidden overflow-hidden lg:block" aria-hidden="true">
         <img src="/images/alpine-landscape.jpg" alt="" className="absolute inset-0 size-full object-cover" />
         <div className="hero-scene-shade absolute inset-0" />

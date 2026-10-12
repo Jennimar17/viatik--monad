@@ -25,17 +25,20 @@ const DEEP_LINKS: Record<string, DemoPersonaKey> = {
 const choiceClass =
   'group flex items-center gap-3 rounded-xl border border-border bg-card p-3.5 text-left transition-colors outline-none hover:border-foreground/30 hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring'
 
-export default function DemoPage() {
-  return (
-    <React.Suspense>
-      <Demo />
-    </React.Suspense>
-  )
+/**
+ * Opens the demo as the person a landing link names (`?as=`). Only this part reads the URL, so
+ * only this part waits for the browser: the rest of the page is in the prerendered HTML.
+ */
+function DeepLink({ enterAs }: { enterAs: (key: DemoPersonaKey) => void }) {
+  const deepLink = DEEP_LINKS[useSearchParams().get('as') ?? '']
+  React.useEffect(() => {
+    if (deepLink) enterAs(deepLink)
+  }, [deepLink, enterAs])
+  return null
 }
 
-function Demo() {
+export default function DemoPage() {
   const router = useRouter()
-  const params = useSearchParams()
   const { userId, mode, accountsEnabled, enterDemo } = useSession()
   const showDemo = publicEnv.NEXT_PUBLIC_DEMO_MODE || !accountsEnabled
 
@@ -49,17 +52,18 @@ function Demo() {
     [router, enterDemo],
   )
 
-  const deepLink = DEEP_LINKS[params.get('as') ?? '']
   React.useEffect(() => {
     if (!showDemo) router.replace('/sign-in')
-    else if (deepLink) enterAs(deepLink)
-  }, [showDemo, deepLink, enterAs, router])
+  }, [showDemo, router])
 
   const current = mode === 'demo' ? DEMO_PERSONAS.find((p) => p.userId === userId) : undefined
   if (!showDemo) return null
 
   return (
     <main id="main" className="grid min-h-svh grid-cols-1 lg:grid-cols-[1.05fr_1fr]">
+      <React.Suspense fallback={null}>
+        <DeepLink enterAs={enterAs} />
+      </React.Suspense>
       <section className="grain relative hidden overflow-hidden lg:block" aria-hidden="true">
         <img src="/images/alpine-landscape.jpg" alt="" className="absolute inset-0 size-full object-cover" />
         <div className="hero-scene-shade absolute inset-0" />
