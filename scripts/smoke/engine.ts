@@ -80,6 +80,8 @@ import type {
   ISODate,
   Location,
   Movement,
+  Notification,
+  NotificationSubject,
   PaymentRequest,
   PaymentType,
   PolicyDecision,
@@ -168,6 +170,9 @@ export default async function engine(t: Checker) {
     agreementLifecycle(t),
   )
   await t.scenario('N. Funding never exceeds what the tranches left can release', () => fundingCap(t))
+  await t.scenario('O. A notification that asks for a decision is read once someone decides', () =>
+    decidedNotifications(t),
+  )
 }
 
 // ─── A. Money for purchases ──────────────────────────────────────────────────
@@ -5994,6 +5999,400 @@ async function fundingCap(t: Checker) {
       same(notifiedUsers(lastRelease), ADMINS) &&
       lastRelease.notifications.every((n) => n.title === 'Final tranche released'),
     JSON.stringify(lastRelease.notifications.map((n) => [n.userId, n.title])),
+  )
+}
+
+// ─── O. Notifications that ask for a decision ────────────────────────────────
+
+/**
+ * A notification that asks for a decision names what it is about: a request, a milestone, a
+ * tranche or an agreement to accept. Once anyone decides it, it is read for everyone it went to;
+ * other notifications, the follow-ups that only tell included, stay as they were.
+ */
+async function decidedNotifications(t: Checker) {
+  const w = new World(t, 'engine-o')
+  const ASKING = new Set([
+    'Request needs approval',
+    'Exception needs your decision',
+    'Milestone ready for review',
+    'Tranche requested',
+    'New funding agreement',
+  ])
+  type Kind = NotificationSubject['kind']
+  const about = (kind: Kind, id: Id) =>
+    w.state.notifications.filter((n) => n.subject?.kind === kind && n.subject.id === id)
+  const shown = (kind: Kind, id: Id) =>
+    JSON.stringify(about(kind, id).map((n) => [n.userId, n.title, n.readAt ?? 'unread']))
+  /** Every notification about it went to exactly `userIds` and is read, some of them just now. */
+  const readFor = (kind: Kind, id: Id, userIds: Id[]) => {
+    const notes = about(kind, id)
+    return (
+      same([...new Set(notes.map((n) => n.userId))].sort(), [...userIds].sort()) &&
+      notes.every((n) => n.readAt) &&
+      notes.some((n) => n.readAt === w.now)
+    )
+  }
+  /** A step's new notifications went to exactly `userIds`, unread, each naming `kind` `id`. */
+  const asked = (step: { notifications: Notification[] }, kind: Kind, id: Id, userIds: Id[]) =>
+    same(notifiedUsers(step), [...userIds].sort()) &&
+    step.notifications.every((n) => same(n.subject, { kind, id }) && !n.readAt)
+
+  // O1. In the seed, what asks for a decision names something still waiting for it.
+  const waiting = ({ kind, id }: NotificationSubject) =>
+    kind === 'request'
+      ? w.state.requests.find((r) => r.id === id)?.status === 'needs_approval'
+      : kind === 'milestone'
+        ? w.state.milestones.find((m) => m.id === id)?.status === 'ready_for_review'
+        : kind === 'tranche'
+          ? w.state.tranches.find((tr) => tr.id === id)?.status === 'under_review'
+          : w.state.agreements.find((a) => a.id === id)?.status === 'pending_acceptance'
+  const asking = w.state.notifications.filter((n) => !n.readAt && ASKING.has(n.title))
+  t.check(
+    'O1: every unread notification of the seed that asks for a decision names one still waiting',
+    asking.length > 0 && asking.every((n) => n.subject !== undefined && waiting(n.subject)),
+    JSON.stringify(asking.map((n) => [n.userId, n.title, n.subject])),
+  )
+  t.check(
+    'O1: …and the ones that only tell name nothing',
+    w.state.notifications.every((n) => ASKING.has(n.title) || n.subject === undefined),
+  )
+
+  // O2. An Agency Admin approves a request: read for both Admins, and nothing else is.
+  const askForWork = async (label: string, key: string, userId: Id = U.alex): Promise<Id> => {
+    const step = await w.run(
+      userId,
+      'requestPayment',
+      {
+        agencyId: ARC,
+        budgetId: B.arcTeam,
+        type: 'work',
+        amount: usd(100),
+        category: 'team',
+        purpose: 'Pilot support',
+        attachments: [file(`o-${key}.pdf`)],
+        idempotencyKey: `smoke-o-${key}`,
+      },
+      label,
+      { ops: [] },
+    )
+    const id = step.result.id
+    t.check(
+      `${label}: both Agency Admins are asked, about that request`,
+      step.result.status === 'needs_approval' && asked(step, 'request', id, ADMINS),
+      shown('request', id),
+    )
+    w.later(1)
+    return id
+  }
+  await w.fund(U.maya, B.arcTeam, usd(100))
+  const approved = await askForWork('O2 Alex asks to be paid for his work', 'approve')
+  const otherUnread = w.state.notifications.filter(
+    (n) => !n.readAt && ADMINS.some((admin) => admin === n.userId) && n.subject?.id !== approved,
+  )
+  await w.run(U.maya, 'approveRequest', { requestId: approved }, 'O2 Maya approves it', { ops: ['pay'] })
+  t.check(
+    'O2: it is read for Maya and for Jordan, who did not decide it',
+    readFor('request', approved, ADMINS),
+    shown('request', approved),
+  )
+  t.check(
+    "O2: the Admins' other unread notifications stay unread, other requests' among them",
+    otherUnread.some((n) => n.subject?.kind === 'request') &&
+      otherUnread.every((n) => !w.state.notifications.find((m) => m.id === n.id)?.readAt),
+    JSON.stringify(otherUnread.map((n) => [n.userId, n.title])),
+  )
+
+  // O3–O6. Declined, cancelled by the requester, or cancelled with the requester's access.
+  const declined = await askForWork('O3 Alex asks again', 'decline')
+  await w.run(
+    U.jordan,
+    'declineRequest',
+    { requestId: declined, reason: 'Paid in the payroll' },
+    'O3 Jordan declines it',
+    { ops: [] },
+  )
+  t.check(
+    'O3: declined, it is read for both Admins',
+    readFor('request', declined, ADMINS),
+    shown('request', declined),
+  )
+  const cancelled = await askForWork('O4 Alex asks once more', 'cancel')
+  await w.run(U.alex, 'cancelRequest', { requestId: cancelled }, 'O4 Alex cancels it', { ops: [] })
+  t.check(
+    'O4: cancelled, it is read for both Admins',
+    readFor('request', cancelled, ADMINS),
+    shown('request', cancelled),
+  )
+  const revoked = await askForWork('O5 Alex asks for more', 'revoke')
+  const alexTeam = must(
+    w.state.allowances.find(
+      (a) =>
+        a.budgetId === B.arcTeam &&
+        a.status === 'active' &&
+        a.holder.kind === 'member' &&
+        a.holder.userId === U.alex,
+    ),
+    "Alex's Team payments allowance",
+  )
+  await w.run(
+    U.maya,
+    'revokeAllowance',
+    { allowanceId: alexTeam.id },
+    "O5 Maya revokes Alex's spending access to Team payments",
+    { ops: ['setAllowance'] },
+  )
+  t.check(
+    'O5: the request it cancels is read for both Admins',
+    w.state.requests.find((r) => r.id === revoked)?.status === 'cancelled' &&
+      readFor('request', revoked, ADMINS),
+    shown('request', revoked),
+  )
+  const removed = await askForWork('O6 Priya asks to be paid for her work', 'remove', U.priya)
+  const priya = must(
+    w.state.memberships.find(
+      (m) =>
+        m.userId === U.priya &&
+        m.status === 'active' &&
+        m.scope.kind === 'agency' &&
+        m.scope.agencyId === ARC,
+    ),
+    "Priya's membership",
+  )
+  await w.run(U.maya, 'revokeMembership', { membershipId: priya.id }, 'O6 Maya removes Priya from the Agency')
+  t.check(
+    'O6: the request her removal cancels is read for both Admins',
+    w.state.requests.find((r) => r.id === removed)?.status === 'cancelled' &&
+      readFor('request', removed, ADMINS),
+    shown('request', removed),
+  )
+
+  // O7. Exceptions, the Investor's to decide: the seeded one declined, a new one approved.
+  const audit = must(
+    w.state.requests.find(
+      (r) => r.agencyId === LUMEN && r.status === 'needs_approval' && isException(w.state, r),
+    ),
+    "Lumen's security audit",
+  )
+  w.later(1)
+  await w.run(
+    U.elena,
+    'declineRequest',
+    { requestId: audit.id, reason: 'Next quarter' },
+    "O7 Elena declines Lumen's security audit",
+    { ops: ['closeRequest'] },
+  )
+  t.check(
+    "O7: her seeded 'Exception needs your decision' is read",
+    readFor('request', audit.id, [U.elena]) &&
+      about('request', audit.id).every((n) => n.title === 'Exception needs your decision'),
+    shown('request', audit.id),
+  )
+  t.check(
+    "O7: Ren's 'Exception sent to Investor' only told him, and stays unread",
+    w.state.notifications.some(
+      (n) => n.userId === U.ren && n.title === 'Exception sent to Investor' && !n.readAt,
+    ),
+  )
+  const threshold = must(governingAgreement(w.state, LUMEN), "Lumen's agreement").spendingPolicy
+    .exceptionThreshold
+  const exceptionAsk: RequestPaymentInput = {
+    agencyId: LUMEN,
+    budgetId: B.lumenSecurity,
+    type: 'funds',
+    amount: cents(threshold + usd(1)),
+    category: 'legal',
+    purpose: 'Penetration test',
+    idempotencyKey: 'smoke-o-exception',
+  }
+  await w.fund(U.ren, B.lumenSecurity, exceptionAsk.amount)
+  const exception = await w.run(
+    U.ren,
+    'requestPayment',
+    exceptionAsk,
+    'O7 Ren asks for money above the exception threshold',
+    { ops: ['requestPayment'] },
+  )
+  const exceptionId = exception.result.id
+  t.check(
+    'O7: both Investors are asked, about that request',
+    asked(exception, 'request', exceptionId, INVESTORS),
+    shown('request', exceptionId),
+  )
+  w.later(1)
+  await w.run(U.elena, 'approveRequest', { requestId: exceptionId }, 'O7 Elena approves it', {
+    ops: ['approvePayment'],
+  })
+  t.check(
+    'O7: it is read for Elena and for Marcus',
+    readFor('request', exceptionId, INVESTORS),
+    shown('request', exceptionId),
+  )
+
+  // O8. Milestones: released, sent back for changes, rejected.
+  /** Setup: the agreement holds what releasing the tranche needs. */
+  const fundRelease = async (agreementId: Id, trancheId: Id, label: string) => {
+    const tranche = must(
+      w.state.tranches.find((tr) => tr.id === trancheId),
+      label,
+    )
+    const capital = agreementCapital(w.state, agreementId)
+    const need = cents(capital.released + tranche.amount - capital.funded)
+    if (need <= 0) return
+    if (vaultBalance(w.state, DEMO.vaults.portfolio) < need)
+      await w.run(
+        U.elena,
+        'addFunds',
+        { portfolioId: DEMO.portfolio, amount: need, source: 'Treasury' },
+        `${label} setup: Elena adds funds`,
+        { ops: ['deposit'] },
+      )
+    await w.run(
+      U.elena,
+      'fundAgreement',
+      { agreementId, amount: need },
+      `${label} setup: Elena funds the agreement`,
+      { ops: ['fundAgreement'] },
+    )
+  }
+  await fundRelease(DEMO.agreements.arc, DEMO.tranches.arc2, 'O8')
+  await w.run(
+    U.elena,
+    'releaseTranche',
+    { trancheId: DEMO.tranches.arc2 },
+    'O8 Elena approves the Prototype milestone and releases Tranche 2',
+    { ops: ['releaseTranche'] },
+  )
+  t.check(
+    "O8: her seeded 'Milestone ready for review' is read",
+    readFor('milestone', DEMO.milestones.arc2, [U.elena]),
+    shown('milestone', DEMO.milestones.arc2),
+  )
+  const submit = async (milestoneId: Id, label: string) => {
+    const step = await w.run(
+      U.maya,
+      'submitMilestoneEvidence',
+      {
+        milestoneId,
+        evidence: [file(`o-${label}.pdf`)],
+        note: `${label} is done.`,
+        destinationAccountId: ACC.arcOperations,
+      },
+      `O8 Maya submits the ${label} evidence`,
+      { ops: ['requestTranche'] },
+    )
+    t.check(
+      `O8: both Investors are asked to review the ${label} evidence, about that milestone`,
+      asked(step, 'milestone', milestoneId, INVESTORS),
+      shown('milestone', milestoneId),
+    )
+    w.later(1)
+  }
+  await submit(DEMO.milestones.arc3, 'Beta')
+  await w.run(
+    U.elena,
+    'requestMilestoneChanges',
+    { milestoneId: DEMO.milestones.arc3, note: 'Add the beta test results.' },
+    'O8 Elena asks for changes to the Beta milestone',
+    { ops: ['requestChanges'] },
+  )
+  t.check(
+    'O8: sent back for changes, it is read for both Investors',
+    readFor('milestone', DEMO.milestones.arc3, INVESTORS),
+    shown('milestone', DEMO.milestones.arc3),
+  )
+  await submit(DEMO.milestones.arc3, 'Beta v2')
+  await fundRelease(DEMO.agreements.arc, DEMO.tranches.arc3, 'O8')
+  await w.run(U.elena, 'releaseTranche', { trancheId: DEMO.tranches.arc3 }, 'O8 Elena releases Tranche 3', {
+    ops: ['releaseTranche'],
+  })
+  t.check(
+    'O8: released, what was submitted again is read for both Investors too',
+    readFor('milestone', DEMO.milestones.arc3, INVESTORS),
+    shown('milestone', DEMO.milestones.arc3),
+  )
+  await submit(DEMO.milestones.arc4, 'Launch')
+  await w.run(
+    U.elena,
+    'requestMilestoneChanges',
+    { milestoneId: DEMO.milestones.arc4, note: 'The launch misses the agreed scope.', reject: true },
+    'O8 Elena rejects the Launch milestone',
+    { ops: ['requestChanges'] },
+  )
+  t.check(
+    'O8: rejected, it is read for both Investors',
+    readFor('milestone', DEMO.milestones.arc4, INVESTORS),
+    shown('milestone', DEMO.milestones.arc4),
+  )
+
+  // O9. A tranche requested without a milestone, then released.
+  const requested = await w.run(
+    U.ren,
+    'requestTranche',
+    { trancheId: DEMO.tranches.lumen3, destinationAccountId: ACC.lumenOperations },
+    "O9 Ren requests Lumen's Tranche 3",
+    { ops: ['requestTranche'] },
+  )
+  t.check(
+    'O9: both Investors are asked, about that tranche',
+    asked(requested, 'tranche', DEMO.tranches.lumen3, INVESTORS),
+    shown('tranche', DEMO.tranches.lumen3),
+  )
+  w.later(1)
+  await fundRelease(DEMO.agreements.lumen, DEMO.tranches.lumen3, 'O9')
+  await w.run(U.elena, 'releaseTranche', { trancheId: DEMO.tranches.lumen3 }, 'O9 Elena releases it', {
+    ops: ['releaseTranche'],
+  })
+  t.check(
+    'O9: it is read for both Investors',
+    readFor('tranche', DEMO.tranches.lumen3, INVESTORS),
+    shown('tranche', DEMO.tranches.lumen3),
+  )
+
+  // O10. An agreement waiting for acceptance, then accepted.
+  const created = await w.run(
+    U.elena,
+    'createAgreement',
+    {
+      portfolioId: DEMO.portfolio,
+      agencyId: LUMEN,
+      title: 'Second year',
+      purpose: 'Operating capital for a second year.',
+      committed: usd(6_000),
+      releaseModel: 'manual',
+      startDate: w.now,
+      endDate: plusHours(w.now, 24 * 365),
+      tranches: [{ name: 'Tranche 1', amount: usd(6_000), releaseCondition: 'manual' }],
+      spendingPolicy: {
+        allowedCategories: ['team', 'cloud'],
+        exceptionThreshold: usd(2_000),
+        reportingCadence: 'monthly',
+        returnConditions: 'Unreleased capital stays in the Funding Vault until the parties agree on it.',
+      },
+      evidenceRequirements: 'A monthly spend report.',
+    },
+    'O10 Elena offers Lumen a second agreement',
+    { ops: ['createAgreement'] },
+  )
+  const agreementId = created.result.id
+  const lumenAdmins = notifiedUsers(created)
+  t.check(
+    "O10: Lumen's Admins are asked to accept it, about that agreement",
+    lumenAdmins.includes(U.ren) && asked(created, 'agreement', agreementId, lumenAdmins),
+    shown('agreement', agreementId),
+  )
+  w.later(1)
+  const accepted = await w.run(U.ren, 'acceptAgreement', { agreementId }, 'O10 Ren accepts it', {
+    ops: ['acceptAgreement'],
+  })
+  t.check(
+    'O10: it is read for them',
+    readFor('agreement', agreementId, lumenAdmins),
+    shown('agreement', agreementId),
+  )
+  t.check(
+    "O10: the Investors' 'Agreement accepted' only tells, and stays unread",
+    same(notifiedUsers(accepted), INVESTORS) &&
+      accepted.notifications.every((n) => n.title === 'Agreement accepted' && !n.subject && !n.readAt),
   )
 }
 

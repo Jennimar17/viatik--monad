@@ -107,7 +107,7 @@ export function noteFundsArrived(tx: Tx, input: FundsArrivedInput): FundsArrived
     input.mint ? 'Test funds arrived' : 'Funds arrived',
     `${usdText(input.amount)}${input.mint ? ' of test funds' : ''} arrived in your Viatik account.`,
     fundsArrivedHref(tx.state, input.userId),
-    'funds_arrived',
+    { kind: 'funds_arrived' },
   )
   return { status: 'notified', notification: tx.state.notifications[0]! }
 }

@@ -282,6 +282,7 @@ export function createAgreement(tx: Tx, input: CreateAgreementInput): FundingAgr
     'New funding agreement',
     `${agreement.title} (${usdText(agreement.committed)}) is ready for your acceptance.`,
     `/agency/${agency.id}/funding?agreement=${agreement.id}`,
+    { subject: { kind: 'agreement', id: agreement.id } },
   )
   return agreement
 }
@@ -292,6 +293,7 @@ export function acceptAgreement(tx: Tx, input: { agreementId: Id }) {
   if (agreement.status !== 'pending_acceptance')
     throw new DomainError('invalid_state', 'This agreement is not waiting for acceptance.')
   agreement.status = 'active'
+  tx.resolve({ kind: 'agreement', id: agreement.id })
   const agency = tx.find('agencies', agreement.agencyId, 'Agency')
   if (agency.status === 'onboarding') agency.status = 'active'
   tx.activity(
@@ -589,6 +591,7 @@ export function submitMilestoneEvidence(
     'Milestone ready for review',
     `${agency.name} submitted evidence for "${milestone.title}".`,
     `/investor/${agreement.portfolioId}/funding/${agreement.id}/milestones/${milestone.id}`,
+    { subject: { kind: 'milestone', id: milestone.id } },
   )
   return milestone
 }
@@ -642,6 +645,7 @@ export function requestTranche(
     'Tranche requested',
     `${tranche.name} of ${agreement.title} was requested.`,
     `/investor/${agreement.portfolioId}/approvals`,
+    { subject: { kind: 'tranche', id: tranche.id } },
   )
   return tranche
 }
@@ -738,6 +742,8 @@ export function releaseTranche(tx: Tx, input: { trancheId: Id; checkedCriteria?:
     receiptId: receipt.id,
     destinationAccountId: destination.id,
   })
+  tx.resolve({ kind: 'tranche', id: tranche.id })
+  if (milestone) tx.resolve({ kind: 'milestone', id: milestone.id })
 
   // The next tranche becomes available and its milestone opens.
   const nextTranche = tx.state.tranches.find(
@@ -788,6 +794,8 @@ export function requestMilestoneChanges(tx: Tx, input: { milestoneId: Id; note: 
   milestone.status = outcome
   milestone.decision = { outcome, note, checkedCriteria: [], decidedAt: tx.now, decidedBy: tx.userId }
   tranche.status = input.reject ? 'rejected' : 'available'
+  tx.resolve({ kind: 'milestone', id: milestone.id })
+  tx.resolve({ kind: 'tranche', id: tranche.id })
   tx.activity(
     'milestone_changes_requested',
     input.reject ? `Rejected ${milestone.title}` : `Requested changes to ${milestone.title}`,

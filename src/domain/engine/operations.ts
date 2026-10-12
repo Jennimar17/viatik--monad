@@ -524,7 +524,9 @@ export function revokeAllowance(tx: Tx, input: { allowanceId: Id }) {
       (allowance.holder.kind === 'ai_agent' &&
         request.requester.kind === 'ai_agent' &&
         request.requester.agentId === allowance.holder.agentId)
-    if (sameHolder) request.status = 'cancelled'
+    if (!sameHolder) continue
+    request.status = 'cancelled'
+    tx.resolve({ kind: 'request', id: request.id })
   }
   tx.activity(
     'allowance_revoked',
@@ -777,6 +779,7 @@ export function requestPayment(tx: Tx, input: RequestPaymentInput): PaymentReque
       'Request needs approval',
       `${tx.actorName()} requested ${usdText(input.amount)} for ${request.purpose}.`,
       toInvestor ? `/investor/${portfolioId}/approvals` : `/agency/${input.agencyId}/approvals`,
+      { subject: { kind: 'request', id: request.id } },
     )
     return request
   }
@@ -1039,6 +1042,7 @@ export function approveRequest(tx: Tx, input: { requestId: Id }) {
   request.status = 'approved'
   request.approvedBy = tx.userId
   request.decidedAt = tx.now
+  tx.resolve({ kind: 'request', id: request.id })
   const portfolioId = tx.portfolioOfAgency(request.agencyId)
   tx.activity(
     'payment_approved',
@@ -1065,6 +1069,7 @@ export function declineRequest(tx: Tx, input: { requestId: Id; reason: string })
   request.status = 'declined'
   request.declinedReason = requireText(input.reason, 'Reason', 300)
   request.decidedAt = tx.now
+  tx.resolve({ kind: 'request', id: request.id })
   const portfolioId = tx.portfolioOfAgency(request.agencyId)
   tx.activity(
     'payment_declined',
@@ -1095,6 +1100,7 @@ export function cancelRequest(tx: Tx, input: { requestId: Id }) {
   }
   assertTransition('Request', canTransitionRequest, request.status, 'cancelled')
   request.status = 'cancelled'
+  tx.resolve({ kind: 'request', id: request.id })
   return request
 }
 

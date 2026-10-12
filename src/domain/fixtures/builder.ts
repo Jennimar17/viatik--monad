@@ -10,6 +10,7 @@ import type {
   Location,
   Movement,
   MovementKind,
+  NotificationSubject,
   Receipt,
   ReceiptKind,
   ViatikState,
@@ -228,7 +229,15 @@ export class SeedBuilder {
     return record
   }
 
-  notify(userId: Id, title: string, body: string, href: string, at: ISODate, read = false) {
+  notify(
+    userId: Id,
+    title: string,
+    body: string,
+    href: string,
+    at: ISODate,
+    read = false,
+    subject?: NotificationSubject,
+  ) {
     this.state.notifications.push({
       id: this.id('ntf'),
       userId,
@@ -237,6 +246,7 @@ export class SeedBuilder {
       href,
       createdAt: at,
       readAt: read ? at : undefined,
+      ...(subject ? { subject: { ...subject } } : {}),
     })
   }
 

@@ -692,6 +692,9 @@ export type Activity = {
 /** A notification screens react to, besides showing it (absent on ordinary ones). */
 export type NotificationKind = 'funds_arrived'
 
+/** What a notification asks its recipients to decide. */
+export type NotificationSubject = { kind: 'request' | 'milestone' | 'tranche' | 'agreement'; id: Id }
+
 export type Notification = {
   id: Id
   userId: Id
@@ -702,6 +705,8 @@ export type Notification = {
   readAt?: ISODate
   /** `funds_arrived`: money reached the person's Viatik account (from Alchemy), so its balance is read again. */
   kind?: NotificationKind
+  /** Absent on the ones that only tell. Once someone decides it, it is read for everyone it went to. */
+  subject?: NotificationSubject
 }
 
 export type Invitation = {

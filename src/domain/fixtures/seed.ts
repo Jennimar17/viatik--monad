@@ -23,6 +23,7 @@ import type {
   Id,
   ISODate,
   Location,
+  NotificationSubject,
   Payment,
   PaymentDestination,
   PaymentRequest,
@@ -1750,7 +1751,7 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
   }
 
   // Current approval queue.
-  request({
+  const canvaslyUpgrade = request({
     agencyId: A.arc,
     budgetId: BUD.arcTools,
     requester: user(U.daniel),
@@ -1763,7 +1764,7 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     leavePending: true,
   })
   // Jordan's is Maya's to decide: nobody approves their own request.
-  request({
+  const summitTicket = request({
     agencyId: A.arc,
     budgetId: BUD.arcTravel,
     requester: user(U.jordan),
@@ -2005,7 +2006,7 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
   }
   allowance(BUD.lumenSecurity, U.ren, usd(7_000), b.ago(10, 10), U.ren, A.lumen)
   // Above the agreement's exception threshold: routed to the Investor.
-  request({
+  const securityAudit = request({
     agencyId: A.lumen,
     budgetId: BUD.lumenSecurity,
     requester: user(U.ren),
@@ -2075,9 +2076,20 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
   const investors = [U.elena, U.marcus]
   const accountName = (id: Id) => s.accounts.find((a) => a.id === id)?.name ?? 'Account'
   const agencyNameOf = (id: Id) => s.agencies.find((a) => a.id === id)?.name ?? 'Agency'
-  const notifyAll = (userIds: Id[], title: string, body: string, href: string, at: ISODate, read = false) => {
-    for (const userId of userIds) b.notify(userId, title, body, href, at, read)
+  const notifyAll = (
+    userIds: Id[],
+    title: string,
+    body: string,
+    href: string,
+    at: ISODate,
+    read = false,
+    subject?: NotificationSubject,
+  ) => {
+    for (const userId of userIds) b.notify(userId, title, body, href, at, read, subject)
   }
+  /** What a "needs approval" notification asks to decide, as the engine names it. */
+  const asksAbout = (req: PaymentRequest | null): NotificationSubject | undefined =>
+    req ? { kind: 'request', id: req.id } : undefined
   const balanceHref = `/member/${A.arc}/payments`
   const personHref = (userId: Id) => `/agency/${A.arc}/team/${userId}`
   const approvalsHref = `/agency/${A.arc}/approvals`
@@ -2650,9 +2662,12 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     `${nameOf(U.alex)} requested ${usdLabel(waitingAmount)} for ${waitingWork.purpose}.`,
     approvalsHref,
     waitingAt,
+    false,
+    asksAbout(waitingWork),
   )
 
   // ─── Notifications ─────────────────────────────────────────────────────────
+  // The ones that ask for a decision name what they ask about: deciding it marks them read.
 
   const agencyHref = (path: string) => `/agency/${A.arc}/${path}`
   b.notify(
@@ -2661,6 +2676,8 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     'Arc Studio submitted evidence for "Prototype delivered".',
     `/investor/${P}/funding/${DEMO.agreements.arc}/milestones/${DEMO.milestones.arc2}`,
     submittedAt,
+    false,
+    { kind: 'milestone', id: DEMO.milestones.arc2 },
   )
   b.notify(
     U.elena,
@@ -2668,6 +2685,8 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     'Lumen Labs requested 6,200.00 USD for an annual security audit.',
     `/investor/${P}/approvals`,
     b.ago(1, 11, 5),
+    false,
+    asksAbout(securityAudit),
   )
   b.notify(
     U.elena,
@@ -2691,6 +2710,8 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     'Daniel Okafor requested 320.00 USD for Canvasly team plan upgrade.',
     agencyHref('approvals'),
     b.ago(1, 9, 25),
+    false,
+    asksAbout(canvaslyUpgrade),
   )
   // The due dates of this month's Vertex Cloud and Pagecraft bills (Vendor bills above), as dates:
   // "in 3 days" would be wrong on any later day the notification is read.
@@ -2724,6 +2745,8 @@ export function createDemoState(now: ISODate = new Date().toISOString()): Viatik
     'Jordan Lee requested 450.00 USD for Product Design Summit ticket.',
     agencyHref('approvals'),
     b.ago(1, 16, 10),
+    false,
+    asksAbout(summitTicket),
   )
   // Only vendor payments' expenses miss receipts now (money for purchases is "to justify"), and
   // only those there were when Alex was told.
