@@ -2,7 +2,15 @@ import { calendarDaysUntil } from '@/domain/days'
 import { cents, parseUsdInput, toInputString, usdInputHint } from '@/domain/money'
 import { billState } from '@/domain/queries'
 import type { Bill } from '@/domain/types'
-import { dayGroup, daysUntil, dueLabel, formatDate, formatDateTime, formatShortDate } from '@/lib/format'
+import {
+  dayGroup,
+  daysUntil,
+  dueLabel,
+  formatDate,
+  formatDateTime,
+  formatShortDate,
+  partOfDay,
+} from '@/lib/format'
 import { formatLocalDate, formatLocalDateTime, formatLocalTime } from '@/lib/local-time'
 
 import { checkSame, type Checker } from './harness'
@@ -40,6 +48,7 @@ export default async function format(t: Checker) {
   await t.scenario('T2. Today and the day groups on the viewer’s clock; calendar dates in UTC', () => days(t))
   await t.scenario('T3. Days to a due date are calendar days', () => dueDays(t))
   await t.scenario('T4. The amount input refuses a comma for cents', () => amounts(t))
+  await t.scenario('T5. The greeting follows the hour on the viewer’s clock', () => greeting(t))
 }
 
 // ─── T1. Times of day ────────────────────────────────────────────────────────
@@ -255,5 +264,26 @@ function amounts(t: Checker) {
     'T4 nothing to say otherwise',
     ['1,250.50', '1,250', '12.50', '', '1,2345'].map(usdInputHint),
     [null, null, null, null, null],
+  )
+}
+
+// ─── T5. Greeting ────────────────────────────────────────────────────────────
+
+function greeting(t: Checker) {
+  // Buenos Aires is UTC-3: 05:13 UTC is 2:13 AM there.
+  const at = (utc: string) => partOfDay(`2026-10-12T${utc}:00Z`, { timeZone: BA })
+  checkSame(t, 'T5 2:13 AM is evening, not morning', at('05:13'), 'evening')
+  checkSame(t, 'T5 midnight is evening', at('03:00'), 'evening')
+  checkSame(t, 'T5 4:59 AM is still evening', at('07:59'), 'evening')
+  checkSame(t, 'T5 morning starts at 5:00', at('08:00'), 'morning')
+  checkSame(t, 'T5 11:59 AM is morning', at('14:59'), 'morning')
+  checkSame(t, 'T5 afternoon starts at noon', at('15:00'), 'afternoon')
+  checkSame(t, 'T5 5:59 PM is afternoon', at('20:59'), 'afternoon')
+  checkSame(t, 'T5 evening starts at 6:00 PM', at('21:00'), 'evening')
+  checkSame(
+    t,
+    'T5 the same instant is morning in UTC',
+    partOfDay('2026-10-12T08:00:00Z', { timeZone: 'UTC' }),
+    'morning',
   )
 }

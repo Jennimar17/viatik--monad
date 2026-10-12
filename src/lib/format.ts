@@ -1,6 +1,6 @@
 import { calendarDaysUntil, dayIn } from '@/domain/days'
 
-import { formatLocalDateTime, localTimeZone, type LocalDateTimeOptions } from './local-time'
+import { formatLocalDateTime, localHour, localTimeZone, type LocalDateTimeOptions } from './local-time'
 
 /**
  * Formatting for dates, hashes and file sizes. Amounts use formatUsd from the
@@ -101,11 +101,14 @@ export function dueLabel(iso: string, now: string, options: { timeZone?: string 
   return `Due in ${days} days`
 }
 
-/** "morning", "afternoon" or "evening" in the viewer's local time. */
-export function partOfDay(now: string) {
-  const hour = new Date(now).getHours()
-  if (hour < 12) return 'morning'
-  if (hour < 18) return 'afternoon'
+/**
+ * "morning" (5:00–11:59), "afternoon" (12:00–17:59) or "evening" (18:00–4:59) on the
+ * viewer's clock. `timeZone` replaces the viewer's (tests).
+ */
+export function partOfDay(now: string, options: { timeZone?: string } = {}) {
+  const hour = localHour(now, options)
+  if (hour >= 5 && hour < 12) return 'morning'
+  if (hour >= 12 && hour < 18) return 'afternoon'
   return 'evening'
 }
 

@@ -80,6 +80,13 @@ export function formatLocalDate(
   ).format(date)
 }
 
+/** The hour of an instant (0–23, midnight is 0) in the viewer's time zone; NaN for an invalid date. */
+export function localHour(iso: string, { timeZone }: { timeZone?: string } = {}): number {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return Number.NaN
+  return Number(formatter({ hour: 'numeric', hourCycle: 'h23' }, timeZone).format(date))
+}
+
 const pad = (value: number) => String(value).padStart(2, '0')
 
 /** An instant as the values of a date input ("2026-10-12") and a time input ("09:00"), on the viewer's clock. */
