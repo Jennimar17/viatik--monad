@@ -59,18 +59,18 @@ export function MobileNavigation() {
 
             <div className="flex flex-col gap-3">
               <a
-                href={siteConfig.routes.demo}
+                href={siteConfig.routes.signIn}
                 onClick={() => setOpen(false)}
                 className={buttonVariants({ size: 'pill' })}
               >
-                Open demo
+                Sign in
               </a>
               <a
-                href={siteConfig.routes.signIn}
+                href={siteConfig.routes.demo}
                 onClick={() => setOpen(false)}
                 className={buttonVariants({ variant: 'secondary', size: 'pill' })}
               >
-                Sign in
+                Open demo
               </a>
             </div>
           </Container>

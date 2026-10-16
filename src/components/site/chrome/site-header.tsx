@@ -47,13 +47,20 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center justify-end gap-2">
+          {/* Phones get one action, signing in; the demo stays in the menu and the hero. */}
+          <a href={siteConfig.routes.signIn} className={cn(buttonVariants({ size: 'pill-sm' }), 'sm:hidden')}>
+            Sign in
+          </a>
           <a
             href={siteConfig.routes.signIn}
             className={cn(buttonVariants({ variant: 'ghost', size: 'pill-sm' }), 'hidden sm:inline-flex')}
           >
             Sign in
           </a>
-          <a href={siteConfig.routes.demo} className={buttonVariants({ size: 'pill-sm' })}>
+          <a
+            href={siteConfig.routes.demo}
+            className={cn(buttonVariants({ size: 'pill-sm' }), 'hidden sm:inline-flex')}
+          >
             Open demo
           </a>
           <MobileNavigation />
